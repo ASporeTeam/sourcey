@@ -56,6 +56,71 @@ describe("parseSpec", () => {
     }
   });
 
+  it("resolves a schema's $id-relative refs to the local file that declares that $id", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sourcey-parser-"));
+    try {
+      const specDir = join(root, "spec");
+      await mkdir(join(specDir, "schemas", "hosted"), { recursive: true });
+      // Inside detail.json, "../request.json" resolves against its $id to an https URL.
+      await writeFile(
+        join(specDir, "schemas", "hosted", "detail.json"),
+        JSON.stringify({
+          $id: "https://example.test/spec/hosted/detail.json",
+          type: "object",
+          properties: { request: { $ref: "../request.json" } },
+        }),
+      );
+      await writeFile(
+        join(specDir, "schemas", "request.json"),
+        JSON.stringify({
+          $id: "https://example.test/spec/request.json",
+          type: "object",
+          properties: { prompt: { type: "string" } },
+        }),
+      );
+      const loaded = createLoadedSpec(
+        { components: { schemas: { Detail: { $ref: "./schemas/hosted/detail.json" } } } },
+        join(specDir, "openapi.yaml"),
+      );
+
+      const parsed = await parseSpec(loaded);
+      expect(parsed.document.components?.schemas?.Detail).toMatchObject({
+        properties: { request: { properties: { prompt: { type: "string" } } } },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an $id URL no schema in the spec directory declares", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sourcey-parser-"));
+    try {
+      const specDir = join(root, "spec");
+      await mkdir(join(specDir, "schemas", "hosted"), { recursive: true });
+      await writeFile(
+        join(specDir, "schemas", "hosted", "detail.json"),
+        JSON.stringify({
+          $id: "https://example.test/spec/hosted/detail.json",
+          type: "object",
+          properties: { request: { $ref: "../request.json" } },
+        }),
+      );
+      // The file sits where the URL points, but declares another identity.
+      await writeFile(
+        join(specDir, "schemas", "request.json"),
+        JSON.stringify({ $id: "https://elsewhere.test/request.json", type: "object" }),
+      );
+      const loaded = createLoadedSpec(
+        { components: { schemas: { Detail: { $ref: "./schemas/hosted/detail.json" } } } },
+        join(specDir, "openapi.yaml"),
+      );
+
+      await expect(parseSpec(loaded)).rejects.toThrow("Failed to parse OpenAPI spec");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("stamps dereferenced schemas with their ref name", async () => {
     const root = await mkdtemp(join(tmpdir(), "sourcey-parser-"));
     try {

@@ -1,6 +1,7 @@
 import { $RefParser } from "@apidevtools/json-schema-ref-parser";
 import { readFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, extname, isAbsolute, posix, relative, resolve } from "node:path";
+import { load } from "js-yaml";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { LoadedSpec, OpenApiDocument, ParsedSpec } from "./types.js";
 
@@ -53,22 +54,67 @@ function createConfinedFileResolver(loaded: LoadedSpec):
     } {
   const root = localSpecRoot(loaded.source);
   if (!root) return false;
+  // Every local document read so far, kept to map a schema's `$id` URLs back to local files.
+  const documents = new Map<string, Buffer>();
+  const ids = new Map<string, string | null>();
+  const readLocal = async (path: string): Promise<Buffer> => {
+    const bytes = documents.get(path) ?? (await readFile(path));
+    documents.set(path, bytes);
+    return bytes;
+  };
+  const idOf = (path: string, bytes: Buffer): string | null => {
+    if (!ids.has(path)) ids.set(path, declaredId(path, bytes));
+    return ids.get(path) ?? null;
+  };
 
   return {
     order: 1,
     canRead(file) {
-      return filePathFromRef(file.url) !== null;
+      return filePathFromRef(file.url) !== null || /^https?:/i.test(file.url);
     },
     async read(file) {
       const filePath = filePathFromRef(file.url);
-      if (!filePath) throw new Error(`Unsupported external $ref URI: ${file.url}`);
-      const resolved = resolve(filePath);
-      if (!isWithinRoot(root, resolved)) {
-        throw new Error(`External $ref resolves outside the spec directory: ${file.url}`);
+      if (filePath) {
+        const resolved = resolve(filePath);
+        if (!isWithinRoot(root, resolved)) {
+          throw new Error(`External $ref resolves outside the spec directory: ${file.url}`);
+        }
+        return readLocal(resolved);
       }
-      return readFile(resolved);
+      // A schema's `$id` makes the relative refs inside it absolute URLs. One resolves to a local
+      // file only when it lies where a document already read places it, inside the spec
+      // directory, and declares exactly that `$id`. Nothing is fetched.
+      const target = withoutFragment(file.url);
+      for (const [path, bytes] of [...documents]) {
+        const id = idOf(path, bytes);
+        if (!id || new URL(id).origin !== new URL(target).origin) continue;
+        const candidate = resolve(
+          dirname(path),
+          posix.relative(posix.dirname(new URL(id).pathname), new URL(target).pathname),
+        );
+        if (!isWithinRoot(root, candidate)) continue;
+        const found = await readLocal(candidate).catch(() => null);
+        if (found && idOf(candidate, found) === target) return found;
+      }
+      throw new Error(`External $ref is not a schema in the spec directory: ${file.url}`);
     },
   };
+}
+
+/** The absolute `$id` a JSON or YAML schema declares at its root, without a fragment. */
+function declaredId(path: string, bytes: Buffer): string | null {
+  try {
+    const text = bytes.toString("utf8");
+    const value = extname(path) === ".json" ? JSON.parse(text) : load(text);
+    const id = isRecord(value) ? value["$id"] : undefined;
+    return typeof id === "string" && /^https?:/i.test(id) ? withoutFragment(id) : null;
+  } catch {
+    return null;
+  }
+}
+
+function withoutFragment(url: string): string {
+  return url.split("#", 1)[0] ?? url;
 }
 
 function localSpecRoot(source: string): string | null {
