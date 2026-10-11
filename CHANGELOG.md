@@ -2,6 +2,19 @@
 
 All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## 3.6.13 - 2026-10-12
+
+### Fixed
+
+- Link every Rust API symbol to the page and anchor that renders it. Symbol links left the crate's root module out of the page name and pointed impl and trait members at anchors their pages do not render, so they resolved under a doubled `rust-api/` directory and failed.
+- Link a Rust API tab's landing page by the path the site writes it to, in every `prettyUrls` mode.
+- Resolve a JSON Schema's `$id`-relative `$ref` to the local schema that declares that `$id`, without fetching it, so specs whose schemas carry `$id` keep building with `json-schema-ref-parser` 16.
+
+### Changed
+
+- Apply the saved theme from an external `sourcey-theme.js` in `<head>` instead of an inline script, so a Content-Security-Policy without `'unsafe-inline'` no longer blocks it.
+- Update dependencies, including `@apidevtools/json-schema-ref-parser` 16. Sourcey now requires Node.js 22.19 or newer.
+
 ## 3.6.12 - 2026-09-30
 
 ### Added
