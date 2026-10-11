@@ -119,13 +119,7 @@ export function Head() {
       {site.theme.name !== "reader" && site.customCSS && (
         <style dangerouslySetInnerHTML={{ __html: site.customCSS }} />
       )}
-      {site.theme.name !== "reader" && (
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var t=localStorage.getItem('sourcey-theme');if(t==='dark')document.documentElement.classList.add('dark')})()`,
-          }}
-        />
-      )}
+      {site.theme.name !== "reader" && <script src={`${options.assetBase}sourcey-theme.js`} />}
       <link rel="stylesheet" href={`${options.assetBase}sourcey.css`} />
       {site.theme.name === "reader" && site.customCSS && (
         <style dangerouslySetInnerHTML={{ __html: site.customCSS }} />

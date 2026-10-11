@@ -11,6 +11,8 @@ export function resolveThemeAssets(name: ThemeName) {
   const theme = themeDefinitions[name];
   return {
     clientEntry: resolve(root, tree, `client/${theme.client}.${source ? "ts" : "js"}`),
+    /** The saved-theme script every page but the reader's loads in <head>. */
+    themeInit: resolve(root, tree, "client/theme-init.js"),
     foundationCss: resolve(root, tree, "themes/default/main.css"),
     sourceyCssPaths: theme.css.map((css) => resolve(root, tree, "themes", css)),
   };

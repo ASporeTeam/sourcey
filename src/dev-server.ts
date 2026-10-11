@@ -456,6 +456,7 @@ export async function startDevServer(options: DevServerOptions): Promise<void> {
       foundationCss: tailwindCssPath,
       sourceyCssPaths,
       clientEntry,
+      themeInit,
     } = resolveThemeAssets(config.theme.name);
 
     html = html.replace(
@@ -469,6 +470,10 @@ export async function startDevServer(options: DevServerOptions): Promise<void> {
     html = html.replace(
       /<script src="[^"]*sourcey\.js"\s*\/?>/,
       `<script type="module" src="/@fs${clientEntry}"></script>`,
+    );
+    html = html.replace(
+      /<script src="[^"]*sourcey-theme\.js"><\/script>/,
+      `<script src="/@fs${themeInit}"></script>`,
     );
 
     return html;

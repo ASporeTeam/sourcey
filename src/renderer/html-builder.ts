@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as viteBuild } from "vite";
@@ -186,7 +186,7 @@ function resolveRenderHref(pathOrUrl: string, assetBase: string, site: SiteConfi
  * Same plugins as the dev server — preact() + tailwindcss().
  */
 async function buildAssets(outputDir: string, theme: ThemeName): Promise<void> {
-  const { clientEntry, sourceyCssPaths } = resolveThemeAssets(theme);
+  const { clientEntry, sourceyCssPaths, themeInit } = resolveThemeAssets(theme);
 
   await viteBuild({
     root: projectRoot,
@@ -218,4 +218,5 @@ async function buildAssets(outputDir: string, theme: ThemeName): Promise<void> {
   ).join("\n");
   const builtCSS = await readFile(resolve(outputDir, "sourcey.css"), "utf-8").catch(() => "");
   await writeFile(resolve(outputDir, "sourcey.css"), builtCSS + "\n" + componentCSS, "utf-8");
+  await copyFile(themeInit, resolve(outputDir, "sourcey-theme.js"));
 }

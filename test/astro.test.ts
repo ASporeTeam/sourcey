@@ -230,10 +230,18 @@ describe("sourcey/astro", () => {
       expect(existsSync(resolve(outputDir, "docs/introduction.html"))).toBe(true);
       expect(existsSync(resolve(outputDir, "docs/sourcey.css"))).toBe(true);
       expect(existsSync(resolve(outputDir, "docs/sourcey.js"))).toBe(true);
+      expect(existsSync(resolve(outputDir, "docs/sourcey-theme.js"))).toBe(true);
 
       const rootAlias = await readFile(resolve(outputDir, "docs.html"), "utf-8");
       expect(rootAlias).toContain('href="/docs/sourcey.css"');
       expect(rootAlias).toContain('src="/docs/sourcey.js"');
+      // The saved theme applies from <head>, and no page carries an inline script a strict
+      // Content-Security-Policy would block.
+      const head = rootAlias.slice(0, rootAlias.indexOf("</head>"));
+      expect(head).toContain('<script src="/docs/sourcey-theme.js"></script>');
+      for (const [, attributes] of rootAlias.matchAll(/<script([^>]*)>(?!<\/script>)/g)) {
+        expect(attributes, "inline executable script").toMatch(/\bsrc=|type="application\/ld\+json"/);
+      }
       expect(rootAlias).toContain('content="/docs/search-index.json"');
 
       const introduction = await readFile(resolve(outputDir, "docs/introduction.html"), "utf-8");

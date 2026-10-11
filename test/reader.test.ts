@@ -114,7 +114,7 @@ describe("reader theme", () => {
     expect(index).toContain("See this contract in use.");
     expect(index).toContain("Edit this contract");
     expect(index).not.toContain("fonts.googleapis.com");
-    expect(index).not.toContain("localStorage.getItem('sourcey-theme')");
+    expect(index).not.toContain("sourcey-theme.js");
     expect(index).not.toContain("MailSchema");
     expect(chapter).toContain('href="../"');
     expect(chapter).toContain('href="/contribute/"');
