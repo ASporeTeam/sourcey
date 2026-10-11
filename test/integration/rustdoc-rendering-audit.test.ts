@@ -94,6 +94,28 @@ describe("rustdoc rendering audit", () => {
     }
   });
 
+  it("links every symbol to a page this tab builds, at an anchor that page renders", async () => {
+    const result = await loadResult();
+    const anchors = new Map(
+      [...result.pages].map(([slug, page]) => [
+        slug,
+        new Set([...page.html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => id)),
+      ]),
+    );
+    const links = [...result.pages.values()].flatMap((page) =>
+      [...page.html.matchAll(/href="rust-api\/([^"#]+)\.html(?:#([^"]*))?"/g)].map(
+        ([, slug, anchor]) => ({ slug, anchor }),
+      ),
+    );
+    expect(links.length).toBeGreaterThan(0);
+    for (const { slug, anchor } of links) {
+      expect(anchors.has(slug), `link to a page the tab does not build: ${slug}`).toBe(true);
+      if (anchor) {
+        expect(anchors.get(slug)?.has(anchor), `no #${anchor} on ${slug}`).toBe(true);
+      }
+    }
+  });
+
   it("emits a real workspace index page using shared cards (not the empty fallback)", async () => {
     const result = await loadResult();
     const index = result.pages.get("index")!;

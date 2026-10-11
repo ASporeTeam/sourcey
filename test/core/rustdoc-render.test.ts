@@ -10,6 +10,8 @@ import {
   renderModulePage,
   renderSignature,
   resolveIntraDocLinks,
+  type RustItemPage,
+  rustItemPages,
   __internals,
 } from "../../src/core/rustdoc-render.js";
 import type { CrateSpec, Item, Signature } from "../../src/core/rustdoc-types.js";
@@ -27,6 +29,7 @@ const baseCtx = () => ({
   itemsById: new Map<string, Item>(),
   externalCrates: new Map(),
   tabSlug: "rust-api",
+  itemPages: new Map<string, RustItemPage>(),
   sourceLinks: {},
   diagnostics: [],
 });
@@ -280,14 +283,24 @@ describe("intra-doc link resolver", () => {
       doctests: [],
     };
     ctx.itemsById.set(item.id, item);
+    // A module path starts with the crate's root module, as rustdoc names it.
+    ctx.crate.modules.push({
+      id: "root",
+      path: ["basic"],
+      docs_markdown: null,
+      doc_aliases: [],
+      item_ids: [item.id],
+      sub_module_paths: [],
+      source: null,
+    });
+    ctx.itemPages = rustItemPages(ctx.crate, ctx.itemsById);
     const md = "See [`Widget`] and also [`Missing`].";
     const { html, unresolved } = resolveIntraDocLinks(
       md,
       { Widget: { kind: "internal", id: item.id } },
       ctx,
     );
-    expect(html).toContain("struct.Widget");
-    expect(html).toContain("rust-api/");
+    expect(html).toContain('href="rust-api/pkg-basic-basic.html#struct.Widget"');
     expect(html).toContain('title="unresolved intra-doc link"');
     expect(unresolved).toEqual(["Missing"]);
   });

@@ -119,6 +119,7 @@ export async function assembleSite(config: ResolvedConfig): Promise<SiteAssembly
           editBranch: config.editBranch,
           editBasePath: tab.source.config.sourceBasePath,
         },
+        config.prettyUrls,
       );
       rustdocDiagnostics.push(...diagnostics);
 

@@ -37,6 +37,18 @@ describe("loadRustdocTab snapshot mode", () => {
     expect(errors).toEqual([]);
   });
 
+  it("links the tab's pages by the paths the site writes them to", async () => {
+    // The tab's landing page is written as `rust-api.html` unless pretty URLs make it a directory.
+    const hrefs = async (prettyUrls: false | "slash" | "strip") => {
+      const result = await loadRustdocTab(snapshotConfig(), "rust-api", "Rust API", {}, prettyUrls);
+      const crateOverview = result.navTab.groups.at(-1)?.items[0]?.href;
+      return [result.navTab.href, crateOverview];
+    };
+    expect(await hrefs(false)).toEqual(["rust-api.html", "rust-api/pkg-basic.html"]);
+    expect(await hrefs("strip")).toEqual(["rust-api", "rust-api/pkg-basic"]);
+    expect(await hrefs("slash")).toEqual(["rust-api/", "rust-api/pkg-basic/"]);
+  });
+
   it("emits a crate index page and the doctests aggregation page", async () => {
     const result = await loadRustdocTab(snapshotConfig(), "rust-api", "Rust API");
     expect(result.pages.has("pkg-basic")).toBe(true);

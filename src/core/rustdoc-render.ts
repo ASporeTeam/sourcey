@@ -36,6 +36,8 @@ export interface RenderContext {
   itemsById: Map<string, Item>;
   externalCrates: Map<number, ExternalCrateRef>;
   tabSlug: string;
+  /** Where each item of this crate renders: its module page and anchor (`rustItemPages`). */
+  itemPages: ReadonlyMap<string, RustItemPage>;
   sourceLinks: {
     repo?: string;
     editBranch?: string;
@@ -255,18 +257,8 @@ function typePathHref(
       [...ctx.itemsById.values()].find(
         (i) => i.name === name && i.path.join("::") === target.path.join("::"),
       ) ?? [...ctx.itemsById.values()].find((i) => i.name === name);
-    if (candidate) {
-      const crateName = candidate.path[0] ?? ctx.crate.name;
-      const modulePath = candidate.path.slice(1, -1);
-      const anchorFragment = itemAnchor(candidate);
-      return tabHref(ctx.tabSlug, pageSlugFor(crateName, modulePath)) + `#${anchorFragment}`;
-    }
-    // Last resort: guess from the inbound path.
-    const crateName = target.path[0] === ctx.crate.name ? ctx.crate.name : target.path[0];
-    const modulePath = target.path.slice(1, -1);
-    return (
-      tabHref(ctx.tabSlug, pageSlugFor(crateName, modulePath)) + `#${encodeURIComponent(name)}`
-    );
+    // An item this crate does not render gets no link rather than a guessed one.
+    return candidate ? itemPageHref(candidate, ctx) : null;
   }
   if (target.html_root_url) {
     return joinUrl(target.html_root_url, target.path.join("/"));
@@ -274,15 +266,92 @@ function typePathHref(
   return joinUrl("https://docs.rs", `${target.path[0] ?? ""}/latest/${target.path.join("/")}`);
 }
 
-function tabHref(tabSlug: string, slug: string): string {
-  if (!slug) return `${tabSlug}/`;
-  return `${tabSlug}/${slug}.html`;
-}
-
-function pageSlugFor(crateName: string, modulePath: string[]): string {
+/** The page a crate module renders on. A module path starts with the crate's root module. */
+export function rustModuleSlug(crateName: string, modulePath: readonly string[]): string {
   const base = `pkg-${slugifyId(crateName)}`;
   if (modulePath.length === 0) return base;
   return `${base}-${modulePath.map(slugifyId).join("-")}`;
+}
+
+export interface RustItemPage {
+  readonly slug: string;
+  /** The rendered element's id; null for a module, whose page is the target. */
+  readonly anchor: string | null;
+}
+
+/**
+ * Every item a crate renders, with the module page and anchor it renders under: each module's
+ * items, their impl and trait members, and their fields and variants (which render inside their
+ * parent, so they link to it).
+ */
+export function rustItemPages(
+  crate: CrateSpec,
+  itemsById: ReadonlyMap<string, Item>,
+): Map<string, RustItemPage> {
+  const pages = new Map<string, RustItemPage>();
+  const place = (id: string, page: RustItemPage) => {
+    if (!pages.has(id) && itemsById.has(id)) pages.set(id, page);
+  };
+  for (const module of crate.modules) {
+    pages.set(module.id, { slug: rustModuleSlug(crate.name, module.path), anchor: null });
+  }
+  for (const module of crate.modules) {
+    const slug = rustModuleSlug(crate.name, module.path);
+    for (const id of module.item_ids) {
+      const item = itemsById.get(id);
+      if (!item || item.inner.kind === "module") continue;
+      const own = { slug, anchor: itemAnchor(item) };
+      place(id, own);
+      for (const memberId of memberItemIds(item)) place(memberId, own);
+      for (const implId of collectOwnImplIds(item)) {
+        const impl = itemsById.get(implId);
+        if (impl?.inner.kind !== "impl") continue;
+        place(implId, own);
+        for (const memberId of impl.inner.items) {
+          const member = itemsById.get(memberId);
+          if (member) place(memberId, { slug, anchor: implMemberAnchor(member, false) });
+        }
+      }
+      if (item.inner.kind === "trait") {
+        for (const memberId of item.inner.items) {
+          const member = itemsById.get(memberId);
+          if (!member) continue;
+          const required = member.inner.kind === "function" && !member.inner.has_body;
+          place(memberId, { slug, anchor: implMemberAnchor(member, required) });
+        }
+      }
+    }
+  }
+  return pages;
+}
+
+/** Fields and variants: rendered inside their parent, without an anchor of their own. */
+function memberItemIds(item: Item): readonly string[] {
+  switch (item.inner.kind) {
+    case "struct":
+    case "union":
+      return item.inner.fields;
+    case "enum":
+      return item.inner.variants;
+    default:
+      return [];
+  }
+}
+
+/** A type's own impls; a trait's implementations belong to the types that implement it. */
+function collectOwnImplIds(item: Item): readonly string[] {
+  return item.inner.kind === "trait" ? [] : collectImplIds(item);
+}
+
+/**
+ * Tab-relative, like every generated page link: the site's link pass resolves it against the
+ * pages it builds and rewrites it for the linking page's depth and pretty-URL mode.
+ */
+function itemPageHref(item: Item, ctx: RenderContext): string | null {
+  const page = ctx.itemPages.get(item.id);
+  if (!page) return null;
+  const href = `${ctx.tabSlug}/${page.slug}.html`;
+  return page.anchor ? `${href}#${page.anchor}` : href;
 }
 
 function slugifyId(value: string): string {
@@ -331,14 +400,11 @@ export function resolveIntraDocLinks(
       }
       if (target.kind === "internal") {
         const item = ctx.itemsById.get(target.id);
-        if (!item) {
+        const href = item ? itemPageHref(item, ctx) : null;
+        if (!href) {
           unresolved.push(label);
           return `<code title="unresolved intra-doc link">${escapeHtml(label)}</code>`;
         }
-        const crateName = item.path[0] ?? ctx.crate.name;
-        const modulePath = item.path.slice(1, -1);
-        const href =
-          tabHref(ctx.tabSlug, pageSlugFor(crateName, modulePath)) + `#${itemAnchor(item)}`;
         return `<a class="rust-symbol" href="${escapeAttr(href)}">${display}</a>`;
       }
       const externalHref = externalLinkHref(target);

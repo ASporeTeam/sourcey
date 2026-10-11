@@ -12,7 +12,8 @@ import { toPublicPath, type PrettyUrls } from "../site-url.js";
  * prepends a `../` depth prefix at render time, so the value returned here
  * must be root-relative *without* a leading slash.
  */
-function navHref(outputPath: string, prettyUrls: PrettyUrls): string {
+/** A page's link from its output path, in the site's pretty-URL form. */
+export function navHref(outputPath: string, prettyUrls: PrettyUrls): string {
   return toPublicPath(outputPath, "", prettyUrls).replace(/^\//, "");
 }
 
