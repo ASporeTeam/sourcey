@@ -2,6 +2,14 @@
 
 All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## 3.6.14 - 2026-10-17
+
+### Fixed
+
+- Render Rust documentation tests once, in their original position between the surrounding paragraphs. Keep hidden setup behind the working Show hidden lines control.
+- Scope Rust documentation headings to their item and preserve the page's heading hierarchy.
+- Run the CLI image on Node.js 24, matching Sourcey's supported Node.js range.
+
 ## 3.6.13 - 2026-10-12
 
 ### Fixed

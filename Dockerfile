@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24-alpine
 ARG SOURCEY_VERSION=latest
 RUN npm install -g "sourcey@${SOURCEY_VERSION}" && npm cache clean --force
 WORKDIR /docs
