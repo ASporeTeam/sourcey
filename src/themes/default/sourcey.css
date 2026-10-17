@@ -2396,6 +2396,13 @@ h6[id] {
   margin: 0.75rem 0;
 }
 
+#sourcey .rust-doc > h5,
+#sourcey .rust-doc > h6 {
+  margin: 1.25rem 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
 #sourcey .rust-doctest-badges {
   display: flex;
   flex-wrap: wrap;
@@ -2437,13 +2444,13 @@ h6[id] {
 #sourcey .rust-doctest-run,
 #sourcey .rust-doctest-toggle-hidden {
   cursor: pointer;
-  padding: 0.2rem 0.6rem;
+  padding: 0.35rem 0.65rem;
   border-radius: 0.375rem;
   border: 1px solid rgb(var(--color-gray-300));
   background-color: rgb(var(--color-white));
   color: rgb(var(--color-gray-800));
   text-decoration: none;
-  line-height: 1;
+  line-height: 1.4;
 }
 #sourcey .rust-doctest-run:hover,
 #sourcey .rust-doctest-toggle-hidden:hover {

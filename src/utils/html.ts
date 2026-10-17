@@ -52,6 +52,9 @@ function hasRawControlOrSpace(value: string): boolean {
 
 export function sanitizeRenderedHtml(input: string): string {
   return sanitizeHtml(input, {
+    nonBooleanAttributes: sanitizeHtml.defaults.nonBooleanAttributes.filter(
+      (name) => name !== "hidden",
+    ),
     allowedTags: [
       ...sanitizeHtml.defaults.allowedTags,
       "button",
@@ -71,6 +74,7 @@ export function sanitizeRenderedHtml(input: string): string {
         "role",
         "tabindex",
         "title",
+        "hidden",
         "aria-expanded",
         "aria-hidden",
         "aria-label",

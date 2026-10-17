@@ -175,7 +175,13 @@ describe("anchor encoder", () => {
       feature_gates: [],
       attrs_structured: [],
       links: {},
-      inner: { kind: "use", source: "runx_parser::graph", name: "", target_id: null, is_glob: true },
+      inner: {
+        kind: "use",
+        source: "runx_parser::graph",
+        name: "",
+        target_id: null,
+        is_glob: true,
+      },
       doctests: [],
     };
 
@@ -230,9 +236,63 @@ describe("item and module rendering", () => {
       baseCtx(),
     );
 
-    expect(html).toContain("<h1");
+    expect(html).toContain('<h3 id="mod-basic-crate-docs"');
     expect(html).toContain("<strong>markdown</strong>");
     expect(html).not.toContain("# Crate docs");
+  });
+});
+
+describe("doctests in their documentation context", () => {
+  it("renders a hidden-line example once between its surrounding paragraphs", () => {
+    const ctx = baseCtx();
+    const item: Item = {
+      id: "example",
+      name: "greet",
+      path: ["basic", "greet"],
+      visibility: { kind: "public" },
+      source: null,
+      docs_markdown:
+        'Before the example.\n\n```text\nforeign block\n```\n\n# Examples\n\n```no_run\n# let name = "Ada";\nassert_eq!(name, "Ada");\n```\n\nAfter the example.',
+      doc_aliases: [],
+      deprecation: null,
+      stability: null,
+      feature_gates: [],
+      attrs_structured: [],
+      links: {},
+      inner: {
+        kind: "function",
+        signature: dummySig({ name: "greet" }),
+        generics: { params: [], where_predicates: [] },
+        is_const: false,
+        is_async: false,
+        is_unsafe: false,
+        has_body: true,
+      },
+      doctests: [
+        {
+          lang: "rust",
+          fence_attributes: ["no_run"],
+          display_code: 'assert_eq!(name, "Ada");\n',
+          executable_code: 'let name = "Ada";\nassert_eq!(name, "Ada");\n',
+          implicit_main_wrap: true,
+          source: null,
+          ordinal: 0,
+        },
+      ],
+    };
+    const html = renderItemHtml(item, ctx);
+    expect(html.match(/id="doctest-fn.greet-0"/g)).toHaveLength(1);
+    expect(html).toContain("foreign block");
+    expect(html).not.toContain("# let name");
+    expect(html).toContain('<h5 id="fn.greet-examples"');
+    expect(html).toMatch(/id="doctest-fn.greet-0-full" hidden/);
+    expect(html).toContain('data-target="#doctest-fn.greet-0-full"');
+    expect(html.indexOf("Before the example.")).toBeLessThan(
+      html.indexOf('id="doctest-fn.greet-0"'),
+    );
+    expect(html.indexOf('id="doctest-fn.greet-0"')).toBeLessThan(
+      html.indexOf("After the example."),
+    );
   });
 });
 

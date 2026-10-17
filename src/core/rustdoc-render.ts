@@ -522,7 +522,6 @@ export function renderItemHtml(item: Item, ctx: RenderContext): string {
   const infoRow = renderItemInfoRow(item, ctx);
   const signatureHtml = renderItemSignature(item, ctx);
   const docs = renderItemDocs(item, ctx);
-  const doctests = item.doctests.map((dt, idx) => renderDoctestBlock(item, dt, idx)).join("\n");
   const impls = renderItemImpls(item, ctx);
   return [
     `<section class="rust-item rust-${item.inner.kind} api-item">`,
@@ -536,7 +535,6 @@ export function renderItemHtml(item: Item, ctx: RenderContext): string {
     signatureHtml,
     callouts,
     docs,
-    doctests,
     impls,
     `</section>`,
   ]
@@ -620,7 +618,8 @@ function renderItemImpls(item: Item, ctx: RenderContext): string {
       }),
     );
     if (traitImpls.length > 0) parts.push(traitImpls.join("\n"));
-    if (traitRows.length > 0) parts.push(`<div class="rust-impl-rows">${traitRows.join("\n")}</div>`);
+    if (traitRows.length > 0)
+      parts.push(`<div class="rust-impl-rows">${traitRows.join("\n")}</div>`);
   }
   if (parts.length === 0) return "";
   return parts.join("\n");
@@ -708,7 +707,6 @@ function renderImplMember(member: Item, ctx: RenderContext, isRequiredTraitMetho
   const sigHtml = renderItemSignature(member, ctx);
   const callouts = renderStabilityCallouts(member);
   const docs = renderItemDocs(member, ctx);
-  const doctests = member.doctests.map((dt, idx) => renderDoctestBlock(member, dt, idx)).join("\n");
   const infoRow = renderItemInfoRow(member, ctx);
   const body = [
     infoRow,
@@ -718,7 +716,6 @@ function renderImplMember(member: Item, ctx: RenderContext, isRequiredTraitMetho
     sigHtml,
     callouts,
     docs,
-    doctests,
   ]
     .filter(Boolean)
     .join("\n");
@@ -726,7 +723,7 @@ function renderImplMember(member: Item, ctx: RenderContext, isRequiredTraitMetho
   return `<section class="rust-member api-member">${body}</section>`;
 }
 
-function renderItemDocs(item: Item, ctx: RenderContext): string {
+function renderItemDocs(item: Item, ctx: RenderContext, headingOffset = 4): string {
   if (!item.docs_markdown) return "";
   const links = item.links ?? {};
   const { html, unresolved } = resolveIntraDocLinks(item.docs_markdown, links, ctx);
@@ -740,7 +737,29 @@ function renderItemDocs(item: Item, ctx: RenderContext): string {
       line: item.source?.line_start ?? null,
     });
   }
-  return `<div class="docblock rust-doc">${renderMarkdown(html)}</div>`;
+  let ordinal = 0;
+  const rendered = renderMarkdown(html, {
+    headingOffset,
+    headingPrefix: `${itemAnchor(item)}-`,
+    code(token) {
+      const doctest = item.doctests[ordinal];
+      const info = (token.lang ?? "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      if (info[0]?.toLowerCase() === "rust") info.shift();
+      // The extractor owns which fences are doctests and their attributes.
+      // Match its next entry; foreign-language blocks keep normal rendering.
+      if (!doctest || info.join(",") !== doctest.fence_attributes.join(",")) {
+        return renderCodeBlock(token.text, token.lang);
+      }
+      return renderDoctestBlock(item, doctest, ordinal++);
+    },
+  });
+  if (ordinal !== item.doctests.length) {
+    throw new Error(`Doctest fences do not match the snapshot for ${item.path.join("::")}`);
+  }
+  return `<div class="docblock rust-doc">${rendered}</div>`;
 }
 
 function renderItemSignature(item: Item, ctx: RenderContext): string {
@@ -908,7 +927,15 @@ export function renderModulePage(
 ): ModulePageRender {
   const parts: string[] = [];
   if (module.docs_markdown) {
-    parts.push(`<div class="docblock rust-doc">${renderMarkdown(module.docs_markdown)}</div>`);
+    const moduleItem = ctx.itemsById.get(module.id);
+    parts.push(
+      moduleItem
+        ? renderItemDocs(moduleItem, ctx, 2)
+        : `<div class="docblock rust-doc">${renderMarkdown(module.docs_markdown, {
+            headingOffset: 2,
+            headingPrefix: `${module.id}-`,
+          })}</div>`,
+    );
   }
   const grouped = groupItemsForRendering(items);
   const sidebar: SidebarSection[] = [];

@@ -167,40 +167,51 @@ const iframeExtension: import("marked").MarkedExtension = {
   ],
 };
 
-/** Singleton Marked instance — code blocks get Shiki + prose wrapper, headings get IDs. */
-const marked = new Marked(videoExtension, iframeExtension, {
-  renderer: {
-    code({ text, lang }: Tokens.Code): string {
-      return renderCodeBlock(text, lang);
+interface MarkdownRenderOptions {
+  code?: (token: Tokens.Code) => string;
+  headingOffset?: number;
+  headingPrefix?: string;
+}
+
+/** Keep adapter rendering on the same Markdown, links and sanitization path. */
+function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
+  return new Marked(videoExtension, iframeExtension, {
+    renderer: {
+      code(token: Tokens.Code): string {
+        return options.code ? options.code(token) : renderCodeBlock(token.text, token.lang);
+      },
+      heading({ tokens, depth }: Tokens.Heading): string {
+        const text = tokens.map((t) => ("text" in t ? t.text : t.raw)).join("");
+        const id = `${options.headingPrefix ?? ""}${htmlId(text)}`;
+        const level = Math.min(6, depth + (options.headingOffset ?? 0));
+        return `<h${level} id="${escapeAttr(id)}">${this.parser.parseInline(tokens)}</h${level}>\n`;
+      },
+      table(token: Tokens.Table): string {
+        const header = token.header
+          .map((cell) => `<th>${this.parser.parseInline(cell.tokens)}</th>`)
+          .join("");
+        const body = token.rows
+          .map(
+            (row) =>
+              `<tr>${row.map((cell) => `<td>${this.parser.parseInline(cell.tokens)}</td>`).join("")}</tr>`,
+          )
+          .join("\n");
+        return `<div class="table-wrap"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+      },
+      link({ href, title, tokens }: Tokens.Link): string {
+        const text = this.parser.parseInline(tokens);
+        const linkUrl = safeUrl(href);
+        if (!linkUrl) return text;
+        const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+        const isExternal = linkUrl.startsWith("http://") || linkUrl.startsWith("https://");
+        const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : "";
+        return `<a href="${escapeAttr(linkUrl)}"${titleAttr}${target}>${text}</a>`;
+      },
     },
-    heading({ tokens, depth }: Tokens.Heading): string {
-      const text = tokens.map((t) => ("text" in t ? t.text : t.raw)).join("");
-      const id = htmlId(text);
-      return `<h${depth} id="${id}">${this.parser.parseInline(tokens)}</h${depth}>\n`;
-    },
-    table(token: Tokens.Table): string {
-      const header = token.header
-        .map((cell) => `<th>${this.parser.parseInline(cell.tokens)}</th>`)
-        .join("");
-      const body = token.rows
-        .map(
-          (row) =>
-            `<tr>${row.map((cell) => `<td>${this.parser.parseInline(cell.tokens)}</td>`).join("")}</tr>`,
-        )
-        .join("\n");
-      return `<div class="table-wrap"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
-    },
-    link({ href, title, tokens }: Tokens.Link): string {
-      const text = this.parser.parseInline(tokens);
-      const linkUrl = safeUrl(href);
-      if (!linkUrl) return text;
-      const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
-      const isExternal = linkUrl.startsWith("http://") || linkUrl.startsWith("https://");
-      const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : "";
-      return `<a href="${escapeAttr(linkUrl)}"${titleAttr}${target}>${text}</a>`;
-    },
-  },
-});
+  });
+}
+
+const marked = createMarkdownParser();
 
 /**
  * Lex markdown into tokens using the shared Sourcey Marked instance.
@@ -306,9 +317,10 @@ function findMarkdownHrefEnd(input: string, start: number): number {
 /**
  * Render Markdown to HTML.
  */
-export function renderMarkdown(input?: string): string {
+export function renderMarkdown(input?: string, options?: MarkdownRenderOptions): string {
   if (!input) return "";
-  return sanitizeRenderedHtml(marked.parse(input, { async: false }) as string);
+  const parser = options ? createMarkdownParser(options) : marked;
+  return sanitizeRenderedHtml(parser.parse(input, { async: false }) as string);
 }
 
 /**

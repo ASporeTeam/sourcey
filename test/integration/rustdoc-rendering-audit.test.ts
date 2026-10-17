@@ -94,6 +94,19 @@ describe("rustdoc rendering audit", () => {
     }
   });
 
+  it("keeps hidden setup out of the ordinary prose and preserves the hidden control", async () => {
+    const result = await loadResult();
+    const module = result.pages.get("pkg-basic-basic");
+    expect(module).toBeDefined();
+    const html = module!.html;
+    expect(html.match(/id="doctest-struct.Widget-0"/g)).toHaveLength(1);
+    expect(html).not.toContain("# use basic::Widget;");
+    expect(html).toMatch(/id="doctest-struct.Widget-0-full" hidden/);
+    expect(html).toContain('data-target="#doctest-struct.Widget-0-full"');
+    expect(html).toContain('id="struct.Widget-examples"');
+    expect(html).not.toContain('<h1 id="examples"');
+  });
+
   it("links every symbol to a page this tab builds, at an anchor that page renders", async () => {
     const result = await loadResult();
     const anchors = new Map(
