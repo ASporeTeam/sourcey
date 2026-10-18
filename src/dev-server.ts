@@ -1,5 +1,5 @@
 import { resolveThemeAssets } from "./themes/assets.js";
-import { createServer as createViteServer, type InlineConfig } from "vite";
+import { createServer as createViteServer, normalizePath, type InlineConfig } from "vite";
 import { resolve, dirname, extname, basename, relative } from "node:path";
 import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,11 @@ import tailwindcss from "@tailwindcss/vite";
 import preact from "@preact/preset-vite";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** Vite's URL for a file outside the root, on every platform: `/@fs/C:/x` on Windows. */
+function fsUrl(path: string): string {
+  return `/@fs/${normalizePath(path).replace(/^\/+/, "")}`;
+}
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -462,19 +467,19 @@ export async function startDevServer(options: DevServerOptions): Promise<void> {
 
     html = html.replace(
       /<link rel="stylesheet" href="[^"]*sourcey\.css"\s*\/?>/,
-      `<link rel="stylesheet" href="/@fs${tailwindCssPath}" />\n${sourceyCssPaths.map((path) => `<link rel="stylesheet" href="/@fs${path}?direct" />`).join("\n")}`,
+      `<link rel="stylesheet" href="${fsUrl(tailwindCssPath)}" />\n${sourceyCssPaths.map((path) => `<link rel="stylesheet" href="${fsUrl(path)}?direct" />`).join("\n")}`,
     );
     html = html.replace(
       /<script src="[^"]*sourcey\.js"[^>]*><\/script>/,
-      `<script type="module" src="/@fs${clientEntry}"></script>`,
+      `<script type="module" src="${fsUrl(clientEntry)}"></script>`,
     );
     html = html.replace(
       /<script src="[^"]*sourcey\.js"\s*\/?>/,
-      `<script type="module" src="/@fs${clientEntry}"></script>`,
+      `<script type="module" src="${fsUrl(clientEntry)}"></script>`,
     );
     html = html.replace(
       /<script src="[^"]*sourcey-theme\.js"><\/script>/,
-      `<script src="/@fs${themeInit}"></script>`,
+      `<script src="${fsUrl(themeInit)}"></script>`,
     );
 
     return html;
@@ -511,7 +516,10 @@ export async function startDevServer(options: DevServerOptions): Promise<void> {
       },
     },
     plugins: [
-      preact(),
+      // Only Sourcey's own TSX needs Preact's JSX transform. A published package
+      // renders from compiled JS, and the preset's dependency pre-bundling cannot
+      // find preact from a project whose package manager does not hoist it.
+      ...(hasSrc ? [preact()] : []),
       tailwindcss(),
       sourceyPlugin({
         watchPaths,

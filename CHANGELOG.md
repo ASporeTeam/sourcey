@@ -19,6 +19,7 @@ All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepa
 - A description taken from the body no longer repeats under the title. When the paragraph opens the page it becomes the lede; otherwise the page shows no lede.
 - MkDocs pages read as MkDocs renders them. Code inside fences and code spans stays as written, where `std::vector<int>` used to show as `std::vector&lt;int&gt;`. `attr_list` blocks such as `{ role="img" }` no longer print as text (#260), Markdown inside a `markdown` HTML block renders, as in Material's grids and cards, and Material icon shortcodes drop out. `mkdocs.yml` files with any Python or environment tag load, including `!!python/object/apply:`.
 - "On this page" shows headings with inline HTML or entities as readers see them, `std::hash<json>` rather than its markup. Heading ids are unchanged.
+- `sourcey dev` no longer warns that it cannot resolve `preact` under pnpm and other package managers that do not hoist dependencies. An installed Sourcey renders from compiled JavaScript and skips Preact's dev preset. Dev asset URLs are also well formed on Windows (#275).
 
 ## 3.6.14 - 2026-10-17
 
