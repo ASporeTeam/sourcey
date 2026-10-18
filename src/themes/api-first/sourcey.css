@@ -3,8 +3,8 @@
  *
  * Loaded after the default stylesheet and scoped to the theme attribute on
  * the page. The frame runs edge to edge: a tinted header band, a sidebar
- * pinned to the left edge, and on guide pages a centred reading column with
- * the table of contents beside it. API and MCP operations split into a
+ * pinned to the left edge, and guide pages on the same left edge as the API,
+ * a capped reading column with the table of contents beside it. API and MCP operations split into a
  * content column and an examples column. Accents use the site's primary
  * colour, and the neutral scale is shaded from it (see utils/palette.ts).
  * Widths come from theme.layout and every token stays overridable.
@@ -30,9 +30,11 @@
 #sourcey [data-sourcey-theme="api-first"] .api-first-main {
   min-width: 0;
 }
+/* Guide and spec pages share one left edge; guides cap their line length and
+   keep the table of contents beside the text. */
 #sourcey [data-sourcey-theme="api-first"] .api-first-page {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 3rem;
   padding: 0 1.25rem;
 }
@@ -45,12 +47,15 @@
 #sourcey [data-sourcey-theme="api-first"] .api-first-spec {
   padding: 0 1.25rem;
 }
+#sourcey [data-sourcey-theme="api-first"] .api-first-spec > #content-area {
+  padding: 0;
+}
 @media (min-width: 1024px) {
   #sourcey [data-sourcey-theme="api-first"] .api-first-main {
     padding-left: var(--sidebar-width);
   }
   #sourcey [data-sourcey-theme="api-first"] .api-first-page {
-    padding: 2.5rem 3rem 0;
+    padding: 2.5rem 3.5rem 0;
   }
   #sourcey [data-sourcey-theme="api-first"] .api-first-spec {
     max-width: 96rem;

@@ -352,9 +352,10 @@ function MinimalLayout() {
 
 /**
  * The full-width frame: the sidebar is pinned to the left edge and the page
- * fills the rest of the window. Guide pages centre a reading column with the
- * table of contents beside it; spec pages give each operation the full width
- * for its content and example columns.
+ * fills the rest of the window. Guide and spec pages share one left edge:
+ * guides cap their reading column and keep the table of contents beside it;
+ * spec pages give each operation the full width for its content and example
+ * columns.
  */
 function ApiFirstLayout() {
   const page = useContext(PageContext);
