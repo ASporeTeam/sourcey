@@ -30,11 +30,12 @@
 #sourcey [data-sourcey-theme="api-first"] .api-first-main {
   min-width: 0;
 }
-/* Guide and spec pages share one left edge; guides cap their line length and
-   keep the table of contents beside the text. */
+/* Guide and spec pages share both edges: guides cap their line length on the
+   left and pin the table of contents to the right edge the API's examples
+   column uses. */
 #sourcey [data-sourcey-theme="api-first"] .api-first-page {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 3rem;
   padding: 0 1.25rem;
 }
@@ -54,9 +55,7 @@
   #sourcey [data-sourcey-theme="api-first"] .api-first-main {
     padding-left: var(--sidebar-width);
   }
-  #sourcey [data-sourcey-theme="api-first"] .api-first-page {
-    padding: 2.5rem 3.5rem 0;
-  }
+  #sourcey [data-sourcey-theme="api-first"] .api-first-page,
   #sourcey [data-sourcey-theme="api-first"] .api-first-spec {
     max-width: 96rem;
     padding: 2.5rem 3.5rem 0;
@@ -106,14 +105,28 @@
   color: rgb(var(--color-gray-200));
 }
 #sourcey [data-sourcey-theme="api-first"] .nav-link.active {
+  position: relative;
   background: transparent;
   color: rgb(var(--color-primary-ink));
   font-weight: 500;
   text-shadow: none;
 }
+#sourcey [data-sourcey-theme="api-first"] .nav-link.active::before {
+  content: "";
+  position: absolute;
+  top: 0.375rem;
+  bottom: 0.375rem;
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: rgb(var(--color-primary-ink));
+}
 .dark #sourcey [data-sourcey-theme="api-first"] .nav-link.active {
   background: transparent;
   color: rgb(var(--color-primary-light));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .nav-link.active::before {
+  background: rgb(var(--color-primary-light));
 }
 
 /* ── Reading column ───────────────────────────────────────────────── */

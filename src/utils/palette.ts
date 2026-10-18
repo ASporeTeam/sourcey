@@ -18,14 +18,17 @@ const NEUTRAL_STEPS = [
   [400, 0.71, 0.024],
   [500, 0.555, 0.028],
   [600, 0.445, 0.03],
-  [700, 0.37, 0.032],
-  [800, 0.28, 0.03],
-  [900, 0.21, 0.026],
-  [950, 0.15, 0.02],
+  // The darkest steps carry half the tint: they fill code cards and the
+  // dark page, which read as charcoal with a hint of the brand, not as brown
+  // or navy.
+  [700, 0.37, 0.016],
+  [800, 0.28, 0.015],
+  [900, 0.21, 0.013],
+  [950, 0.15, 0.01],
 ] as const;
 
 /** The dark-mode page background, one step below the darkest neutral. */
-const DARK_BACKGROUND = [0.14, 0.012] as const;
+const DARK_BACKGROUND = [0.14, 0.006] as const;
 
 /** A primary with this OKLCH chroma or more tints the scale at full strength. */
 const FULL_TINT_CHROMA = 0.1;
