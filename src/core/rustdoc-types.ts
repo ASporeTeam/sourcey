@@ -255,6 +255,8 @@ export interface TypePath {
   display: string;
   external: boolean;
   html_root_url: string | null;
+  /** rustdoc's kind for the target, which names its page; absent in older snapshots. */
+  item_kind?: string;
 }
 
 export interface Generics {
@@ -273,7 +275,14 @@ export interface GenericParam {
 
 export type LinkTarget =
   | { kind: "internal"; id: ItemId }
-  | { kind: "external"; crate_name: string; path: string[]; html_root_url: string | null };
+  | {
+      kind: "external";
+      crate_name: string;
+      path: string[];
+      html_root_url: string | null;
+      /** rustdoc's kind for the target, which names its page; absent in older snapshots. */
+      item_kind?: string;
+    };
 
 export interface Doctest {
   lang: string;

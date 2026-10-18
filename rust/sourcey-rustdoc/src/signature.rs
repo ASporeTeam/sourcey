@@ -133,6 +133,7 @@ fn type_path_target(ty: &RdType, links: &LinkContext<'_>) -> Option<TypePath> {
                     display,
                     external: r.external,
                     html_root_url: r.html_root_url,
+                    item_kind: Some(r.kind),
                 }),
                 None => Some(TypePath {
                     crate_id: 0,
@@ -140,6 +141,7 @@ fn type_path_target(ty: &RdType, links: &LinkContext<'_>) -> Option<TypePath> {
                     display,
                     external: false,
                     html_root_url: None,
+                    item_kind: None,
                 }),
             }
         }

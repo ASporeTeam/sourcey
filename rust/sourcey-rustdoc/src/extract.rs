@@ -188,6 +188,7 @@ fn lower_item(
                                 .unwrap_or_default(),
                             path: resolved.path,
                             html_root_url: resolved.html_root_url,
+                            item_kind: Some(resolved.kind),
                         }
                     } else {
                         LinkTarget::Internal { id: resolved.id }
@@ -451,6 +452,7 @@ fn type_path_from_resolved(p: &rustdoc_types::Path, links: &LinkContext<'_>) -> 
     let resolved = links.resolve_id(&p.id);
     TypePath {
         crate_id: resolved.as_ref().map(|r| r.crate_id).unwrap_or(0),
+        item_kind: resolved.as_ref().map(|r| r.kind.clone()),
         path: resolved.map(|r| r.path).unwrap_or_else(|| vec![p.path.clone()]),
         display: p.path.clone(),
         external: false,
@@ -468,6 +470,7 @@ fn type_path_for_type(ty: &rustdoc_types::Type, links: &LinkContext<'_>) -> Type
         display: render_type(ty),
         external: false,
         html_root_url: None,
+        item_kind: None,
     }
 }
 

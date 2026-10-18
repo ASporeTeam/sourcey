@@ -9,12 +9,13 @@ import {
   renderItemHtml,
   renderModulePage,
   renderSignature,
-  resolveIntraDocLinks,
+  intraDocReferences,
   type RustItemPage,
   rustItemPages,
   __internals,
 } from "../../src/core/rustdoc-render.js";
 import type { CrateSpec, Item, Signature } from "../../src/core/rustdoc-types.js";
+import { renderMarkdown } from "../../src/utils/markdown.js";
 
 const baseCtx = () => ({
   crate: {
@@ -318,7 +319,7 @@ describe("signature formatter", () => {
 });
 
 describe("intra-doc link resolver", () => {
-  it("rewrites known labels and surfaces unresolved ones", () => {
+  it("links the labels rustdoc resolved and leaves code and other brackets as written", () => {
     const ctx = baseCtx();
     const item: Item = {
       id: "id-1",
@@ -354,15 +355,50 @@ describe("intra-doc link resolver", () => {
       source: null,
     });
     ctx.itemPages = rustItemPages(ctx.crate, ctx.itemsById);
-    const md = "See [`Widget`] and also [`Missing`].";
-    const { html, unresolved } = resolveIntraDocLinks(
-      md,
-      { Widget: { kind: "internal", id: item.id } },
+    const md = [
+      "See [`Widget`], [the widget](crate::Widget), [`Hidden`] and [`Missing`].",
+      "",
+      "Wraps any [`std::error::Error`].",
+      "",
+      "[![github]][github]",
+      "",
+      "[github]: https://github.com/example/basic",
+      "",
+      "```toml",
+      "[dependencies]",
+      "```",
+      "",
+      "```rust",
+      "#[derive(Widget)]",
+      "struct Thing;",
+      "```",
+    ].join("\n");
+    const { definitions, resolveHref, unresolved } = intraDocReferences(
+      {
+        "`Widget`": { kind: "internal", id: item.id },
+        "crate::Widget": { kind: "internal", id: item.id },
+        "`Hidden`": { kind: "internal", id: "not-rendered" },
+        "std::error::Error": {
+          kind: "external",
+          crate_name: "core",
+          path: ["core", "error", "Error"],
+          html_root_url: "https://doc.rust-lang.org/nightly/",
+          item_kind: "trait",
+        },
+      },
       ctx,
     );
-    expect(html).toContain('href="rust-api/pkg-basic-basic.html#struct.Widget"');
-    expect(html).toContain('title="unresolved intra-doc link"');
-    expect(unresolved).toEqual(["Missing"]);
+    const html = renderMarkdown(`${md}\n\n${definitions}`, { resolveHref });
+
+    expect(html).toContain('<a href="rust-api/pkg-basic-basic.html#struct.Widget"><code>Widget</code></a>');
+    expect(html).toContain('<a href="rust-api/pkg-basic-basic.html#struct.Widget">the widget</a>');
+    expect(html).toContain("<code>Hidden</code> and");
+    expect(html).toContain("[<code>Missing</code>]");
+    expect(html).toContain('<a href="https://doc.rust-lang.org/stable/core/error/trait.Error.html" target="_blank" rel="noopener"><code>std::error::Error</code></a>');
+    expect(html).toContain('<img src="https://github.com/example/basic" alt="github" />');
+    expect(html.replace(/<[^>]+>/g, "")).toContain("[dependencies]");
+    expect(html.replace(/<[^>]+>/g, "")).toContain("#[derive(Widget)]");
+    expect(unresolved).toEqual(["`Hidden`"]);
   });
 });
 
@@ -381,6 +417,17 @@ describe("doctest badges", () => {
     expect(html).toContain("rust-doctest-badge-no_run");
     expect(html).toContain("rust-doctest-badge-should_panic");
     expect(html).toMatch(/title="[^"]*panic/);
+  });
+
+  it("names another crate's item pages as rustdoc does", () => {
+    const href = __internals.externalItemHref;
+    expect(href("core", null, ["core", "option", "Option"], "enum")).toBe("https://doc.rust-lang.org/stable/core/option/enum.Option.html");
+    expect(href("core", null, ["core", "option", "Option", "Some"], "variant")).toBe("https://doc.rust-lang.org/stable/core/option/enum.Option.html#variant.Some");
+    expect(href("std", null, ["std", "backtrace"], "module")).toBe("https://doc.rust-lang.org/stable/std/backtrace/index.html");
+    expect(href("serde", null, ["serde", "de", "from_str"], "function")).toBe("https://docs.rs/serde/latest/serde/de/fn.from_str.html");
+    expect(href("tokio", "https://docs.rs/tokio/1.0/", ["tokio", "spawn"], "function")).toBe("https://docs.rs/tokio/1.0/tokio/fn.spawn.html");
+    // An older snapshot carries no kind and keeps the bare path.
+    expect(href("serde", null, ["serde", "Serialize"])).toBe("https://docs.rs/serde/latest/serde/Serialize");
   });
 
   it("picks the most explicit edition attribute via __internals", () => {

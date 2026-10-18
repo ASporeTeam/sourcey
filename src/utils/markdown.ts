@@ -171,6 +171,11 @@ interface MarkdownRenderOptions {
   code?: (token: Tokens.Code) => string;
   headingOffset?: number;
   headingPrefix?: string;
+  /**
+   * Maps a link destination to its URL: a string replaces it, null renders the
+   * link's text alone, undefined keeps the destination as written.
+   */
+  resolveHref?: (href: string) => string | null | undefined;
 }
 
 /** Keep adapter rendering on the same Markdown, links and sanitization path. */
@@ -199,7 +204,9 @@ function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
       },
       link({ href, title, tokens }: Tokens.Link): string {
         const text = this.parser.parseInline(tokens);
-        const linkUrl = safeUrl(href);
+        const resolved = options.resolveHref?.(href);
+        if (resolved === null) return text;
+        const linkUrl = safeUrl(resolved ?? href);
         if (!linkUrl) return text;
         const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
         const isExternal = linkUrl.startsWith("http://") || linkUrl.startsWith("https://");

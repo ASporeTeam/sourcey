@@ -1,3 +1,4 @@
+use rustdoc_types::ItemKind;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -316,6 +317,9 @@ pub struct TypePath {
     pub display: String,
     pub external: bool,
     pub html_root_url: Option<String>,
+    /// The target's kind, which names its rustdoc page (`trait.Error.html`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_kind: Option<ItemKind>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -350,6 +354,9 @@ pub enum LinkTarget {
         crate_name: String,
         path: Vec<String>,
         html_root_url: Option<String>,
+        /// The target's kind, which names its rustdoc page (`trait.Error.html`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_kind: Option<ItemKind>,
     },
 }
 

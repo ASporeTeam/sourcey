@@ -244,7 +244,13 @@ function typeLinkClass(target: { external: boolean }): string {
 }
 
 function typePathHref(
-  target: { crate_id: number; path: string[]; html_root_url: string | null; external: boolean },
+  target: {
+    crate_id: number;
+    path: string[];
+    html_root_url: string | null;
+    external: boolean;
+    item_kind?: string;
+  },
   ctx: RenderContext,
 ): string | null {
   if (!target.external) {
@@ -260,10 +266,7 @@ function typePathHref(
     // An item this crate does not render gets no link rather than a guessed one.
     return candidate ? itemPageHref(candidate, ctx) : null;
   }
-  if (target.html_root_url) {
-    return joinUrl(target.html_root_url, target.path.join("/"));
-  }
-  return joinUrl("https://docs.rs", `${target.path[0] ?? ""}/latest/${target.path.join("/")}`);
+  return externalItemHref(target.path[0] ?? "", target.html_root_url, target.path, target.item_kind);
 }
 
 /** The page a crate module renders on. A module path starts with the crate's root module. */
@@ -380,61 +383,113 @@ function joinUrl(base: string, suffix: string): string {
  * leaving plain prose untouched. Unresolved labels render as plain text
  * with `title="unresolved intra-doc link"`.
  */
-export function resolveIntraDocLinks(
-  markdown: string,
-  links: Record<string, LinkTarget>,
-  ctx: RenderContext,
-): { html: string; unresolved: string[] } {
-  const unresolved: string[] = [];
-  // Match both `[label]` and ``[`label`]`` forms used by rustdoc intra-doc links.
-  // Match `[label]` or ``[`label`]`` but NOT `[label](url)` (regular markdown
-  // inline links keep their target URL).
-  const replaced = markdown.replace(
-    /\[(`?)([^`\]\n]+)\1\](?:\[\])?(?!\()/g,
-    (_match, _tick: string, label: string) => {
-      const target = lookupLinkTarget(links, label);
-      const display = `<code>${escapeHtml(label)}</code>`;
-      if (!target) {
-        unresolved.push(label);
-        return `<code title="unresolved intra-doc link">${escapeHtml(label)}</code>`;
-      }
-      if (target.kind === "internal") {
-        const item = ctx.itemsById.get(target.id);
-        const href = item ? itemPageHref(item, ctx) : null;
-        if (!href) {
-          unresolved.push(label);
-          return `<code title="unresolved intra-doc link">${escapeHtml(label)}</code>`;
-        }
-        return `<a class="rust-symbol" href="${escapeAttr(href)}">${display}</a>`;
-      }
-      const externalHref = externalLinkHref(target);
-      return `<a class="rust-extern" href="${escapeAttr(
-        externalHref,
-      )}" rel="noopener" target="_blank">${display}</a>`;
-    },
-  );
-  return { html: replaced, unresolved };
+const INTRA_DOC_DESTINATION = "sourcey-intra-doc:";
+
+export interface IntraDocReferences {
+  /** Markdown reference definitions, one per link label rustdoc resolved. */
+  definitions: string;
+  /** Maps a definition's destination, or a path written as one, to its URL. */
+  resolveHref: (href: string) => string | null | undefined;
+  /** Labels whose target this site does not render. */
+  unresolved: string[];
 }
 
-function lookupLinkTarget(
+/**
+ * Intra-doc links as Markdown reference definitions. rustdoc records each link
+ * it resolved under the text written between the brackets. Defining those
+ * labels lets the Markdown parser apply them as reference links, so code
+ * fences, code spans and the docs' own reference links stay as written, and a
+ * path written as a destination, `[text](crate::Item)`, resolves the same way.
+ * A label rustdoc could not resolve keeps its brackets, as rustdoc renders it.
+ */
+export function intraDocReferences(
   links: Record<string, LinkTarget>,
-  label: string,
-): LinkTarget | undefined {
-  // rustdoc's Item.links keys can include backticks, full paths, or aliases.
-  // Try common variants before giving up.
-  return links[label] ?? links[`\`${label}\``] ?? links[label.replace(/^`(.+)`$/, "$1")];
+  ctx: RenderContext,
+): IntraDocReferences {
+  const labels = Object.keys(links);
+  const hrefs = new Map<string, string | null>();
+  const unresolved: string[] = [];
+  for (const label of labels) {
+    const href = linkTargetHref(links[label], ctx);
+    if (href === null) unresolved.push(label);
+    hrefs.set(label, href);
+  }
+  // rustdoc accepts a label with or without code ticks; define both.
+  const definitions = labels
+    .flatMap((label, index) => {
+      const bare = label.replace(/^`(.+)`$/, "$1");
+      return [bare, `\`${bare}\``].map(
+        (form) => `[${form.replace(/[[\]\\]/g, "\\$&")}]: ${INTRA_DOC_DESTINATION}${index}`,
+      );
+    })
+    .join("\n");
+  const resolveHref = (href: string): string | null | undefined => {
+    if (href.startsWith(INTRA_DOC_DESTINATION)) {
+      return hrefs.get(labels[Number(href.slice(INTRA_DOC_DESTINATION.length))]) ?? null;
+    }
+    return hrefs.get(href);
+  };
+  return { definitions, resolveHref, unresolved };
+}
+
+function linkTargetHref(target: LinkTarget, ctx: RenderContext): string | null {
+  if (target.kind === "external") return externalLinkHref(target);
+  const item = ctx.itemsById.get(target.id);
+  return item ? itemPageHref(item, ctx) : null;
 }
 
 function externalLinkHref(target: Extract<LinkTarget, { kind: "external" }>): string {
-  const isStdLike = ["std", "core", "alloc", "proc_macro"].includes(target.crate_name);
-  if (isStdLike) {
-    return `https://doc.rust-lang.org/stable/${target.path.join("/")}`;
+  return externalItemHref(target.crate_name, target.html_root_url, target.path, target.item_kind);
+}
+
+const STD_CRATES = new Set(["std", "core", "alloc", "proc_macro"]);
+
+/** rustdoc's page prefix for each item kind: `trait.Error.html`. */
+const RUSTDOC_PAGE_PREFIX: Record<string, string> = {
+  struct: "struct",
+  enum: "enum",
+  union: "union",
+  trait: "trait",
+  trait_alias: "traitalias",
+  function: "fn",
+  type_alias: "type",
+  constant: "constant",
+  static: "static",
+  macro: "macro",
+  proc_attribute: "attr",
+  proc_derive: "derive",
+  primitive: "primitive",
+  keyword: "keyword",
+  extern_type: "foreigntype",
+};
+
+/**
+ * An item's page in another crate's rustdoc: the standard library's stable
+ * docs, a crate's own docs root, or docs.rs. rustdoc names each page by the
+ * item's kind, `core/error/trait.Error.html`; a target without a kind, from an
+ * older snapshot, keeps its bare path.
+ */
+function externalItemHref(
+  crateName: string,
+  htmlRootUrl: string | null,
+  path: readonly string[],
+  kind?: string,
+): string {
+  const root = STD_CRATES.has(crateName)
+    ? "https://doc.rust-lang.org/stable"
+    : (htmlRootUrl ?? `https://docs.rs/${crateName}/latest`);
+  return joinUrl(root, rustdocPagePath(path, kind));
+}
+
+function rustdocPagePath(path: readonly string[], kind?: string): string {
+  const name = path[path.length - 1] ?? "";
+  if (kind === "module") return `${path.join("/")}/index.html`;
+  if (kind === "variant" && path.length > 1) {
+    return [...path.slice(0, -2), `enum.${path[path.length - 2]}.html#variant.${name}`].join("/");
   }
-  if (target.html_root_url) {
-    const trimmed = target.html_root_url.replace(/\/+$/, "");
-    return `${trimmed}/${target.path.join("/")}`;
-  }
-  return `https://docs.rs/${target.crate_name}/latest/${target.path.join("/")}`;
+  const prefix = kind ? RUSTDOC_PAGE_PREFIX[kind] : undefined;
+  if (!prefix) return path.join("/");
+  return [...path.slice(0, -1), `${prefix}.${name}.html`].join("/");
 }
 
 // ---------------------------------------------------------------------------
@@ -725,22 +780,23 @@ function renderImplMember(member: Item, ctx: RenderContext, isRequiredTraitMetho
 
 function renderItemDocs(item: Item, ctx: RenderContext, headingOffset = 4): string {
   if (!item.docs_markdown) return "";
-  const links = item.links ?? {};
-  const { html, unresolved } = resolveIntraDocLinks(item.docs_markdown, links, ctx);
+  const { definitions, resolveHref, unresolved } = intraDocReferences(item.links ?? {}, ctx);
   for (const label of unresolved) {
     ctx.diagnostics.push({
       severity: "info",
       code: RUSTDOC_DIAGNOSTIC_CODES.INTRA_DOC_LINK_UNRESOLVED,
-      message: `Intra-doc link "${label}" in ${item.path.join("::")} could not be resolved.`,
+      message: `Intra-doc link "${label}" in ${item.path.join("::")} points to an item this site does not render.`,
       crate_name: ctx.crate.name,
       file: item.source?.file ?? null,
       line: item.source?.line_start ?? null,
     });
   }
   let ordinal = 0;
-  const rendered = renderMarkdown(html, {
+  const markdown = definitions ? `${item.docs_markdown}\n\n${definitions}\n` : item.docs_markdown;
+  const rendered = renderMarkdown(markdown, {
     headingOffset,
     headingPrefix: `${itemAnchor(item)}-`,
+    resolveHref,
     code(token) {
       const doctest = item.doctests[ordinal];
       const info = (token.lang ?? "")
@@ -1033,4 +1089,5 @@ export const __internals = {
   itemAnchor,
   renderDoctestBadges,
   pickEdition,
+  externalItemHref,
 };
