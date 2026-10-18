@@ -174,7 +174,7 @@
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
-#sourcey [data-sourcey-theme="api-first"] .prose h2 {
+#sourcey [data-sourcey-theme="api-first"] .prose > h2 {
   margin-top: 3rem;
   margin-bottom: 1rem;
   padding-top: 2rem;
@@ -184,10 +184,10 @@
   font-weight: 600;
   letter-spacing: 0;
 }
-.dark #sourcey [data-sourcey-theme="api-first"] .prose h2 {
+.dark #sourcey [data-sourcey-theme="api-first"] .prose > h2 {
   border-top-color: rgb(var(--color-gray-800));
 }
-#sourcey [data-sourcey-theme="api-first"] .prose h3 {
+#sourcey [data-sourcey-theme="api-first"] .prose > h3 {
   margin-top: 2rem;
   font-size: 1.125rem;
   line-height: 1.75rem;

@@ -181,7 +181,7 @@ function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
         return options.code ? options.code(token) : renderCodeBlock(token.text, token.lang);
       },
       heading({ tokens, depth }: Tokens.Heading): string {
-        const text = tokens.map((t) => ("text" in t ? t.text : t.raw)).join("");
+        const text = headingText(tokens);
         const id = `${options.headingPrefix ?? ""}${htmlId(text)}`;
         const level = Math.min(6, depth + (options.headingOffset ?? 0));
         return `<h${level} id="${escapeAttr(id)}">${this.parser.parseInline(tokens)}</h${level}>\n`;
@@ -223,6 +223,21 @@ export function lexMarkdown(input?: string): Token[] {
 }
 
 /**
+ * A heading's plain text: nested link and emphasis tokens contribute their
+ * own text, so a linked code span reads `Stateful`, not `` `Stateful` ``.
+ * The table of contents shows it and the heading id derives from it.
+ */
+function headingText(tokens: Token[]): string {
+  return tokens
+    .map((token) => {
+      const nested = (token as { tokens?: Token[] }).tokens;
+      if (nested?.length) return headingText(nested);
+      return "text" in token ? (token as { text: string }).text : token.raw;
+    })
+    .join("");
+}
+
+/**
  * Extract h2/h3 headings from a markdown string by lexing the token tree.
  * No rendering needed; pure token walk.
  */
@@ -233,9 +248,7 @@ export function extractHeadings(input: string): PageHeading[] {
     if (token.type === "heading") {
       const depth = (token as Tokens.Heading).depth;
       if (depth === 2 || depth === 3) {
-        const text = (token as Tokens.Heading).tokens
-          .map((t: Token) => ("text" in t ? (t as { text: string }).text : t.raw))
-          .join("");
+        const text = headingText((token as Tokens.Heading).tokens);
         headings.push({ level: depth as 2 | 3, text, id: htmlId(text) });
       }
     }

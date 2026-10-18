@@ -38,11 +38,12 @@ function MarkdownPageContent({ page, className = "" }: { page: MarkdownPage; cla
     g.items.some((item) => item.id === nav.activePageSlug),
   );
   const eyebrow = activeGroup?.label;
-  // The full-width theme names the page's place as a trail: tab, then group.
+  // The full-width theme names the page's place as a trail: tab, then group,
+  // naming a group once when it shares the tab's label.
   const trail =
     site.theme.name === "api-first"
       ? [nav.tabs.length > 1 ? activeTab?.label : undefined, eyebrow].filter(
-          (label): label is string => !!label,
+          (label, i, labels): label is string => !!label && labels.indexOf(label) === i,
         )
       : [];
 

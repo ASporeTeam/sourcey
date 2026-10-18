@@ -49,11 +49,16 @@ export function rewriteGeneratedDoxygenIncludePath(includePath: string): string 
 }
 
 export function rewriteGeneratedDoxygenMarkdown(markdown: string): string {
-  return markdown.replace(
-    /^#include ([<"])([^>\n"]+)([>"])$/gm,
-    (_match, open: string, includePath: string, close: string) => {
-      return `#include ${open}${rewriteGeneratedDoxygenIncludePath(includePath)}${close}`;
-    },
+  return (
+    markdown
+      .replace(
+        /^#include ([<"])([^>\n"]+)([>"])$/gm,
+        (_match, open: string, includePath: string, close: string) => {
+          return `#include ${open}${rewriteGeneratedDoxygenIncludePath(includePath)}${close}`;
+        },
+      )
+      // The include and the declaration read as one snippet, not two cards.
+      .replace(/^```cpp\n(#include [^\n]+)\n```\n\n```cpp\n/m, "```cpp\n$1\n\n")
   );
 }
 
@@ -88,6 +93,83 @@ export function rewriteGeneratedDoxygenHtmlLinks(html: string): string {
     );
 }
 
+/** Member badges moxygen emits: access, specifiers and trailing qualifiers. */
+const QUALIFIER =
+  /^(?:public|protected|private|virtual|static|const|inline|explicit|nodiscard|constexpr|consteval|override|final|noexcept(?:\(.*\))?|&|&amp;|&&|&amp;&amp;|-&gt; .+)$/;
+
+function plainText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function qualifierSpans(codes: string): string {
+  return codes.replace(/<code>([^<]+)<\/code>/g, '<span class="api-qualifier">$1</span>');
+}
+
+/**
+ * Shapes moxygen's generic Markdown into a reference page:
+ * - the leading h1 repeats the page title the layout already shows, so it
+ *   goes, keeping its anchor, and so does a body paragraph that repeats the
+ *   description shown beneath the title;
+ * - "Inherits" and "Subclassed by" become a relations list, not a quotation;
+ * - "Defined in path:line" becomes a quiet metadata line;
+ * - member badges (`virtual`, `const`) become quiet labels, in member
+ *   sections and in table cells, rather than full code chips.
+ */
+export function polishGeneratedDoxygenHtml(
+  html: string,
+  page: { title: string; description?: string },
+): string {
+  let out = html.replace(
+    /^\s*(<p><a id="[^"]+"><\/a><\/p>\n)?<h1 id="([^"]+)">([\s\S]*?)<\/h1>\n?/,
+    (match, anchor: string | undefined, id: string, inner: string) =>
+      plainText(inner) === page.title.trim() ? `${anchor ?? ""}<a id="${id}"></a>\n` : match,
+  );
+
+  const description = page.description ? plainText(page.description) : "";
+  if (description) {
+    const firstSection = out.search(/<h[2-6][\s>]/);
+    const head = firstSection === -1 ? out : out.slice(0, firstSection);
+    const repeated = head.match(/<p>((?:(?!<\/p>)[\s\S])*)<\/p>\n?/g)?.find((p) => plainText(p) === description);
+    if (repeated) out = out.replace(repeated, "");
+  }
+
+  out = out.replace(
+    /<blockquote>\n<p>(<strong>[^<]+:<\/strong>[\s\S]*?)<\/p>\n<\/blockquote>/g,
+    (match, body: string) => {
+      const rows = [...body.matchAll(/<strong>([^<]+):<\/strong>\s*([\s\S]*?)(?=\n?<strong>[^<]+:<\/strong>|$)/g)];
+      if (!rows.length) return match;
+      return (
+        '<dl class="api-relations">' +
+        rows.map(([, label, value]) => `<div><dt>${label}</dt><dd>${value.trim()}</dd></div>`).join("") +
+        "</dl>"
+      );
+    },
+  );
+
+  out = out.replace(/<p>((?:<a [^>]*>)?Defined in [^<]+(?:<\/a>)?)<\/p>/g, '<p class="api-defined-in">$1</p>');
+
+  out = out.replace(/<p>((?:<code>[^<]+<\/code> ?)+)<\/p>/g, (match, codes: string) => {
+    const labels = [...codes.matchAll(/<code>([^<]+)<\/code>/g)].map(([, label]) => label);
+    return labels.every((label) => QUALIFIER.test(label))
+      ? `<p class="api-qualifiers">${qualifierSpans(codes.trim())}</p>`
+      : match;
+  });
+
+  return out.replace(
+    /(<td>(?:<a [^>]*>)?<code>[^<]+<\/code>(?:<\/a>)?)((?: <code>[^<]+<\/code>)+)(?=<\/td>)/g,
+    (match, name: string, badges: string) => {
+      const labels = [...badges.matchAll(/<code>([^<]+)<\/code>/g)].map(([, label]) => label);
+      return labels.every((label) => QUALIFIER.test(label)) ? name + qualifierSpans(badges) : match;
+    },
+  );
+}
+
 export async function loadDoxygenTab(
   config: ResolvedDoxygenConfig,
   tabSlug: string,
@@ -116,7 +198,10 @@ export async function loadDoxygenTab(
 
     const markdown = rewriteGeneratedDoxygenMarkdown(page.markdown);
     const description = normalizeDoxygenDescription(page.description, markdown);
-    const html = rewriteGeneratedDoxygenHtmlLinks(renderMarkdown(markdown));
+    const html = polishGeneratedDoxygenHtml(
+      rewriteGeneratedDoxygenHtmlLinks(renderMarkdown(markdown)),
+      { title: page.title, description },
+    );
     const headings = extractHeadings(markdown);
 
     pages.set(page.slug, {
@@ -286,7 +371,7 @@ function buildRichIndex(
         `<div class="card-item-inner">` +
         `<h3 class="card-item-title">${escHtml(page.title)}</h3>` +
         (desc
-          ? `<div class="card-item-content"><p>${escHtml(desc)}</p>${meta}</div>`
+          ? `<div class="card-item-content"><p>${inlineCode(escHtml(desc))}</p>${meta}</div>`
           : `<div class="card-item-content">${meta}</div>`) +
         `</div></a>`,
     );
@@ -380,6 +465,11 @@ function lastSegment(name?: string): string | undefined {
   if (!name) return undefined;
   const parts = name.split("::");
   return parts[parts.length - 1] || name;
+}
+
+/** Render `code` spans in escaped text. */
+function inlineCode(escaped: string): string {
+  return escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
 function escHtml(s: string): string {
