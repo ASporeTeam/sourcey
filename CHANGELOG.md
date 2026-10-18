@@ -23,6 +23,10 @@ All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepa
 - Links to other crates' Rust docs open the item's page. They lacked rustdoc's kind prefix, `core/error/Error` for `core/error/trait.Error.html`, and returned 404 on doc.rust-lang.org and docs.rs. Standard library links in signatures now use the stable docs, as doc links already did.
 - Go method headings show their receiver, `func (mx *Mux) Get(...)`. The receiver was dropped and left `func  Get(...)`.
 - Go doc comments render with `go/doc/comment`, the parser behind `go doc` and pkg.go.dev. Doc links such as `[NewRouter]` or `[http.Handler]` link to the symbol on the page or on pkg.go.dev, headings and lists keep their meaning, and prose such as `*Mux` or `snake_case` no longer turns into emphasis. Snapshots made before this release render as before.
+- Go pages are readable in dark mode. Symbol headings, doc text, fields, examples and the index used light-mode colours on the dark page.
+- A Go doc comment's paired backticks, `name`, render as code, and its indented examples are highlighted as Go.
+- Rust and Go package pages no longer repeat their opening sentence as a lede, and a Rust crate's summary skips its badge row. Rust crate cards show the same summary.
+- An image inside a paragraph stays inline, so a row of badges sits on one line instead of stacking.
 - `sourcey dev` no longer warns that it cannot resolve `preact` under pnpm and other package managers that do not hoist dependencies. An installed Sourcey renders from compiled JavaScript and skips Preact's dev preset. Dev asset URLs are also well formed on Windows (#275).
 
 ## 3.6.14 - 2026-10-17

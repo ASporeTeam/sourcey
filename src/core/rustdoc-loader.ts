@@ -19,7 +19,12 @@ import {
   rustItemPages,
   rustModuleSlug,
 } from "./rustdoc-render.js";
-import { renderCodeBlock } from "../utils/markdown.js";
+import {
+  extractFirstParagraph,
+  renderCodeBlock,
+  renderMarkdownInline,
+  stripMarkdownLinks,
+} from "../utils/markdown.js";
 
 export interface RustdocLoaderDiagnostic {
   severity: "error" | "warning" | "info";
@@ -155,7 +160,7 @@ function renderModulePageLoader(
 ): MarkdownPage {
   const slug = rustModuleSlug(crate.name, module.path);
   const title = module.path.length === 0 ? crate.name : module.path.join("::");
-  const description = firstLine(module.docs_markdown) ?? "";
+  const description = moduleSummary(module.docs_markdown);
   const items: Item[] = module.item_ids
     .map((id) => itemsById.get(id))
     .filter((i): i is Item => Boolean(i));
@@ -170,6 +175,8 @@ function renderModulePageLoader(
     kind: "markdown",
     title,
     description,
+    // The body renders the module's docs in full, so the summary is a repeat.
+    hideLede: Boolean(description),
     slug,
     html,
     headings,
@@ -237,14 +244,14 @@ function renderCrateIndexPage(crate: CrateSpec, tab: RustTab): MarkdownPage {
       const href = tabRelativeHref(tab, mSlug);
       const label = m.path.length === 0 ? `${crate.name} (root)` : m.path.join("::");
       const count = m.item_ids.length;
-      const lead = firstLine(m.docs_markdown);
+      const lead = moduleSummary(m.docs_markdown);
       const meta = `<p style="margin:0.5rem 0 0;font-size:0.8rem;opacity:0.5">${count} item${count === 1 ? "" : "s"}</p>`;
       headings.push({ id: mSlug, text: label, level: 3 });
       return (
         `<a class="card-item" href="${escapeHtml(href)}" id="${mSlug}">` +
         `<div class="card-item-inner">` +
         `<h3 class="card-item-title">${escapeHtml(label)}</h3>` +
-        `<div class="card-item-content">${lead ? `<p>${escapeHtml(lead)}</p>` : ""}${meta}</div>` +
+        `<div class="card-item-content">${lead ? `<p>${renderMarkdownInline(lead)}</p>` : ""}${meta}</div>` +
         `</div></a>`
       );
     });
@@ -522,10 +529,16 @@ function tabRelativeHref(tab: RustTab, slug: string): string {
   return navHref(pageOutputPath(tab.slug, slug, tab.prettyUrls), tab.prettyUrls);
 }
 
-function firstLine(text: string | null | undefined): string | null {
-  if (!text) return null;
-  const line = text.split("\n").find((l) => l.trim().length > 0);
-  return line ? line.trim() : null;
+/**
+ * A module's summary: its first paragraph of prose, without badges or images.
+ * The summary renders away from the module's intra-doc links, so their
+ * brackets drop and the label stays.
+ */
+function moduleSummary(markdown: string | null | undefined): string {
+  return stripMarkdownLinks(extractFirstParagraph(markdown ?? "")).replace(
+    /\[([^[\]\n]+)\](?:\[[^[\]\n]*\])?(?![(:])/g,
+    "$1",
+  );
 }
 
 function itemsAsMap(items: Record<string, Item> | Item[]): Map<string, Item> {

@@ -25,7 +25,7 @@ type Router struct{}
 // NewRouter returns an empty router.
 func NewRouter() *Router { return &Router{} }
 
-// Get routes GET requests for pattern to h.
+// Get routes GET requests for ` + "`pattern`" + ` to h, such as ` + "`/users/{id_or_name}`" + `.
 func (r *Router) Get(pattern string, h http.Handler) {}
 `
 
@@ -68,5 +68,14 @@ func TestDocMarkdownLinksSymbolsAndEscapesProse(t *testing.T) {
 	}
 	if strings.Contains(got, "{#hdr-") {
 		t.Errorf("markdown keeps the printer's heading id:\n%s", got)
+	}
+}
+
+func TestDocMarkdownReadsPairedBackticksAsCode(t *testing.T) {
+	_, d := parseRouter(t)
+	got := newDocRenderer(d).markdown(d.Types[0].Methods[0].Doc)
+	want := "Get routes GET requests for `pattern` to h, such as `/users/{id_or_name}`."
+	if got != want {
+		t.Fatalf("markdown = %q, want %q", got, want)
 	}
 }

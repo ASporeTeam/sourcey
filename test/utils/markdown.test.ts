@@ -62,6 +62,19 @@ describe("renderMarkdownInline", () => {
 });
 
 describe("extractFirstParagraph", () => {
+  it("skips badge rows and drops images, inline HTML and emphasis from the summary", () => {
+    const markdown = [
+      "[![github]][github]&ensp;[![crates-io]][crates-io] | ![logo](logo.svg)",
+      "",
+      "This crate provides **fast** <em>and</em> safe `Error` values. ![inline](x.svg)",
+      "",
+      "[github]: https://github.com/example/crate",
+      "[crates-io]: https://crates.io/crates/crate",
+    ].join("\n");
+
+    expect(extractFirstParagraph(markdown)).toBe("This crate provides fast and safe `Error` values.");
+  });
+
   it("finds the first prose paragraph in generated markdown", () => {
     const markdown = `<a id="foo"></a>
 

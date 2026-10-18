@@ -139,6 +139,17 @@ h6[id] {
   display: block;
 }
 
+/* ── Prose Images ─────────────────────────────────────────────────── */
+/* An image inside a paragraph is inline content, as Markdown means it, so a
+   row of badges stays on one line. The base styles make every image a block
+   with prose margins, which stacked each badge on its own line. */
+#sourcey .prose :where(p) img:not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  display: inline-block;
+  margin-top: 0;
+  margin-bottom: 0;
+  vertical-align: middle;
+}
+
 /* ── Inline Code ──────────────────────────────────────────────────── */
 /* A quiet chip, in prose and outside it. The typography plugin's       */
 /* literal backticks read as unrendered Markdown, so they are removed.  */
@@ -2249,6 +2260,45 @@ h6[id] {
 #sourcey .godoc-func .godoc-symbol,
 #sourcey .godoc-type .godoc-symbol {
   word-break: break-word;
+}
+
+.dark #sourcey .godoc-symbol,
+.dark #sourcey .godoc-field-sig {
+  color: rgb(var(--color-gray-100));
+}
+.dark #sourcey .godoc-doc,
+.dark #sourcey .godoc-field-type {
+  color: rgb(var(--color-gray-300));
+}
+.dark #sourcey .godoc-import,
+.dark #sourcey .godoc-import-path,
+.dark #sourcey .godoc-source,
+.dark #sourcey .godoc-toc h4,
+.dark #sourcey .godoc-tag,
+.dark #sourcey .godoc-field-doc,
+.dark #sourcey .godoc-toc li.godoc-toc-sub,
+.dark #sourcey .godoc-fields > summary,
+.dark #sourcey .godoc-example > summary,
+.dark #sourcey .godoc-example-output-label {
+  color: rgb(var(--color-gray-400));
+}
+.dark #sourcey .godoc-import code,
+.dark #sourcey .godoc-import-path code {
+  background: rgba(var(--color-gray-800), 0.6);
+}
+.dark #sourcey .godoc-type,
+.dark #sourcey .godoc-fields > ul,
+.dark #sourcey .godoc-field {
+  border-color: rgb(var(--color-gray-800));
+}
+.dark #sourcey .godoc-toc,
+.dark #sourcey .godoc-fields,
+.dark #sourcey .godoc-example {
+  border-color: rgb(var(--color-gray-800));
+  background: rgba(var(--color-gray-900), 0.5);
+}
+.dark #sourcey .godoc-example > summary::before {
+  color: rgb(var(--color-gray-500));
 }
 
 /* ── Rust API rendering (rustdoc adapter) ────────────────────────── */

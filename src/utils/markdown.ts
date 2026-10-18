@@ -167,7 +167,7 @@ const iframeExtension: import("marked").MarkedExtension = {
   ],
 };
 
-interface MarkdownRenderOptions {
+export interface MarkdownRenderOptions {
   code?: (token: Tokens.Code) => string;
   headingOffset?: number;
   headingPrefix?: string;
@@ -305,7 +305,8 @@ export function extractFirstParagraph(input?: string): string {
   for (const token of tokens) {
     if (token.type === "paragraph") {
       const summary = summaryText(token.tokens ?? []).replace(/\s+/g, " ").trim();
-      if (summary) return summary;
+      // Separators left between badges, such as &ensp; or |, are not prose.
+      if (/[\p{L}\p{N}]/u.test(summary.replace(/&#?\w+;/g, ""))) return summary;
     }
   }
   return "";
@@ -389,9 +390,16 @@ function findMarkdownHrefEnd(input: string, start: number): number {
 /**
  * Render Markdown to HTML.
  */
+const parsersByOptions = new WeakMap<MarkdownRenderOptions, Marked>();
+
 export function renderMarkdown(input?: string, options?: MarkdownRenderOptions): string {
   if (!input) return "";
-  const parser = options ? createMarkdownParser(options) : marked;
+  let parser = marked;
+  if (options) {
+    // A shared options object, such as an adapter's, builds its parser once.
+    parser = parsersByOptions.get(options) ?? createMarkdownParser(options);
+    parsersByOptions.set(options, parser);
+  }
   return sanitizeRenderedHtml(parser.parse(input, { async: false }) as string);
 }
 

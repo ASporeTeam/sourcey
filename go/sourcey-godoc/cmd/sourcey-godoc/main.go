@@ -592,6 +592,13 @@ type docRenderer struct {
 
 var markdownHeadingID = regexp.MustCompile(`(?m)^(#+ .*?) \{#[^}]*\}$`)
 
+// Go doc syntax has no code spans, so the printer escapes backticks, but
+// authors write `name` meaning code. A pair on one line becomes a code span.
+var (
+	escapedCodeSpan = regexp.MustCompile("\\\\`([^`\\n]+?)\\\\`")
+	markdownEscape  = regexp.MustCompile("\\\\([!-/:-@\\[-`{-~])")
+)
+
 func newDocRenderer(d *doc.Package) docRenderer {
 	anchors := map[string]string{}
 	addValues := func(prefix string, values []*doc.Value) {
@@ -642,7 +649,11 @@ func (r docRenderer) markdown(text string) string {
 	}
 	rendered := string(r.printer.Markdown(r.parser.Parse(text)))
 	// Sourcey gives headings its own ids; the printer's {#hdr-...} would print as text.
-	return strings.TrimSpace(markdownHeadingID.ReplaceAllString(rendered, "$1"))
+	rendered = markdownHeadingID.ReplaceAllString(rendered, "$1")
+	rendered = escapedCodeSpan.ReplaceAllStringFunc(rendered, func(span string) string {
+		return "`" + markdownEscape.ReplaceAllString(span[2:len(span)-2], "$1") + "`"
+	})
+	return strings.TrimSpace(rendered)
 }
 
 func (r docRenderer) fill(pkg *pkgOut) {

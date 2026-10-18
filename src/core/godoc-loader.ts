@@ -12,7 +12,12 @@ import type {
 } from "./godoc-types.js";
 import { GODOC_SCHEMA_VERSION } from "./godoc-types.js";
 import { runIntrospector, GodocIntrospectorError } from "./godoc-introspector.js";
-import { renderCodeBlock, renderMarkdown, type PageHeading } from "../utils/markdown.js";
+import {
+  renderCodeBlock,
+  renderMarkdown,
+  type MarkdownRenderOptions,
+  type PageHeading,
+} from "../utils/markdown.js";
 import type { MarkdownPage, PageSearchEntry } from "./markdown-loader.js";
 import type { SiteTab, SiteNavGroup, SiteNavItem } from "./navigation.js";
 
@@ -183,6 +188,8 @@ function buildResult(
       kind: "markdown",
       title: packageTitle(pkg, spec.modulePath),
       description,
+      // The synopsis is the doc's first sentence, which the body renders.
+      hideLede: Boolean(pkg.synopsis),
       slug,
       html,
       headings,
@@ -679,9 +686,14 @@ function humaniseSuffix(suffix: string): string {
   return suffix.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** Code in a Go doc comment is indented, so it carries no language: it is Go. */
+const GO_DOC_MARKDOWN: MarkdownRenderOptions = {
+  code: (token) => renderCodeBlock(token.text, token.lang || "go"),
+};
+
 /** A doc comment, from the helper's Markdown when the snapshot carries it. */
 function renderDoc(symbol: { doc: string; docMarkdown?: string }): string {
-  return renderMarkdown(symbol.docMarkdown ?? symbol.doc).trim();
+  return renderMarkdown(symbol.docMarkdown ?? symbol.doc, GO_DOC_MARKDOWN).trim();
 }
 
 function escHtml(s: string): string {
