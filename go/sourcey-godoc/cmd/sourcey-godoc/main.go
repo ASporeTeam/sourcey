@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/doc"
+	"go/doc/comment"
 	"go/parser"
 	"go/printer"
 	"go/token"
@@ -23,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -50,6 +52,7 @@ type pkgOut struct {
 	Name       string     `json:"name"`
 	Synopsis   string     `json:"synopsis"`
 	Doc        string     `json:"doc"`
+	DocMD      string     `json:"docMarkdown,omitempty"`
 	Dir        string     `json:"dir"`
 	Files      []string   `json:"files"`
 	Consts     []valueOut `json:"consts"`
@@ -62,6 +65,7 @@ type pkgOut struct {
 type valueOut struct {
 	Name        string       `json:"name"`
 	Doc         string       `json:"doc"`
+	DocMD       string       `json:"docMarkdown,omitempty"`
 	Declaration string       `json:"declaration"`
 	Position    *positionOut `json:"position,omitempty"`
 }
@@ -69,6 +73,7 @@ type valueOut struct {
 type funcOut struct {
 	Name      string       `json:"name"`
 	Doc       string       `json:"doc"`
+	DocMD     string       `json:"docMarkdown,omitempty"`
 	Signature string       `json:"signature"`
 	Position  *positionOut `json:"position,omitempty"`
 	Examples  []exOut      `json:"examples"`
@@ -77,6 +82,7 @@ type funcOut struct {
 type typeOut struct {
 	Name        string       `json:"name"`
 	Doc         string       `json:"doc"`
+	DocMD       string       `json:"docMarkdown,omitempty"`
 	Declaration string       `json:"declaration"`
 	Kind        string       `json:"kind"`
 	Position    *positionOut `json:"position,omitempty"`
@@ -88,6 +94,7 @@ type typeOut struct {
 type fieldOut struct {
 	Name     string `json:"name"`
 	Doc      string `json:"doc"`
+	DocMD    string `json:"docMarkdown,omitempty"`
 	Type     string `json:"type"`
 	Tag      string `json:"tag,omitempty"`
 	Embedded bool   `json:"embedded,omitempty"`
@@ -97,6 +104,7 @@ type exOut struct {
 	Name   string `json:"name"`
 	Suffix string `json:"suffix"`
 	Doc    string `json:"doc"`
+	DocMD  string `json:"docMarkdown,omitempty"`
 	Code   string `json:"code"`
 	Output string `json:"output,omitempty"`
 }
@@ -487,6 +495,7 @@ func parsePackage(p goListPackage, cfg *config) (*pkgOut, []diagnostic) {
 		}
 	}
 
+	newDocRenderer(d).fill(out)
 	return out, parseErrors
 }
 
@@ -553,29 +562,135 @@ func extractValues(fset *token.FileSet, moduleDir string, v *doc.Value) []valueO
 }
 
 func extractFunc(fset *token.FileSet, moduleDir string, f *doc.Func) funcOut {
-	signature := "func " + f.Name + signatureSuffix(fset, f.Decl)
-	if f.Recv != "" {
-		recv := strings.TrimSpace(printNode(fset, f.Decl.Recv))
-		signature = "func " + recv + " " + f.Name + signatureSuffix(fset, f.Decl)
-	}
 	return funcOut{
 		Name:      f.Name,
 		Doc:       strings.TrimSpace(f.Doc),
-		Signature: signature,
+		Signature: funcSignature(fset, f.Decl),
 		Position:  relPosition(fset, moduleDir, f.Decl.Pos()),
 		Examples:  []exOut{},
 	}
 }
 
-func signatureSuffix(fset *token.FileSet, decl *ast.FuncDecl) string {
+// funcSignature prints a function's declaration without its body, receiver
+// included: `func (mx *Mux) Get(pattern string, handlerFn http.HandlerFunc)`.
+func funcSignature(fset *token.FileSet, decl *ast.FuncDecl) string {
 	clone := *decl
 	clone.Body = nil
 	clone.Doc = nil
-	rendered := printNode(fset, &clone)
-	if i := strings.Index(rendered, decl.Name.Name); i >= 0 {
-		rendered = rendered[i+len(decl.Name.Name):]
+	return strings.TrimSpace(printNode(fset, &clone))
+}
+
+// docRenderer renders doc comments as Markdown with go/doc/comment, the parser
+// behind go doc and pkg.go.dev. Doc links, headings, lists and code blocks keep
+// their meaning, and prose such as *Mux or snake_case is escaped rather than
+// read as emphasis. A link to this package's own symbols targets the anchor
+// Sourcey renders for it; a link to another package goes to pkg.go.dev.
+type docRenderer struct {
+	parser  *comment.Parser
+	printer *comment.Printer
+}
+
+var markdownHeadingID = regexp.MustCompile(`(?m)^(#+ .*?) \{#[^}]*\}$`)
+
+func newDocRenderer(d *doc.Package) docRenderer {
+	anchors := map[string]string{}
+	addValues := func(prefix string, values []*doc.Value) {
+		for _, v := range values {
+			for _, name := range v.Names {
+				anchors[name] = prefix + "-" + symbolAnchor(name)
+			}
+		}
 	}
-	return rendered
+	addFuncs := func(funcs []*doc.Func) {
+		for _, f := range funcs {
+			anchors[f.Name] = "func-" + symbolAnchor(f.Name)
+		}
+	}
+	addValues("const", d.Consts)
+	addValues("var", d.Vars)
+	addFuncs(d.Funcs)
+	for _, t := range d.Types {
+		anchors[t.Name] = "type-" + symbolAnchor(t.Name)
+		addValues("const", t.Consts)
+		addValues("var", t.Vars)
+		addFuncs(t.Funcs)
+	}
+
+	printer := d.Printer()
+	printer.DocLinkURL = func(link *comment.DocLink) string {
+		if link.ImportPath == "" {
+			if link.Recv != "" {
+				return "#method-" + symbolAnchor(link.Recv) + "-" + symbolAnchor(link.Name)
+			}
+			return "#" + anchors[link.Name]
+		}
+		url := "https://pkg.go.dev/" + link.ImportPath
+		if link.Recv != "" {
+			return url + "#" + link.Recv + "." + link.Name
+		}
+		if link.Name != "" {
+			return url + "#" + link.Name
+		}
+		return url
+	}
+	return docRenderer{parser: d.Parser(), printer: printer}
+}
+
+func (r docRenderer) markdown(text string) string {
+	if text == "" {
+		return ""
+	}
+	rendered := string(r.printer.Markdown(r.parser.Parse(text)))
+	// Sourcey gives headings its own ids; the printer's {#hdr-...} would print as text.
+	return strings.TrimSpace(markdownHeadingID.ReplaceAllString(rendered, "$1"))
+}
+
+func (r docRenderer) fill(pkg *pkgOut) {
+	pkg.DocMD = r.markdown(pkg.Doc)
+	r.fillExamples(pkg.Examples)
+	for i := range pkg.Consts {
+		pkg.Consts[i].DocMD = r.markdown(pkg.Consts[i].Doc)
+	}
+	for i := range pkg.Vars {
+		pkg.Vars[i].DocMD = r.markdown(pkg.Vars[i].Doc)
+	}
+	r.fillFuncs(pkg.Funcs)
+	for i := range pkg.Types {
+		t := &pkg.Types[i]
+		t.DocMD = r.markdown(t.Doc)
+		for j := range t.Fields {
+			t.Fields[j].DocMD = r.markdown(t.Fields[j].Doc)
+		}
+		r.fillFuncs(t.Methods)
+		r.fillExamples(t.Examples)
+	}
+}
+
+func (r docRenderer) fillFuncs(funcs []funcOut) {
+	for i := range funcs {
+		funcs[i].DocMD = r.markdown(funcs[i].Doc)
+		r.fillExamples(funcs[i].Examples)
+	}
+}
+
+func (r docRenderer) fillExamples(examples []exOut) {
+	for i := range examples {
+		examples[i].DocMD = r.markdown(examples[i].Doc)
+	}
+}
+
+// symbolAnchor matches the renderer's slugifySymbol: every character outside
+// [A-Za-z0-9_] becomes an underscore.
+func symbolAnchor(name string) string {
+	var b strings.Builder
+	for _, c := range name {
+		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			b.WriteRune(c)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func extractType(fset *token.FileSet, moduleDir string, t *doc.Type) typeOut {

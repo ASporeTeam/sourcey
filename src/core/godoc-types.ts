@@ -28,6 +28,8 @@ export interface GodocPackage {
   synopsis: string;
   /** Full package doc comment, Markdown-ish. */
   doc: string;
+  /** The doc comment as Markdown from go/doc/comment; absent in older snapshots. */
+  docMarkdown?: string;
   /** Path to the package directory, relative to the module root. */
   dir: string;
   /** Source files contributing to this package (build-tag filtered by `go list`). */
@@ -42,6 +44,8 @@ export interface GodocPackage {
 export interface GodocValue {
   name: string;
   doc: string;
+  /** The doc comment as Markdown from go/doc/comment; absent in older snapshots. */
+  docMarkdown?: string;
   /** Source-faithful declaration, e.g. `const StatusDraft Status = "draft"`. */
   declaration: string;
   position?: SourcePosition;
@@ -50,6 +54,8 @@ export interface GodocValue {
 export interface GodocFunc {
   name: string;
   doc: string;
+  /** The doc comment as Markdown from go/doc/comment; absent in older snapshots. */
+  docMarkdown?: string;
   /** Full signature, e.g. `func Run(ctx context.Context) error`. */
   signature: string;
   position?: SourcePosition;
@@ -59,6 +65,8 @@ export interface GodocFunc {
 export interface GodocType {
   name: string;
   doc: string;
+  /** The doc comment as Markdown from go/doc/comment; absent in older snapshots. */
+  docMarkdown?: string;
   /** Source-faithful declaration, including the `type` keyword. */
   declaration: string;
   kind: GodocTypeKind;
@@ -73,6 +81,8 @@ export type GodocTypeKind = "struct" | "interface" | "alias" | "defined" | "unkn
 export interface GodocField {
   name: string;
   doc: string;
+  /** The doc comment as Markdown from go/doc/comment; absent in older snapshots. */
+  docMarkdown?: string;
   type: string;
   tag?: string;
   embedded?: boolean;
@@ -84,6 +94,8 @@ export interface GodocExample {
   /** `Suffix` portion of `ExampleFoo_Suffix`; empty for the base example. */
   suffix: string;
   doc: string;
+  /** The doc comment as Markdown from go/doc/comment; absent in older snapshots. */
+  docMarkdown?: string;
   code: string;
   /** Expected output captured from `// Output:` directives. */
   output?: string;

@@ -495,7 +495,7 @@ function renderPackagePage(
   parts.push(`<p class="godoc-import"><code>import "${escHtml(pkg.importPath)}"</code></p>`);
 
   if (pkg.doc) {
-    parts.push(`<div class="godoc-doc">${renderDoc(pkg.doc)}</div>`);
+    parts.push(`<div class="godoc-doc">${renderDoc(pkg)}</div>`);
   }
 
   parts.push(renderTableOfContents(pkg));
@@ -569,7 +569,7 @@ function renderValueGroup(
     const id = valueAnchor(kind, v.name);
     if (!seenDeclarations.has(v.declaration)) {
       seenDeclarations.add(v.declaration);
-      const docHtml = v.doc ? `<div class="godoc-doc">${renderDoc(v.doc)}</div>` : "";
+      const docHtml = v.doc ? `<div class="godoc-doc">${renderDoc(v)}</div>` : "";
       parts.push(
         `<section class="godoc-value" id="${id}">` +
           docHtml +
@@ -593,7 +593,7 @@ function renderFunc(fn: GodocFunc, anchorId: string, sourceLinks: GodocSourceLin
   parts.push(`<section class="godoc-func" id="${anchorId}">`);
   parts.push(`<h3 class="godoc-symbol">${escHtml(fn.signature)}</h3>`);
   parts.push(renderSourceLink(fn.position, sourceLinks));
-  if (fn.doc) parts.push(`<div class="godoc-doc">${renderDoc(fn.doc)}</div>`);
+  if (fn.doc) parts.push(`<div class="godoc-doc">${renderDoc(fn)}</div>`);
   for (const ex of fn.examples) parts.push(renderExample(ex));
   parts.push(`</section>`);
   return parts.join("\n");
@@ -605,7 +605,7 @@ function renderType(t: GodocType, sourceLinks: GodocSourceLinkOptions): string {
   parts.push(`<section class="godoc-type" id="${id}">`);
   parts.push(`<h3 class="godoc-symbol">type ${escHtml(t.name)}</h3>`);
   parts.push(renderSourceLink(t.position, sourceLinks));
-  if (t.doc) parts.push(`<div class="godoc-doc">${renderDoc(t.doc)}</div>`);
+  if (t.doc) parts.push(`<div class="godoc-doc">${renderDoc(t)}</div>`);
   parts.push(renderCodeBlock(t.declaration, "go"));
 
   if (t.fields.length > 0 && (t.kind === "struct" || t.kind === "interface")) {
@@ -625,7 +625,7 @@ function renderFields(t: GodocType): string {
   const heading = t.kind === "interface" ? "Methods" : "Fields";
   const rows: string[] = [];
   for (const f of t.fields) {
-    const docHtml = f.doc ? `<div class="godoc-field-doc">${renderDoc(f.doc)}</div>` : "";
+    const docHtml = f.doc ? `<div class="godoc-field-doc">${renderDoc(f)}</div>` : "";
     const tagHtml = f.tag ? `<code class="godoc-tag">\`${escHtml(f.tag)}\`</code>` : "";
     rows.push(
       `<li class="godoc-field"><code class="godoc-field-sig">${escHtml(f.name)}` +
@@ -665,7 +665,7 @@ function sourceURL(
 function renderExample(ex: GodocExample): string {
   const title = escHtml(exampleTitle("Example", ex));
   const parts: string[] = [`<details class="godoc-example"><summary>${title}</summary>`];
-  if (ex.doc) parts.push(`<div class="godoc-doc">${renderDoc(ex.doc)}</div>`);
+  if (ex.doc) parts.push(`<div class="godoc-doc">${renderDoc(ex)}</div>`);
   parts.push(renderCodeBlock(ex.code, "go"));
   if (ex.output) {
     parts.push(`<p class="godoc-example-output-label">Output:</p>`);
@@ -679,8 +679,9 @@ function humaniseSuffix(suffix: string): string {
   return suffix.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function renderDoc(input: string): string {
-  return renderMarkdown(input).trim();
+/** A doc comment, from the helper's Markdown when the snapshot carries it. */
+function renderDoc(symbol: { doc: string; docMarkdown?: string }): string {
+  return renderMarkdown(symbol.docMarkdown ?? symbol.doc).trim();
 }
 
 function escHtml(s: string): string {
