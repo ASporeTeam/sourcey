@@ -2,6 +2,12 @@
 
 All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## Unreleased
+
+### Fixed
+
+- Generated links no longer carry `rel="noreferrer"`, so the sites your docs link to, including the “Docs by Sourcey” attribution, can see the visit came from your docs. Links that open in a new tab keep `rel="noopener"`.
+
 ## 3.6.14 - 2026-10-17
 
 ### Fixed

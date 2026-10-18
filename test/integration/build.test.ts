@@ -117,6 +117,7 @@ describe("buildDocs (integration)", () => {
       expect(indexHtml).not.toContain("Redirecting");
       expect(indexHtml).toMatch(/<a[^>]+href="https:\/\/sourcey\.com\/docs"[^>]*>Docs by Sourcey<\/a>/);
       expect(indexHtml).not.toMatch(/Docs by\s*<a/);
+      expect(indexHtml).not.toContain("noreferrer");
       expect(indexHtml).not.toContain("sourcey-logo.png");
 
       const apiHtml = await readFile(resolve(outputDir, "api.html"), "utf-8");

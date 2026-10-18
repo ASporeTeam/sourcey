@@ -226,7 +226,7 @@ function ContentFooter() {
 
   return (
     <div class="mt-16 mb-8 flex items-center justify-between border-t border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-800)/0.5)] pt-6 text-xs text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
-      <a href="https://sourcey.com/docs" target="_blank" rel="noopener noreferrer" class={linkStyle}>
+      <a href="https://sourcey.com/docs" target="_blank" rel="noopener" class={linkStyle}>
         Docs by Sourcey
       </a>
       <div class="flex items-center gap-4">
@@ -234,7 +234,7 @@ function ContentFooter() {
           <a
             href={editUrl}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noopener"
             class={`${linkStyle} flex items-center gap-1`}
           >
             <svg
@@ -259,7 +259,7 @@ function ContentFooter() {
             key={link.href}
             href={link.href}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noopener"
             aria-label={link.label ?? socialLabels[link.type] ?? link.href}
             class={linkStyle}
           >

@@ -108,6 +108,7 @@ describe("reader theme", () => {
     expect(index).toContain('href="https://sourcey.com/docs"');
     expect(index).toMatch(/<a[^>]+href="https:\/\/sourcey\.com\/docs"[^>]*>\s*Docs by Sourcey\s*<svg/);
     expect(index).not.toMatch(/Docs by\s*<a/);
+    expect(index).not.toContain("noreferrer");
     expect(index).not.toContain("sourcey-logo.png");
     expect(index).toContain("Owned by the host configuration.");
     expect(index).toContain("Run the workflow");

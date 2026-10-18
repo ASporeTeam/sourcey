@@ -46,7 +46,7 @@ export function VersionCard({
             {isUnreleased && <span class="sourcey-changelog-pill sourcey-changelog-pill-next">Next release</span>}
             {formattedDate && <time dateTime={version.date ?? undefined}>{formattedDate}</time>}
             {version.compareUrl && (
-              <a href={version.compareUrl} target="_blank" rel="noopener noreferrer" class="sourcey-changelog-compare-link">
+              <a href={version.compareUrl} target="_blank" rel="noopener" class="sourcey-changelog-compare-link">
                 Compare
               </a>
             )}

@@ -27,7 +27,7 @@ export function VariantBody({ variant, showCopy }: { variant: ExampleVariant; sh
           <a
             href={variant.externalValue}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noopener"
             class="break-all text-[rgb(var(--color-primary))] hover:underline"
           >
             {variant.externalValue}

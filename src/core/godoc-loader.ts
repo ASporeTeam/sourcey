@@ -647,7 +647,7 @@ function renderSourceLink(
 ): string {
   const href = sourceURL(position, sourceLinks);
   if (!href || !position) return "";
-  return `<p class="godoc-source"><a href="${escAttr(href)}" target="_blank" rel="noopener noreferrer">Source: ${escHtml(position.file)}:${position.line}</a></p>`;
+  return `<p class="godoc-source"><a href="${escAttr(href)}" target="_blank" rel="noopener">Source: ${escHtml(position.file)}:${position.line}</a></p>`;
 }
 
 function sourceURL(

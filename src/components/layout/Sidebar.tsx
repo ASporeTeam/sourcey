@@ -190,7 +190,7 @@ export function Sidebar() {
                 const label = link.label ?? socialLabels[link.type] ?? link.href;
                 return (
                   <li key={link.href}>
-                    <a href={link.href} target="_blank" rel="noopener noreferrer" class="flex items-center gap-2.5 text-[rgb(var(--color-gray-600))] hover:text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-400))] dark:hover:text-[rgb(var(--color-gray-200))]">
+                    <a href={link.href} target="_blank" rel="noopener" class="flex items-center gap-2.5 text-[rgb(var(--color-gray-600))] hover:text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-400))] dark:hover:text-[rgb(var(--color-gray-200))]">
                       {link.type !== "link" && <SocialIcon type={link.type} />}
                       <span>{label}</span>
                     </a>

@@ -127,7 +127,7 @@ export function Header() {
                         <a
                           href={link.href}
                           target="_blank"
-                          rel="noopener noreferrer"
+                          rel="noopener"
                           aria-label={link.label ?? socialLabels[link.type] ?? link.href}
                           class="text-[rgb(var(--color-gray-500))] hover:text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-400))] dark:hover:text-[rgb(var(--color-gray-300))]"
                         >

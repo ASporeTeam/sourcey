@@ -204,7 +204,7 @@ function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
         if (!linkUrl) return text;
         const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
         const isExternal = linkUrl.startsWith("http://") || linkUrl.startsWith("https://");
-        const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : "";
+        const target = isExternal ? ' target="_blank" rel="noopener"' : "";
         return `<a href="${escapeAttr(linkUrl)}"${titleAttr}${target}>${text}</a>`;
       },
     },
