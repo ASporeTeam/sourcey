@@ -2,7 +2,7 @@
 
 All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepachangelog.com/).
 
-## Unreleased
+## 3.7.0 - 2026-10-18
 
 ### Changed
 
