@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { load as parseYaml } from "js-yaml";
+import {
+  CORE_SCHEMA,
+  defineMappingTag,
+  defineScalarTag,
+  defineSequenceTag,
+  load as parseYaml,
+} from "js-yaml";
 import type { ResolvedGroup, ResolvedPage } from "../config.js";
 import type { MarkdownPreprocessor } from "../core/markdown-loader.js";
 import type { MkDocsSourceOptions, SourceAdapter } from "./types.js";
@@ -15,7 +21,10 @@ interface MkDocsConfigFile {
 
 interface MkDocsNavPage {
   path: string;
+  /** Sidebar label, joined with its section's labels. */
   label?: string;
+  /** The page's own nav label, its title when the page has no heading. */
+  title?: string;
 }
 
 export function mkdocs(options: MkDocsSourceOptions): SourceAdapter {
@@ -44,7 +53,7 @@ async function resolveMkDocsGroups(
   configPath: string,
 ): Promise<{ docsDir: string; groups: ResolvedGroup[] }> {
   const raw = await readFile(configPath, "utf-8");
-  const parsed = parseYaml(sanitizeMkDocsYaml(raw)) as MkDocsConfigFile | null;
+  const parsed = parseYaml(raw, { schema: MKDOCS_YAML_SCHEMA }) as MkDocsConfigFile | null;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`MkDocs config must be a YAML object: ${configPath}`);
   }
@@ -76,9 +85,33 @@ async function resolveMkDocsGroups(
   return { docsDir, groups: nonEmptyGroups };
 }
 
-function sanitizeMkDocsYaml(raw: string): string {
-  return raw.replace(/!!python\/name:[^\s\]]+/g, "").replace(/!ENV\b/g, "");
-}
+/**
+ * MkDocs configs carry tags only MkDocs can resolve: Python objects
+ * (`!!python/name:`, `!!python/object/apply:`) and its own (`!ENV`,
+ * `!relative`). Sourcey reads the nav and docs_dir, so each loads as null.
+ */
+const MKDOCS_YAML_SCHEMA = CORE_SCHEMA.withTags(
+  ...["!", "tag:yaml.org,2002:python/"].flatMap((prefix) => [
+    defineScalarTag(prefix, { matchByTagPrefix: true, resolve: () => null, identify: () => false }),
+    defineSequenceTag(prefix, {
+      matchByTagPrefix: true,
+      create: () => null,
+      addItem: () => undefined,
+      finalize: () => null,
+      identify: () => false,
+    }),
+    defineMappingTag(prefix, {
+      matchByTagPrefix: true,
+      create: () => null,
+      addPair: () => "",
+      has: () => false,
+      keys: () => [],
+      get: () => undefined,
+      finalize: () => null,
+      identify: () => false,
+    }),
+  ]),
+);
 
 function mkDocsGroupsFromNav(nav: unknown[], docsDir: string): ResolvedGroup[] {
   const groups: ResolvedGroup[] = [];
@@ -96,7 +129,7 @@ function mkDocsGroupsFromNav(nav: unknown[], docsDir: string): ResolvedGroup[] {
 
     for (const [label, value] of Object.entries(entry)) {
       if (typeof value === "string") {
-        const page = resolveMkDocsNavPage({ path: value, label }, docsDir, seenPaths);
+        const page = resolveMkDocsNavPage({ path: value, label, title: label }, docsDir, seenPaths);
         if (page) loosePages.push(page);
         continue;
       }
@@ -119,6 +152,7 @@ function collectMkDocsNavPages(value: unknown, labelParts: string[]): MkDocsNavP
       {
         path: value,
         label: isMkDocsIndexPage(value) ? labelParts.join(" / ") || undefined : undefined,
+        title: isMkDocsIndexPage(value) ? labelParts.at(-1) : undefined,
       },
     ];
   }
@@ -137,6 +171,7 @@ function collectMkDocsNavPages(value: unknown, labelParts: string[]): MkDocsNavP
         {
           path: nested,
           label: [...labelParts, label].join(" / "),
+          title: label,
         },
       ];
     }
@@ -163,6 +198,7 @@ function resolveMkDocsNavPage(
     slug: slugFromMkDocsPath(navPath),
     file,
     label: page.label,
+    title: page.title,
     sourceRoot: docsDir,
     preprocess: [preprocessMkDocsMarkdown],
   };
@@ -219,14 +255,139 @@ export const preprocessMkDocsMarkdown: MarkdownPreprocessor = (body, context) =>
   if (!context.sourceRoot) return body;
   return normalizeMkDocsAdmonitions(
     normalizeMkDocsTabs(
-      escapeMkDocsCppTemplateAngles(
-        stripMkDocsInlineLanguageMarkers(
-          expandMkDocsSnippets(body, context.filePath, context.sourceRoot),
+      openMkDocsMarkdownBlocks(
+        mapMkDocsProse(
+          stripMkDocsInlineLanguageMarkers(
+            expandMkDocsSnippets(body, context.filePath, context.sourceRoot),
+          ),
+          (prose) => stripMkDocsIcons(stripMkDocsAttrLists(escapeMkDocsCppTemplateAngles(prose))),
         ),
       ),
     ),
   );
 };
+
+/**
+ * Tracks fenced code blocks line by line, at any indent since admonitions and
+ * tabs indent theirs. The returned check says whether a line belongs to one.
+ */
+function fencedLineTracker(): (line: string) => boolean {
+  let fence: { char: string; length: number } | null = null;
+  return (line) => {
+    const marker = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (marker && marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) {
+        fence = null;
+      }
+      return true;
+    }
+    if (marker && !(marker[1][0] === "`" && marker[2].includes("`"))) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      return true;
+    }
+    return false;
+  };
+}
+
+/**
+ * Applies a text transform to prose only. Fenced blocks and inline code spans
+ * pass through as written: `std::vector<int>` in code is code, not markup.
+ */
+function mapMkDocsProse(body: string, transform: (prose: string) => string): string {
+  const out: string[] = [];
+  let prose: string[] = [];
+  const inFence = fencedLineTracker();
+
+  const flushProse = () => {
+    if (prose.length > 0) out.push(mapOutsideCodeSpans(prose.join("\n"), transform));
+    prose = [];
+  };
+
+  for (const line of body.split("\n")) {
+    if (inFence(line)) {
+      flushProse();
+      out.push(line);
+      continue;
+    }
+    prose.push(line);
+  }
+  flushProse();
+  return out.join("\n");
+}
+
+const VOID_HTML_TAGS = new Set(["br", "hr", "img", "input", "source", "wbr"]);
+
+/**
+ * MkDocs' `md_in_html` renders Markdown inside an HTML block marked
+ * `markdown`, as Material's grids and cards are. CommonMark does the same once
+ * blank lines part the content from its tags, so add them and drop the
+ * attribute. Tags count only on lines of their own.
+ */
+function openMkDocsMarkdownBlocks(body: string): string {
+  const out: string[] = [];
+  const open: Array<{ tag: string; markdown: boolean }> = [];
+  const inFence = fencedLineTracker();
+
+  for (const line of body.split("\n")) {
+    if (inFence(line)) {
+      out.push(line);
+      continue;
+    }
+    const start = line.match(/^(\s*)<([a-z][\w-]*)\b([^>]*)>\s*$/i);
+    if (start && !start[3].trim().endsWith("/") && !VOID_HTML_TAGS.has(start[2].toLowerCase())) {
+      const [, indent, tag, attrs] = start;
+      const plain = attrs.replace(/\s+markdown(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?(?=\s|$)/i, "");
+      const markdown = plain !== attrs;
+      if (markdown || open.length > 0) open.push({ tag: tag.toLowerCase(), markdown });
+      out.push(...(markdown ? [`${indent}<${tag}${plain}>`, ""] : [line]));
+      continue;
+    }
+    const end = line.match(/^\s*<\/([a-z][\w-]*)>\s*$/i);
+    if (end && open.at(-1)?.tag === end[1].toLowerCase()) {
+      out.push(...(open.pop()!.markdown ? ["", line] : [line]));
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+function mapOutsideCodeSpans(text: string, transform: (prose: string) => string): string {
+  // A code span closes on a backtick run of its own length, within a paragraph.
+  const span = /(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\n)[\s\S])*?(?<!`)\1(?!`)/g;
+  let out = "";
+  let last = 0;
+  for (const match of text.matchAll(span)) {
+    out += transform(text.slice(last, match.index)) + match[0];
+    last = match.index + match[0].length;
+  }
+  return out + transform(text.slice(last));
+}
+
+const MKDOCS_ATTR = /^(?:#[\w-]+|\.[\w-]+|[\w:-]+=(?:"[^"]*"|'[^']*'|[^\s"'}]+)|[\w:-]+)$/;
+
+/**
+ * Removes Python-Markdown `attr_list` blocks, `{ #id .class key=value }`,
+ * which MkDocs reads as attributes and Sourcey would print as text. A brace
+ * counts only when every entry is an attribute and one names an id, a class or
+ * a value, or it opens with `{:`, so prose and template braces stay.
+ */
+function stripMkDocsAttrLists(prose: string): string {
+  return prose.replace(/[ \t]*\{(:?)[ \t]*([^{}\n]*?)[ \t]*\}/g, (match, colon: string, content: string) => {
+    const entries = content.match(/[^\s=]+=(?:"[^"]*"|'[^']*'|\S+)|\S+/g) ?? [];
+    if (entries.length === 0 || !entries.every((entry) => MKDOCS_ATTR.test(entry))) return match;
+    if (!colon && !entries.some((entry) => /^[#.]|=/.test(entry))) return match;
+    return "";
+  });
+}
+
+/**
+ * Removes Material's icon shortcodes, `:material-clock:` or
+ * `:octicons-arrow-right-24:`, whose icon sets Sourcey does not ship.
+ */
+function stripMkDocsIcons(prose: string): string {
+  return prose.replace(/:(?:material|octicons|fontawesome|simple)-[a-z0-9-]+:[ \t]?/g, "");
+}
 
 function expandMkDocsSnippets(body: string, filePath: string, sourceRoot: string): string {
   return body

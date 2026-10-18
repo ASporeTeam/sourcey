@@ -132,6 +132,21 @@ describe("loadMarkdownPage", { timeout: 30_000 }, () => {
     ]);
   });
 
+  it("shows headings without inline HTML or entities, keeping their ids", async () => {
+    await withTempDir(async (dir) => {
+      const filePath = join(dir, "hash.md");
+      await writeFile(filePath, "# Hash\n\n## <small>std::</small>hash&lt;json&gt;\n\n## Fish &amp; chips\n");
+
+      const page = await loadMarkdownPage(filePath, "hash");
+
+      expect(page.headings).toEqual([
+        { level: 2, text: "std::hash<json>", id: "small-std-small-hash-lt-json-gt" },
+        { level: 2, text: "Fish & chips", id: "fish-amp-chips" },
+      ]);
+      expect(page.html).toContain('id="small-std-small-hash-lt-json-gt"');
+    });
+  });
+
   it("generates id attributes on heading elements", async () => {
     const page = await loadMarkdownPage(resolve(FIXTURE_DIR, "test-page.md"), "test-page");
     expect(page.html).toContain('id="installation"');
@@ -241,13 +256,65 @@ describe("loadDocsPage", () => {
       expect(page.html).toContain("Read this");
       expect(page.html).toContain("The note body survives.");
       expect(page.html).toContain("Modern");
-      expect(page.html).toContain("json value;");
-      expect(page.html).toContain("&lt;json&gt;");
+      // The opening paragraph moves up to become the lede.
+      expect(page.description).toBe("Inline code keeps `json value;` readable. Template names like &lt;json&gt; stay visible.");
+      expect(page.html).not.toContain("readable.");
       expect(page.html).not.toContain("--8<--");
       expect(page.html).not.toContain("!!! note");
       expect(page.html).not.toContain("??? example");
       expect(page.html).not.toContain("=== &quot;Modern&quot;");
       expect(page.html).not.toContain("#!cpp");
+    });
+  });
+
+  it("leaves code in MkDocs pages as written and reads attr_list, md_in_html and icons as MkDocs does", async () => {
+    await withTempDir(async (dir) => {
+      const docsDir = join(dir, "docs");
+      await mkdir(docsDir, { recursive: true });
+      await writeFile(join(docsDir, "basic.cpp"), "#include <iostream>\nstd::vector<int> v;\n");
+      const filePath = join(docsDir, "index.md");
+      await writeFile(
+        filePath,
+        [
+          "# Hatch",
+          '<div class="grid" markdown>',
+          '![Hatch logo](logo.svg){ role="img" }',
+          "</div>",
+          "",
+          "Hatch manages `std::vector<int>` projects. {: .lead }",
+          "",
+          "Templates keep {{ name }} and {name}.",
+          "",
+          '<div class="grid cards" markdown>',
+          "",
+          "-   :material-clock:{ .lg .middle } __Set up in 5 minutes__",
+          "",
+          "</div>",
+          "",
+          '!!! example "Example"',
+          "    ```cpp",
+          '    --8<-- "basic.cpp"',
+          "    ```",
+        ].join("\n"),
+      );
+
+      const page = await loadDocsPage(filePath, "index", {
+        changelog: false,
+        sourceRoot: docsDir,
+        preprocess: [preprocessMkDocsMarkdown],
+      });
+      if (page.kind !== "markdown") throw new Error("expected a markdown page");
+      const text = page.html.replace(/<[^>]+>/g, "");
+
+      expect(page.description).toBe("Hatch manages `std::vector<int>` projects.");
+      // The excerpt is not the body's opening, so the body keeps it and the header shows no lede.
+      expect(page.hideLede).toBe(true);
+      expect(page.html).toContain('<div class="grid"><p><img src="logo.svg" alt="Hatch logo" /></p>');
+      expect(page.html).toContain("<li><strong>Set up in 5 minutes</strong></li>");
+      expect(text).toContain("std::vector&lt;int&gt; projects.");
+      expect(text).toContain("#include &lt;iostream&gt;");
+      expect(text).toContain("Templates keep {{ name }} and {name}.");
+      expect(text).not.toMatch(/&amp;lt;|role=|\.lead|\.middle|:material-/);
     });
   });
 
@@ -282,6 +349,33 @@ describe("loadDocsPage", () => {
       );
 
       expect(preprocessed).toContain("<small>std::</small>hash&lt;nlohmann::basic_json&gt;");
+    });
+  });
+
+  it("never takes a title from a comment inside a fenced code block", async () => {
+    await withTempDir(async (dir) => {
+      const filePath = join(dir, "routing.md");
+      await writeFile(
+        filePath,
+        ["Starlette has a simple routing system.", "", "```python", "# A standalone static files server:", "app = StaticFiles()", "```"].join("\n"),
+      );
+
+      expect((await loadDocsPage(filePath, "routing")).title).toBe("routing");
+      expect((await loadDocsPage(filePath, "routing", { title: "Routing" })).title).toBe("Routing");
+    });
+  });
+
+  it("prefers the page's own title and heading over a source format's title", async () => {
+    await withTempDir(async (dir) => {
+      const headed = join(dir, "headed.md");
+      const titled = join(dir, "titled.md");
+      await writeFile(headed, "# The `Router` class\n\nRoutes requests.\n");
+      await writeFile(titled, "---\ntitle: From frontmatter\n---\n\n# Heading\n");
+
+      const page = await loadDocsPage(headed, "headed", { title: "Routing" });
+      expect(page.title).toBe("The Router class");
+      expect(page.kind === "markdown" && page.html).not.toContain("<h1");
+      expect((await loadDocsPage(titled, "titled", { title: "Routing" })).title).toBe("From frontmatter");
     });
   });
 

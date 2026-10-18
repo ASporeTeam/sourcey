@@ -79,7 +79,7 @@ function MarkdownPageContent({ page, className = "" }: { page: MarkdownPage; cla
             </h1>
           </div>
         </div>
-        {page.description && (
+        {page.description && !page.hideLede && (
           <div
             class="page-description mt-2 text-lg prose prose-gray dark:prose-invert"
             style="overflow-wrap: anywhere"

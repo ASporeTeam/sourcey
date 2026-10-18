@@ -414,6 +414,12 @@ describe("resolveConfigFromRaw – mkdocs tabs", () => {
       expect(tab.groups?.[1].pages.map((page) => [page.slug, page.label])).toEqual([
         ["api/basic_json/basic_json", "basic_json / Constructor"],
       ]);
+      // A page's title is its own nav label, without the section path.
+      expect(tab.groups?.flatMap((group) => group.pages.map((page) => page.title))).toEqual([
+        "Overview",
+        "Install",
+        "Constructor",
+      ]);
 
       const pagesByPath = new Map<string, DocsPage>();
       for (const group of tab.groups!) {

@@ -149,6 +149,7 @@ export async function assembleSite(config: ResolvedConfig): Promise<SiteAssembly
           repoUrl: config.repo,
           sourceRoot: rp.sourceRoot,
           preprocess: rp.preprocess,
+          title: rp.title,
         });
         pagesByPath.set(rp.slug, page);
 

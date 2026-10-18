@@ -447,6 +447,11 @@ export interface ResolvedPage {
   file: string;
   /** Optional navigation label supplied by a source format such as MkDocs. */
   label?: string;
+  /**
+   * Optional page title supplied by a source format, such as an MkDocs nav
+   * label. A frontmatter title or the page's own first heading wins.
+   */
+  title?: string;
   /** Optional source root used for source-format-relative includes and assets. */
   sourceRoot?: string;
   /** Optional source-adapter Markdown preprocessors. */

@@ -235,6 +235,7 @@ export async function startDevServer(options: DevServerOptions): Promise<void> {
         repoUrl: config.repo,
         sourceRoot: content.page.sourceRoot,
         preprocess: content.page.preprocess,
+        title: content.page.title,
       });
       if (cache !== snapshot) return;
 

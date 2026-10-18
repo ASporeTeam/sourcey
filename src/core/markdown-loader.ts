@@ -3,7 +3,7 @@ import { basename, extname, relative } from "node:path";
 import { load as parseYaml } from "js-yaml";
 import { normalizeChangelog } from "./changelog-normalizer.js";
 import { htmlId } from "../utils/html-id.js";
-import { escapeAttr, safeUrl } from "../utils/html.js";
+import { escapeAttr, escapeHtml, safeUrl } from "../utils/html.js";
 import { renderIcon } from "../utils/icons.js";
 import {
   renderCodeBlock,
@@ -11,6 +11,7 @@ import {
   renderMarkdownInline,
   extractHeadings,
   extractFirstParagraph,
+  firstHeadingText,
   stripMarkdownLinks,
   type PageHeading,
 } from "../utils/markdown.js";
@@ -26,6 +27,11 @@ export interface MarkdownPage {
   title: string;
   /** Page description from frontmatter */
   description: string;
+  /**
+   * The description repeats a paragraph the body keeps, so the page header
+   * shows no lede.
+   */
+  hideLede?: boolean;
   /** Short navigation label, independent of the article title. */
   navTitle?: string;
   /** URL slug for this page (derived from filename) */
@@ -90,6 +96,8 @@ export interface LoadDocsPageOptions {
   repoUrl?: string;
   sourceRoot?: string;
   preprocess?: MarkdownPreprocessor[];
+  /** Title for a page that sets none and has no heading of its own. */
+  title?: string;
 }
 
 export interface MarkdownPreprocessContext {
@@ -1311,13 +1319,26 @@ function loadMarkdownPageFromBody(
   const headings = extractHeadings(componentPreprocessed);
   const html = renderMarkdown(preprocessed);
 
-  const title = meta.title ?? extractFirstHeading(componentPreprocessed) ?? slug;
+  const title = meta.title ?? extractFirstHeading(componentPreprocessed) ?? options.title ?? slug;
   const description = normalizeMarkdownDescription(meta.description, componentPreprocessed);
 
   // Strip leading h1 from rendered HTML when it duplicates the page title
-  const cleanHtml = html.replace(/^\s*<h1[^>]*>(.*?)<\/h1>\s*/i, (_m, inner) =>
-    inner.replace(/<[^>]+>/g, "").trim() === title ? "" : _m,
+  let cleanHtml = html.replace(/^\s*<h1[^>]*>(.*?)<\/h1>\s*/i, (_m, inner) =>
+    inner.replace(/<[^>]+>/g, "").trim() === escapeHtml(title) ? "" : _m,
   );
+
+  // A description excerpted from the body repeats one of its paragraphs. When
+  // that paragraph opens the body it moves up to become the lede; anywhere
+  // else the body keeps it and the header shows no lede.
+  let hideLede = false;
+  if (description && !(typeof meta.description === "string" && meta.description.trim())) {
+    const opening = cleanHtml.match(/^\s*<p>([\s\S]*?)<\/p>\s*/);
+    if (opening && visibleText(opening[1]) === visibleText(renderMarkdownInline(description))) {
+      cleanHtml = cleanHtml.slice(opening[0].length);
+    } else {
+      hideLede = true;
+    }
+  }
 
   const sourcePath = relative(process.cwd(), filePath);
   return {
@@ -1325,6 +1346,7 @@ function loadMarkdownPageFromBody(
     navTitle: typeof meta.navTitle === "string" ? meta.navTitle : undefined,
     title,
     description,
+    ...(hideLede ? { hideLede } : {}),
     slug,
     html: cleanHtml,
     headings,
@@ -1332,6 +1354,10 @@ function loadMarkdownPageFromBody(
     editPath: sourcePath,
     sourceRoot: options.sourceRoot ? relative(process.cwd(), options.sourceRoot) : undefined,
   };
+}
+
+function visibleText(html: string): string {
+  return html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
 function normalizeMarkdownDescription(description: unknown, markdown: string): string {
@@ -1342,11 +1368,12 @@ function normalizeMarkdownDescription(description: unknown, markdown: string): s
 }
 
 /**
- * Extract the first # heading from markdown as a fallback title.
+ * The page's first level-one heading, as plain text, for a fallback title. It
+ * reads the lexed document, so a `#` comment inside a fenced code block is not
+ * a heading.
  */
 function extractFirstHeading(md: string): string | undefined {
-  const match = md.match(/^#\s+(.+)$/m);
-  return match ? match[1].trim() : undefined;
+  return firstHeadingText(md, 1);
 }
 
 /**

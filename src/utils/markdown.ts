@@ -181,8 +181,7 @@ function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
         return options.code ? options.code(token) : renderCodeBlock(token.text, token.lang);
       },
       heading({ tokens, depth }: Tokens.Heading): string {
-        const text = headingText(tokens);
-        const id = `${options.headingPrefix ?? ""}${htmlId(text)}`;
+        const id = `${options.headingPrefix ?? ""}${htmlId(headingSource(tokens))}`;
         const level = Math.min(6, depth + (options.headingOffset ?? 0));
         return `<h${level} id="${escapeAttr(id)}">${this.parser.parseInline(tokens)}</h${level}>\n`;
       },
@@ -223,18 +222,43 @@ export function lexMarkdown(input?: string): Token[] {
 }
 
 /**
- * A heading's plain text: nested link and emphasis tokens contribute their
+ * A heading's source text: nested link and emphasis tokens contribute their
  * own text, so a linked code span reads `Stateful`, not `` `Stateful` ``.
- * The table of contents shows it and the heading id derives from it.
+ * Heading ids derive from it, so it keeps inline HTML and entities as written.
+ */
+function headingSource(tokens: Token[]): string {
+  return tokens
+    .map((token) => {
+      const nested = (token as { tokens?: Token[] }).tokens;
+      if (nested?.length) return headingSource(nested);
+      return "text" in token ? (token as { text: string }).text : token.raw;
+    })
+    .join("");
+}
+
+/**
+ * A heading's text as a reader sees it, for the table of contents and a
+ * fallback page title: inline HTML tags dropped, entities decoded.
  */
 function headingText(tokens: Token[]): string {
   return tokens
     .map((token) => {
       const nested = (token as { tokens?: Token[] }).tokens;
       if (nested?.length) return headingText(nested);
-      return "text" in token ? (token as { text: string }).text : token.raw;
+      if (token.type === "html") return "";
+      return decodeEntities("text" in token ? (token as { text: string }).text : token.raw);
     })
     .join("");
+}
+
+const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+
+function decodeEntities(text: string): string {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, body: string) => {
+    if (body[0] !== "#") return NAMED_ENTITIES[body.toLowerCase()] ?? entity;
+    const code = body[1] === "x" || body[1] === "X" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+  });
 }
 
 /**
@@ -248,30 +272,58 @@ export function extractHeadings(input: string): PageHeading[] {
     if (token.type === "heading") {
       const depth = (token as Tokens.Heading).depth;
       if (depth === 2 || depth === 3) {
-        const text = headingText((token as Tokens.Heading).tokens);
-        headings.push({ level: depth as 2 | 3, text, id: htmlId(text) });
+        const { tokens: inline } = token as Tokens.Heading;
+        headings.push({ level: depth as 2 | 3, text: headingText(inline), id: htmlId(headingSource(inline)) });
       }
     }
   }
   return headings;
 }
 
+/** Plain text of the first top-level heading at `depth`, if there is one. */
+export function firstHeadingText(input: string, depth: number): string | undefined {
+  const heading = lexMarkdown(input).find(
+    (token): token is Tokens.Heading => token.type === "heading" && token.depth === depth,
+  );
+  return heading ? headingText(heading.tokens).trim() || undefined : undefined;
+}
+
 /**
- * Extract the first paragraph token from markdown.
- * Useful for generated docs where a summary paragraph is embedded in the body.
+ * The summary text of the first paragraph that has any, for a page's
+ * description when it sets none.
  */
 export function extractFirstParagraph(input?: string): string {
   if (!input) return "";
   const tokens = lexMarkdown(input);
   for (const token of tokens) {
     if (token.type === "paragraph") {
-      const raw = token.raw.trim();
-      if (!raw) continue;
-      if (!raw.replace(/<[^>]+>/g, "").trim()) continue;
-      return raw;
+      const summary = summaryText(token.tokens ?? []).replace(/\s+/g, " ").trim();
+      if (summary) return summary;
     }
   }
   return "";
+}
+
+/**
+ * A paragraph as summary text: code spans and links kept as Markdown, emphasis
+ * reduced to its text. Images and inline HTML drop out, since a logo's alt text
+ * or a row of badges never describes the page.
+ */
+function summaryText(tokens: Token[]): string {
+  return tokens
+    .map((token) => {
+      if (token.type === "codespan") return token.raw;
+      if (token.type === "image" || token.type === "html") return "";
+      if (token.type === "br") return " ";
+      if (token.type === "link") {
+        const label = summaryText(token.tokens ?? []).trim();
+        return label ? `[${label}](${token.href})` : "";
+      }
+      const nested = (token as { tokens?: Token[] }).tokens;
+      if (nested) return summaryText(nested);
+      return "text" in token ? (token as { text: string }).text : token.raw;
+    })
+    .join("");
 }
 
 /**

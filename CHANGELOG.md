@@ -14,6 +14,11 @@ All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepa
 - Generated links no longer carry `rel="noreferrer"`, so the sites your docs link to, including the “Docs by Sourcey” attribution, can see the visit came from your docs. Links that open in a new tab keep `rel="noopener"`.
 - C++ reference pages read cleanly in every theme. Class and group pages no longer repeat their title and summary in the body. The `#include` and the declaration share one code card. "Inherits" and "Subclassed by" render as a relations list, "Defined in" as a muted metadata line, and qualifiers such as `virtual` and `const` as quiet labels instead of code chips.
 - "On this page" shows a heading's text without the backticks of a code span inside it, and rich index cards render inline code in descriptions.
+- A page's fallback title comes from its first level-one heading, never from a `#` comment inside a fenced code block. A page with no title and no heading takes its MkDocs nav label before its slug (#259).
+- A page summary skips images and inline HTML, so a logo's alt text or a row of badges no longer becomes the page or site description (#260).
+- A description taken from the body no longer repeats under the title. When the paragraph opens the page it becomes the lede; otherwise the page shows no lede.
+- MkDocs pages read as MkDocs renders them. Code inside fences and code spans stays as written, where `std::vector<int>` used to show as `std::vector&lt;int&gt;`. `attr_list` blocks such as `{ role="img" }` no longer print as text (#260), Markdown inside a `markdown` HTML block renders, as in Material's grids and cards, and Material icon shortcodes drop out. `mkdocs.yml` files with any Python or environment tag load, including `!!python/object/apply:`.
+- "On this page" shows headings with inline HTML or entities as readers see them, `std::hash<json>` rather than its markup. Heading ids are unchanged.
 
 ## 3.6.14 - 2026-10-17
 

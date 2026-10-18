@@ -297,7 +297,7 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
               </div>
               <header class="doc-title">
                 <h1>{docPage.title}</h1>
-                {docPage.description && <p>{docPage.description}</p>}
+                {docPage.description && !docPage.hideLede && <p>{docPage.description}</p>}
               </header>
               <div class="doc-metadata">
                 {document?.status && <span>{document.status}</span>}
