@@ -427,7 +427,7 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "sourcey"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "sourcey-rustdoc",
@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "sourcey-rustdoc"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
