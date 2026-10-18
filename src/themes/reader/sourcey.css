@@ -515,6 +515,11 @@ kbd {
   min-width: 110px;
   width: 30%;
 }
+/* An image inside a paragraph is inline content, so a row of badges stays on one line. */
+.reader-prose p img {
+  display: inline-block;
+  vertical-align: middle;
+}
 .reader-prose code {
   font-family: var(--mono);
   font-size: 0.9em;

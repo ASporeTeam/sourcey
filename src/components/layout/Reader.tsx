@@ -289,8 +289,13 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
             <>
               <div class="doc-breadcrumb">
                 <span>{tab?.label}</span>
-                <Icon name="chevron" size={12} />
-                <span>{edition}</span>
+                {/* Without a document label the edition is the tab's own label. */}
+                {edition !== tab?.label && (
+                  <>
+                    <Icon name="chevron" size={12} />
+                    <span>{edition}</span>
+                  </>
+                )}
                 {document?.status && (
                   <span class="pill soft">{document.badge ?? document.status}</span>
                 )}

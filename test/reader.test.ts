@@ -163,6 +163,9 @@ describe("reader theme", () => {
         expect.stringContaining("value="),
       );
       expect(options.map(([, , label]) => label), page).toEqual([...links].map(([, label]) => label));
+      // Without a document label the trail names the tab once.
+      const trail = html.match(/class="doc-breadcrumb">([\s\S]*?)<\/div>/)![1];
+      expect(trail.match(/Specification/g), page).toHaveLength(1);
     }
   });
 });

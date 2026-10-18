@@ -27,6 +27,7 @@ All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepa
 - A Go doc comment's paired backticks, `name`, render as code, and its indented examples are highlighted as Go.
 - Rust and Go package pages no longer repeat their opening sentence as a lede, and a Rust crate's summary skips its badge row. Rust crate cards show the same summary.
 - An image inside a paragraph stays inline, so a row of badges sits on one line instead of stacking.
+- The reader theme names a tab once in its breadcrumb when no `reader.document.label` is set.
 - `sourcey dev` no longer warns that it cannot resolve `preact` under pnpm and other package managers that do not hoist dependencies. An installed Sourcey renders from compiled JavaScript and skips Preact's dev preset. Dev asset URLs are also well formed on Windows (#275).
 
 ## 3.6.14 - 2026-10-17
