@@ -126,7 +126,7 @@ export function Sidebar() {
         id="sidebar"
         class={`z-20 hidden lg:block fixed bottom-0 right-auto ${
           wide
-            ? "left-0 w-[var(--sidebar-wide-width)] border-r border-[rgb(var(--color-gray-200))] dark:border-[rgb(var(--color-gray-800))]"
+            ? "left-0 w-[var(--sidebar-width)] border-r border-[rgb(var(--color-gray-200))] dark:border-[rgb(var(--color-gray-800))]"
             : "w-[18rem]"
         }`}
         style="top: var(--header-height)"

@@ -7,6 +7,7 @@ import {
   NavigationContext,
 } from "../../renderer/context.js";
 import { langIconCSS } from "../../utils/lang-icons.js";
+import { shadedNeutrals } from "../../utils/palette.js";
 import pkg from "../../../package.json" with { type: "json" };
 
 export function Head() {
@@ -49,6 +50,14 @@ export function Head() {
   const headerHeight = nav.tabs.length > 1 ? "7rem" : "4rem";
   const headerHeightMobile = "7.5rem";
   const showLangIconCSS = page.kind === "spec" && site.codeSamples.length > 0;
+  // The full-width theme shades its neutrals from the primary colour. They sit
+  // with the other config tokens, so a site's custom CSS can still set them.
+  const shades = site.theme.name === "api-first" ? shadedNeutrals(colors.primary) : undefined;
+  const shadeTokens = shades
+    ? Object.entries(shades.gray)
+        .map(([step, rgb]) => `--color-gray-${step}: ${rgb};`)
+        .join("\n      ")
+    : "";
 
   const themeCSS = `
     :root {
@@ -57,7 +66,8 @@ export function Head() {
       --color-primary-dark: ${colors.dark};
       --color-primary-ink: ${colors.dark};
       --color-background-light: 255 255 255;
-      --color-background-dark: 11 12 16;
+      --color-background-dark: ${shades?.backgroundDark ?? "11 12 16"};
+      ${shadeTokens}
       --font-sans: ${fonts.sans};
       --font-mono: ${fonts.mono};
       --sidebar-width: ${layout.sidebar};

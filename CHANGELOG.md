@@ -6,7 +6,7 @@ All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepa
 
 ### Changed
 
-- The `api-first` theme is now full width. The header and tab row run edge to edge on a tinted band, and the sidebar is pinned to the left edge. Guide pages centre a reading column beside "On this page". Each API and MCP operation splits into a content column and an examples column, with the request sample on a dark card. Sites already on `api-first` will see their layout widen.
+- The `api-first` theme is now full width. The header and tab row run edge to edge on a tinted band, and the sidebar is pinned to the left edge. Guide pages centre a reading column beside "On this page". Each API and MCP operation splits into a content column and an examples column, with the request sample on a dark card. The neutral greys, header band and code card are shaded from the site's primary colour and stay overridable from custom CSS; widths come from `theme.layout`. Sites already on `api-first` will see their layout widen.
 - Inline code renders as a chip in every theme instead of showing literal backticks.
 
 ### Fixed

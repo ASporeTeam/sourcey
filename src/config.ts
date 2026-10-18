@@ -638,7 +638,11 @@ function resolveTheme(raw: SourceyConfig, configDir: string): ResolvedTheme {
   };
 
   const defaults =
-    name === "reader" ? { sidebar: "245px", toc: "220px", content: "850px" } : DEFAULT_LAYOUT;
+    name === "reader"
+      ? { sidebar: "245px", toc: "220px", content: "850px" }
+      : name === "api-first"
+        ? { sidebar: "17.5rem", toc: "13.5rem", content: "52rem" }
+        : DEFAULT_LAYOUT;
   const layout = {
     sidebar: raw.theme?.layout?.sidebar ?? defaults.sidebar,
     toc: raw.theme?.layout?.toc ?? defaults.toc,

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { markdown, mcp, openapi } from "../src/adapters/index.js";
 import { resolveConfigFromRaw } from "../src/config.js";
 import { buildSourceySite, writeSourceySite } from "../src/site.js";
+import { rgbToOklch, shadedNeutrals } from "../src/utils/palette.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -13,19 +14,20 @@ afterEach(async () => {
   );
 });
 
-async function buildDemo(theme: "api-first" | "default") {
+async function buildDemo(theme: "api-first" | "default", customCss?: string) {
   const dir = await mkdtemp(join(tmpdir(), `sourcey-${theme}-`));
   directories.push(dir);
   await writeFile(
     join(dir, "quickstart.md"),
     "---\ntitle: Quickstart\ndescription: Build the demo.\n---\n\nRun `npm run build`.\n\n## First step\n\nText.\n\n### Detail\n\nMore.\n",
   );
+  if (customCss) await writeFile(join(dir, "brand.css"), customCss);
   await copyFile(new URL("fixtures/cheese.yml", import.meta.url), join(dir, "cheese.yml"));
   await copyFile(new URL("fixtures/nitrosend.mcp.json", import.meta.url), join(dir, "tools.mcp.json"));
   const config = await resolveConfigFromRaw(
     {
       name: "Cheese Store",
-      theme: { name: theme },
+      theme: { name: theme, colors: { primary: "#d97706" }, ...(customCss ? { css: ["brand.css"] } : {}) },
       navigation: {
         tabs: [
           {
@@ -63,7 +65,25 @@ describe("api-first theme", () => {
     expect(guide).toMatch(/<aside id="toc" class="toc-wide[^"]*"[^>]*>\s*<h5 class="toc-wide-label">On this page<\/h5>/);
     expect(guide).not.toContain("noreferrer");
     expect(css).toContain(".operation-split");
-    expect(css).toContain("--sidebar-wide-width");
+    expect(css).toContain("var(--sidebar-width)");
+  });
+
+  it("shades its neutrals from the primary colour, ahead of custom CSS so a site can override them", async () => {
+    const { guide } = await buildDemo("api-first", ":root { --color-gray-50: 1 2 3; }");
+    const shades = shadedNeutrals("217 119 6");
+    const injected = guide.indexOf(`--color-gray-50: ${shades.gray[50]};`);
+    expect(injected).toBeGreaterThan(-1);
+    expect(guide).toContain(`--color-background-dark: ${shades.backgroundDark};`);
+    expect(guide.indexOf("--color-gray-50: 1 2 3;")).toBeGreaterThan(injected);
+    expect(guide).toContain("--sidebar-width: 17.5rem;");
+    expect(guide).toContain("--toc-width: 13.5rem;");
+    expect(guide).toContain("--content-max-width: 52rem;");
+  });
+
+  it("hard-codes no colour in its stylesheet", async () => {
+    const css = await readFile(new URL("../src/themes/api-first/sourcey.css", import.meta.url), "utf8");
+    expect(css).not.toMatch(/rgb\(\s*\d/);
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 
   it("splits each API and MCP operation into content and examples, without the endpoint box", async () => {
@@ -77,9 +97,11 @@ describe("api-first theme", () => {
     expect(mcp).toMatch(/<div class="operation-line" data-method="tool"><span class="operation-line-method">TOOL<\/span><\/div>/);
   });
 
-  it("leaves the default theme's layout as it was", async () => {
+  it("leaves the default theme's layout and neutrals as they were", async () => {
     const { guide, api } = await buildDemo("default");
     expect(guide).toContain("max-w-[92rem]");
+    expect(guide).not.toContain("--color-gray-50:");
+    expect(guide).toContain("--color-background-dark: 11 12 16;");
     expect(guide).not.toContain("page-trail");
     expect(guide).not.toContain("toc-wide");
     expect(api).not.toContain("operation-split");
@@ -91,5 +113,27 @@ describe("inline code", () => {
     const css = await readFile(new URL("../src/themes/default/sourcey.css", import.meta.url), "utf8");
     expect(css).not.toMatch(/content:\s*"`"/);
     expect(css).toMatch(/:where\(code\)[^{]*::before,[^{]*::after \{\s*content: none;/);
+  });
+});
+
+describe("primary shading", () => {
+  const hueOf = (rgb: string) => rgbToOklch(rgb.split(" ").map(Number) as [number, number, number])[2];
+
+  it("tints every neutral toward the primary's hue and steps lightness down the scale", () => {
+    const amber = shadedNeutrals("217 119 6");
+    const steps = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+    const lightness = steps.map((step) => rgbToOklch(amber.gray[step].split(" ").map(Number) as [number, number, number])[0]);
+    expect([...lightness].sort((a, b) => b - a)).toEqual(lightness);
+    const primaryHue = rgbToOklch([217, 119, 6])[2];
+    for (const step of [200, 500, 800]) expect(Math.abs(hueOf(amber.gray[step]) - primaryHue)).toBeLessThan(0.2);
+    expect(shadedNeutrals("99 102 241").gray[800]).not.toEqual(amber.gray[800]);
+  });
+
+  it("leaves the scale grey for a grey primary", () => {
+    const grey = shadedNeutrals("128 128 128");
+    for (const rgb of Object.values(grey.gray)) {
+      const [r, g, b] = rgb.split(" ").map(Number);
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(1);
+    }
   });
 });

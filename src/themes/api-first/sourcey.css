@@ -6,30 +6,9 @@
  * pinned to the left edge, and on guide pages a centred reading column with
  * the table of contents beside it. API and MCP operations split into a
  * content column and an examples column. Accents use the site's primary
- * colour; the grey scale is a cool slate.
+ * colour, and the neutral scale is shaded from it (see utils/palette.ts).
+ * Widths come from theme.layout and every token stays overridable.
  */
-
-/* ── Tokens ───────────────────────────────────────────────────────── */
-
-[data-sourcey-theme="api-first"] {
-  --sidebar-wide-width: 17.5rem;
-  --toc-wide-width: 13.5rem;
-  --reading-width: 52rem;
-
-  --color-gray-50: 246 248 250;
-  --color-gray-100: 235 238 241;
-  --color-gray-200: 213 219 225;
-  --color-gray-300: 192 200 210;
-  --color-gray-400: 135 146 162;
-  --color-gray-500: 105 115 134;
-  --color-gray-600: 84 92 112;
-  --color-gray-700: 60 66 87;
-  --color-gray-800: 42 47 69;
-  --color-gray-900: 26 31 54;
-  --color-gray-950: 13 16 33;
-  --color-background-dark: 12 14 22;
-  --color-band-light: 246 248 250;
-}
 
 #sourcey #page[data-sourcey-theme="api-first"]::before {
   display: none;
@@ -38,7 +17,7 @@
 /* ── Header band ──────────────────────────────────────────────────── */
 
 #sourcey [data-sourcey-theme="api-first"] .navbar-band {
-  background: rgb(var(--color-band-light));
+  background: rgb(var(--color-gray-50));
   border-bottom-color: rgb(var(--color-gray-200));
 }
 .dark #sourcey [data-sourcey-theme="api-first"] .navbar-band {
@@ -59,7 +38,7 @@
 }
 #sourcey [data-sourcey-theme="api-first"] .api-first-reading {
   flex: 1 1 auto;
-  max-width: var(--reading-width);
+  max-width: var(--content-max-width);
   margin: 0;
   padding: 0;
 }
@@ -68,7 +47,7 @@
 }
 @media (min-width: 1024px) {
   #sourcey [data-sourcey-theme="api-first"] .api-first-main {
-    padding-left: var(--sidebar-wide-width);
+    padding-left: var(--sidebar-width);
   }
   #sourcey [data-sourcey-theme="api-first"] .api-first-page {
     padding: 2.5rem 3rem 0;
@@ -259,7 +238,7 @@
 /* ── On this page ─────────────────────────────────────────────────── */
 
 #sourcey [data-sourcey-theme="api-first"] #toc.toc-wide {
-  width: var(--toc-wide-width);
+  width: var(--toc-width);
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
@@ -313,7 +292,7 @@
 
 /* The API introduction keeps a readable line length. */
 #sourcey [data-sourcey-theme="api-first"] #introduction .prose {
-  max-width: var(--reading-width);
+  max-width: var(--content-max-width);
 }
 
 /* ── Operations: content left, examples right ─────────────────────── */
@@ -441,12 +420,10 @@
   padding: 0;
   background: none;
   font-weight: 600;
-  color: rgb(194 65 12);
   text-transform: capitalize;
 }
 .dark #sourcey [data-sourcey-theme="api-first"] .required-badge {
   background: none;
-  color: rgb(251 146 60);
 }
 
 /* Request samples sit on a dark card; responses stay light. */
