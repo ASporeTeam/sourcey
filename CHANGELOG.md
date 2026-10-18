@@ -14,6 +14,7 @@ All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepa
 - Generated links no longer carry `rel="noreferrer"`, so the sites your docs link to, including the “Docs by Sourcey” attribution, can see the visit came from your docs. Links that open in a new tab keep `rel="noopener"`.
 - C++ reference pages read cleanly in every theme. Class and group pages no longer repeat their title and summary in the body. The `#include` and the declaration share one code card. "Inherits" and "Subclassed by" render as a relations list, "Defined in" as a muted metadata line, and qualifiers such as `virtual` and `const` as quiet labels instead of code chips.
 - "On this page" shows a heading's text without the backticks of a code span inside it, and rich index cards render inline code in descriptions.
+- C++ "Reimplements", "Reimplemented by", "References" and "Referenced by" name the class that declares the related member, `TCPClient::start` rather than `start`, through moxygen 2.2.0.
 - A page's fallback title comes from its first level-one heading, never from a `#` comment inside a fenced code block. A page with no title and no heading takes its MkDocs nav label before its slug (#259).
 - A page summary skips images and inline HTML, and paragraphs that hold only links, so a logo's alt text, a row of badges or a navigation row no longer becomes the page or site description (#260).
 - A description taken from the body no longer repeats under the title. When the paragraph opens the page it becomes the lede; otherwise the page shows no lede.
