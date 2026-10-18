@@ -62,9 +62,11 @@ describe("renderMarkdownInline", () => {
 });
 
 describe("extractFirstParagraph", () => {
-  it("skips badge rows and drops images, inline HTML and emphasis from the summary", () => {
+  it("skips badge and navigation rows and drops images, inline HTML and emphasis from the summary", () => {
     const markdown = [
       "[![github]][github]&ensp;[![crates-io]][crates-io] | ![logo](logo.svg)",
+      "",
+      "**[API Reference →](api.md)** · **[Source →](src/)**",
       "",
       "This crate provides **fast** <em>and</em> safe `Error` values. ![inline](x.svg)",
       "",

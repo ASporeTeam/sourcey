@@ -304,12 +304,24 @@ export function extractFirstParagraph(input?: string): string {
   const tokens = lexMarkdown(input);
   for (const token of tokens) {
     if (token.type === "paragraph") {
-      const summary = summaryText(token.tokens ?? []).replace(/\s+/g, " ").trim();
-      // Separators left between badges, such as &ensp; or |, are not prose.
-      if (/[\p{L}\p{N}]/u.test(summary.replace(/&#?\w+;/g, ""))) return summary;
+      // A row of badges or navigation links, joined by separators such as
+      // &ensp; or ·, has no prose of its own and is not a summary.
+      const prose = textOutsideLinks(token.tokens ?? []).replace(/&#?\w+;/g, "");
+      if (/[\p{L}\p{N}]/u.test(prose)) return summaryText(token.tokens ?? []).replace(/\s+/g, " ").trim();
     }
   }
   return "";
+}
+
+function textOutsideLinks(tokens: Token[]): string {
+  return tokens
+    .map((token) => {
+      if (token.type === "link" || token.type === "image" || token.type === "html") return "";
+      const nested = (token as { tokens?: Token[] }).tokens;
+      if (nested) return textOutsideLinks(nested);
+      return "text" in token ? (token as { text: string }).text : "";
+    })
+    .join("");
 }
 
 /**
