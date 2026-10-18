@@ -102,6 +102,33 @@ public link while generated pages still show `Defined in path:line`.
 
 Sourcey ships `default`, `minimal`, `api-first`, and `reader` themes. Select the complete renderer with `theme.name`; shared theme settings let you set brand colours, fonts, layout, and extra CSS without giving up a deterministic static build. The deprecated `theme.preset` key remains accepted through the 3.x line for compatibility.
 
+### API first
+
+`api-first` is the full-width theme. The header and tab row run edge to edge, the sidebar is pinned to the left edge, and guide and API pages share the same left and right edges. Guide pages keep "On this page" on the right. Each API and MCP operation splits into two columns: parameters and responses on the left, and the request and response examples on the right, in view while you read the operation.
+
+Its greys, header band, borders and code cards are shaded from `theme.colors.primary`. A vivid primary gives the neutrals a hint of its hue, and a grey primary leaves them grey. Links and the active page use the primary itself.
+
+```ts
+export default defineConfig({
+  name: "Example API",
+  theme: {
+    name: "api-first",
+    colors: { primary: "#0d9488" },
+    layout: { sidebar: "17.5rem", toc: "13.5rem", content: "52rem" },
+  },
+  // ...
+});
+```
+
+The layout values above are the theme's defaults; `content` caps the reading column of guide pages. The shades are CSS custom properties, `--color-gray-50` to `--color-gray-950` and `--color-background-dark`, written as space-separated RGB channels before your custom CSS. A stylesheet in `theme.css` can override any of them:
+
+```css
+:root {
+  --color-gray-50: 248 250 252;
+  --color-background-dark: 10 12 16;
+}
+```
+
 ### Reader
 
 `reader` is a light, three-column editorial theme for specifications and long-form documentation. It has a dark masthead, grouped chapter navigation, a page table of contents, previous/next links, and a compact chapter selector on mobile. Its configuration contains project content; the theme contains no project names or protocol assumptions.

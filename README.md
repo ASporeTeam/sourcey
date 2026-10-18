@@ -32,7 +32,7 @@ npx sourcey init
 - **Rust and rustdoc**: native API documentation from nightly rustdoc JSON, with doctests as a first-class extracted view. URL-encoded parametric impl anchors for deep-link parity with doc.rust-lang.org. Snapshot mode lets CI build on stable Rust toolchains. Aggregated doctests index across the workspace
 - **Context exports**: auto-generate llms.txt and llms-full.txt alongside your HTML as alternate views of the same documentation graph
 - **TypeScript config**: `sourcey.config.ts` with `defineConfig()` autocomplete; theme, navbar, CTA buttons, footer
-- **Themes**: default (sidebar + TOC), minimal (single column), api-first (three column), and reader (editorial specification); colors, fonts, layout dimensions, and custom CSS on top
+- **Themes**: default (sidebar + TOC), minimal (single column), api-first (full width, with examples beside each API operation), and reader (editorial specification); colors, fonts, layout dimensions, and custom CSS on top
 - **Vite dev server**: SSR hot reload on every component and CSS change; spec and markdown changes trigger instant refresh
 - **Dark mode**: semantic design tokens, light/dark logo variants, localStorage persistence
 - **Client-side search**: instant fuzzy search across all pages and API operations; Cmd+K
@@ -191,7 +191,7 @@ theme: {
 }
 ```
 
-Themes control the complete layout structure: `"default"` (sidebar + TOC), `"minimal"` (single centered column), `"api-first"` (three-column with persistent code panels), and `"reader"` (editorial specification reader). Shared brand settings apply on top. Theme-specific options are only interpreted by the selected theme.
+Themes control the complete layout structure: `"default"` (sidebar + TOC), `"minimal"` (single centered column), `"api-first"` (full width, with each API and MCP operation's examples beside it), and `"reader"` (editorial specification reader). Shared brand settings apply on top. Theme-specific options are only interpreted by the selected theme.
 
 ## CLI
 

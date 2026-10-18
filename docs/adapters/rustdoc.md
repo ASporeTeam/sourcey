@@ -143,17 +143,24 @@ minor version bump.
 
 ## Intra-doc links
 
-Intra-doc links of the form `` [`Foo`] `` resolve through rustdoc's
-per-item `links` map.
+Intra-doc links resolve through rustdoc's per-item `links` map. Each label
+rustdoc resolved becomes a Markdown reference definition, so the links
+render wherever CommonMark finds a reference link: `` [`Foo`] ``, `[Foo]`,
+`[text][Foo]`, and a path written as a destination, `[text](crate::Foo)`.
+Code blocks, code spans and the docs' own reference links render as written.
 
 - Items in the current workspace resolve to internal sourcey URLs.
-- Items in `std`, `core`, or `alloc` resolve to `doc.rust-lang.org/<channel>/...`.
+- Items in `std`, `core`, `alloc`, or `proc_macro` resolve to
+  `doc.rust-lang.org/stable/...`.
 - Items in other external crates resolve to
   `external_crates[crate_id].html_root_url` when present, or to
   `docs.rs/<crate>/latest/...` as a fallback.
-- Unresolvable labels render as plain text with
-  `title="unresolved intra-doc link"` and emit a
-  `RUSTDOC_INTRA_DOC_LINK_UNRESOLVED` info diagnostic.
+- External links name the item's rustdoc page from its kind, such as
+  `core/error/trait.Error.html`. Snapshots made before 3.7 carry no kind and
+  keep the bare path.
+- A label rustdoc could not resolve keeps its brackets, as rustdoc renders
+  it. A label whose target this site does not render shows as text and emits
+  a `RUSTDOC_INTRA_DOC_LINK_UNRESOLVED` info diagnostic.
 
 ## First-run compile cost
 
@@ -172,5 +179,5 @@ Subsequent invocations are near-instant. Snapshot mode skips this entirely.
 | `RUSTDOC_HELPER_MISSING` | error | The bundled `sourcey-rustdoc` source is not in the sourcey install. Run `npm rebuild sourcey`. |
 | `RUSTDOC_HELPER_FAILED` | error | The helper exited non-zero. The diagnostic message includes stderr. |
 | `RUSTDOC_AUTO_FELL_BACK_TO_SNAPSHOT` | info | Auto mode used the snapshot because nightly was missing. |
-| `RUSTDOC_INTRA_DOC_LINK_UNRESOLVED` | info | A `[\`Label\`]` link could not be resolved through rustdoc's link table. |
+| `RUSTDOC_INTRA_DOC_LINK_UNRESOLVED` | info | An intra-doc link resolves to an item this site does not render. |
 | `RUSTDOC_MISSING_HTML_ROOT_URL` | info | An external-crate reference lacks an `html_root_url`. Link falls back to docs.rs. |
