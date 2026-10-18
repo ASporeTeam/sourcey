@@ -222,6 +222,6 @@ cd docs && npx tsx ../src/cli.ts dev
 
 ## License
 
-[AGPL-3.0](LICENSE). Free to use, self-host, and modify. If you run Sourcey as a hosted service, you open-source your stack.
+[AGPL-3.0](LICENSE).
 
 Commercial licensing available; contact [sourcey.com](https://sourcey.com).
