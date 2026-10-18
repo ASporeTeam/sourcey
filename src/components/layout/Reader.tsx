@@ -21,6 +21,8 @@ function Icon({ name = "arrow", size = 20 }: { name?: string; size?: number }) {
     layers: ["m12 3 10 6-10 6L2 9l10-6Zm-10 10 10 6 10-6m-20 4 10 6 10-6"],
     copy: ["M9 9h12v12H9zM15 5V2H2v13h3"],
     code: ["m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"],
+    sun: ["M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"],
+    moon: ["M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"],
   };
   return (
     <svg
@@ -148,6 +150,17 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
                 <kbd>/</kbd>
               </button>
             )}
+            <button
+              id="theme-toggle"
+              class="reader-theme-toggle"
+              type="button"
+              aria-label="Switch to dark mode"
+              data-reader-enhancement
+              hidden
+            >
+              <span class="reader-theme-sun"><Icon name="sun" size={18} /></span>
+              <span class="reader-theme-moon"><Icon name="moon" size={18} /></span>
+            </button>
             {site.navbar.primary && (
               <a class="header-cta" href={safeUrl(site.navbar.primary.href) ?? undefined}>
                 {site.navbar.primary.label}

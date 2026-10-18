@@ -23,6 +23,20 @@ export function ChangelogPage({ page }: { page: ChangelogPageData }) {
         )}
       </header>
 
+      {versions.length > 1 && (
+        <details class="sourcey-changelog-jump" data-changelog-jump>
+          <summary>
+            <span>Jump to release</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+          </summary>
+          <nav aria-label="Release versions">
+            {versions.map((version) => (
+              <a href={`#${version.id}`}>{version.version ?? "Unreleased"}</a>
+            ))}
+          </nav>
+        </details>
+      )}
+
       <div class="sourcey-changelog-list">
         {versions.map((version) => (
           <VersionCard key={version.id} version={version} />

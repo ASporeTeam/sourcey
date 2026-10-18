@@ -58,20 +58,24 @@
 
       fragmentNavLinks.forEach(function (link) {
         link.classList.remove('active');
+        link.removeAttribute('aria-current');
       });
       tocLinks.forEach(function (link) {
         link.classList.remove('active');
+        link.removeAttribute('aria-current');
       });
 
       var active = linkMap[id];
       if (active) {
         active.classList.add('active');
+        active.setAttribute('aria-current', 'location');
         active.scrollIntoView({ block: 'nearest', behavior: 'auto' });
       }
 
       var tocActive = tocMap[id];
       if (tocActive) {
         tocActive.classList.add('active');
+        tocActive.setAttribute('aria-current', 'location');
       }
     }
 
@@ -97,7 +101,8 @@
       var href = link.getAttribute('href');
       if (!href || href.indexOf('#') === -1) return;
       var id = href.split('#')[1];
-      if (!id) return;
+      if (!id || !document.getElementById(id)) return;
+      if (new URL(href, window.location.href).pathname !== window.location.pathname) return;
 
       e.preventDefault();
       clickedId = id;

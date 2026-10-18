@@ -43,7 +43,7 @@ function TocList({ headings }: { headings: PageHeading[] }) {
   );
 }
 
-export function TableOfContents({ headings }: { headings: PageHeading[] }) {
+export function TableOfContents({ headings, label = "On this page" }: { headings: PageHeading[]; label?: string }) {
   const site = useContext(SiteContext);
   if (headings.length === 0) return null;
 
@@ -55,7 +55,7 @@ export function TableOfContents({ headings }: { headings: PageHeading[] }) {
         class="toc-wide hidden xl:block self-start sticky shrink-0 overflow-y-auto"
         style="max-height: calc(100vh - var(--header-height) - 2.5rem); top: calc(var(--header-height) + 2.5rem)"
       >
-        <h5 class="toc-wide-label">On this page</h5>
+        <h5 class="toc-wide-label">{label}</h5>
         <nav>
           <TocList headings={headings} />
         </nav>
@@ -73,7 +73,7 @@ export function TableOfContents({ headings }: { headings: PageHeading[] }) {
         <div class="text-[rgb(var(--color-gray-600))] text-sm leading-6 w-[16.5rem] overflow-y-auto space-y-2 pb-4 -mt-10 pt-10">
           <h5 class="font-medium text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))] flex items-center gap-2">
             <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" dangerouslySetInnerHTML={{ __html: iconPath("book-open") ?? "" }} />
-            On this page
+            {label}
           </h5>
 
           <nav>

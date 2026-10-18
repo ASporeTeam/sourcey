@@ -32,7 +32,7 @@ export function VersionCard({
   const hasMeta = isUnreleased || formattedDate || version.compareUrl;
 
   return (
-    <article id={version.id} class={`sourcey-changelog-version${isUnreleased ? " sourcey-changelog-version-unreleased" : ""}`}>
+    <article id={version.id} data-traverse-target={version.id} class={`sourcey-changelog-version${isUnreleased ? " sourcey-changelog-version-unreleased" : ""}`}>
       <header class="sourcey-changelog-version-header">
         <div class="sourcey-changelog-version-heading">
           <a href={href} class="sourcey-changelog-version-link">

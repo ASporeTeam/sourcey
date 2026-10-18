@@ -24,6 +24,7 @@ import { Definition } from "../openapi/Definition.js";
 import { SocialIcon, socialLabels } from "../ui/SocialIcon.js";
 import { McpConnection } from "../mcp/McpConnection.js";
 import { ChangelogPage } from "../changelog/ChangelogPage.js";
+import { changelogNavigation } from "../changelog/navigation.js";
 
 /**
  * Markdown page content with prose typography.
@@ -304,6 +305,8 @@ function ContentFooter() {
 
 function DefaultLayout() {
   const page = useContext(PageContext);
+  const nav = useContext(NavigationContext);
+  const releases = changelogNavigation(page, nav);
 
   return (
     <div class="max-w-[92rem] mx-auto relative px-4 lg:px-8">
@@ -318,12 +321,9 @@ function DefaultLayout() {
             />
           </div>
         ) : page.kind === "changelog" ? (
-          <div class="flex flex-row-reverse gap-12 box-border w-full">
-            <TableOfContents headings={page.changelog.headings} />
-            <ChangelogPageContent
-              page={page.changelog}
-              className="lg:pl-[23.7rem] lg:-ml-12 xl:w-[calc(100%-28rem)]"
-            />
+          <div class="sourcey-changelog-layout" data-release-navigation={releases ? "sidebar" : "outline"}>
+            <ChangelogPageContent page={page.changelog} className="sourcey-changelog-reading" />
+            {!releases && <TableOfContents headings={page.changelog.headings} label="Releases" />}
           </div>
         ) : (
           <SpecPageContent className="lg:pl-[23.7rem] lg:-ml-12" />
@@ -360,6 +360,8 @@ function MinimalLayout() {
  */
 function ApiFirstLayout() {
   const page = useContext(PageContext);
+  const nav = useContext(NavigationContext);
+  const releases = changelogNavigation(page, nav);
 
   return (
     <div class="relative">
@@ -371,9 +373,9 @@ function ApiFirstLayout() {
             <TableOfContents headings={page.markdown.headings} />
           </div>
         ) : page.kind === "changelog" ? (
-          <div class="api-first-page">
+          <div class="api-first-page" data-release-navigation={releases ? "sidebar" : "outline"}>
             <ChangelogPageContent page={page.changelog} className="api-first-reading" />
-            <TableOfContents headings={page.changelog.headings} />
+            {!releases && <TableOfContents headings={page.changelog.headings} label="Releases" />}
           </div>
         ) : (
           <div class="api-first-spec">

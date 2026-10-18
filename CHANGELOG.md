@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Reader supports light and dark reading modes, using the same saved preference and pre-paint theme script as the other themes. Its masthead toggle sits after search.
+
+### Changed
+
+- Changelogs keep version and date above their notes in a capped reading column. A dedicated changelog tab uses the left rail for releases; a changelog inside a larger docs tree keeps that tree and a compact release index on the right. Smaller screens provide a native jump menu.
+- Linked content cards have a directional arrow and keyboard focus treatment. Static cards no longer show a pointer cursor or link hover state.
+
 ### Fixed
 
 - Index compact body terms in `documents.json`, so keyword retrieval finds instructions and constraints beyond page titles and summaries. Prefer individual operations and schemas over an aggregate page when search scores tie. The optional MCP adapter consumes this index without a separate corpus or eager document reads.

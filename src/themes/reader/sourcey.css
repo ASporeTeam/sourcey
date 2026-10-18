@@ -14,6 +14,12 @@
   --blue: rgb(var(--color-primary));
   --blue-ink: rgb(var(--color-primary-dark));
   --lavender: oklch(88% 0.058 286);
+  --reader-heading: var(--ink);
+  --reader-text: oklch(34% 0.018 275);
+  --reader-muted: oklch(47% 0.017 275);
+  --reader-subtle: oklch(51% 0.013 275);
+  --reader-selected: oklch(93% 0.025 286);
+  --reader-hover: oklch(96% 0.012 286);
   --font: var(--font-sans);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -24,6 +30,19 @@
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   color-scheme: light;
+}
+:root.dark {
+  --paper: oklch(20% 0.012 275);
+  --mist: oklch(25% 0.014 275);
+  --line-light: oklch(34% 0.015 275);
+  --reader-heading: oklch(94% 0.007 275);
+  --reader-text: oklch(83% 0.012 275);
+  --reader-muted: oklch(74% 0.015 275);
+  --reader-subtle: oklch(68% 0.015 275);
+  --reader-selected: oklch(29% 0.043 286);
+  --reader-hover: oklch(26% 0.025 286);
+  --blue-ink: rgb(var(--color-primary-light));
+  color-scheme: dark;
 }
 * {
   box-sizing: border-box;
@@ -37,12 +56,11 @@ body {
   font-size: 15px;
   line-height: 1.7;
   background: var(--paper);
-  color: var(--ink);
+  color: var(--reader-heading);
 }
 body.light {
   background: var(--paper);
-  color: var(--ink);
-  color-scheme: light;
+  color: var(--reader-heading);
 }
 a {
   color: inherit;
@@ -145,7 +163,7 @@ p {
 .pill.soft {
   background: var(--mist);
   border-color: var(--line-light);
-  color: oklch(44% 0.018 275);
+  color: var(--reader-muted);
 }
 .skip-link {
   position: fixed;
@@ -217,6 +235,25 @@ p {
   align-items: center;
   gap: 25px;
 }
+.reader-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 7px;
+  border: 1px solid var(--line-dark);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted-dark);
+}
+.reader-theme-toggle:hover {
+  color: var(--text-light);
+  border-color: var(--muted-dark);
+}
+.reader-theme-sun,
+.dark .reader-theme-moon { display: none; }
+.dark .reader-theme-sun { display: block; }
 .search-link {
   display: flex;
   align-items: center;
@@ -334,7 +371,7 @@ kbd {
 }
 .nav-section {
   font-size: 9px;
-  color: oklch(49% 0.012 275);
+  color: var(--reader-subtle);
   text-transform: uppercase;
   letter-spacing: 0.09em;
   padding: 23px 12px 9px;
@@ -347,14 +384,14 @@ kbd {
   font-size: 11px;
   padding: 9px 12px;
   border-radius: 5px;
-  color: oklch(43% 0.017 275);
+  color: var(--reader-muted);
   margin: 1px 0;
 }
 .docs-sidebar nav > a:hover {
   background: var(--mist);
 }
 .docs-sidebar nav > a[aria-current] {
-  background: oklch(93% 0.025 286);
+  background: var(--reader-selected);
   color: var(--blue-ink);
   font-weight: 650;
 }
@@ -380,7 +417,7 @@ kbd {
 }
 .docs-sidebar-bottom p {
   font-size: 9px;
-  color: oklch(54% 0.012 275);
+  color: var(--reader-subtle);
   margin: 28px 0 0;
   line-height: 1.9;
 }
@@ -395,7 +432,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: oklch(50% 0.015 275);
+  color: var(--reader-subtle);
   font-size: 9px;
 }
 .doc-breadcrumb .pill {
@@ -411,7 +448,7 @@ kbd {
   line-height: 1.17;
 }
 .doc-title > p {
-  color: oklch(47% 0.017 275);
+  color: var(--reader-muted);
   font-size: 15px;
   line-height: 1.8;
   margin-bottom: 26px;
@@ -423,7 +460,7 @@ kbd {
   border-block: 1px solid var(--line-light);
   padding: 12px 0;
   font-size: 8px;
-  color: oklch(51% 0.012 275);
+  color: var(--reader-subtle);
   margin-bottom: 35px;
 }
 .doc-metadata > span:first-child::before {
@@ -447,7 +484,7 @@ kbd {
   font-size: 8px;
 }
 .reader-prose {
-  color: oklch(34% 0.018 275);
+  color: var(--reader-text);
   font-size: 13px;
   line-height: 1.95;
   overflow-wrap: break-word;
@@ -459,7 +496,7 @@ kbd {
   font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.04em;
-  color: var(--ink);
+  color: var(--reader-heading);
   margin-top: 46px;
   margin-bottom: 20px;
   scroll-margin-top: 110px;
@@ -468,10 +505,10 @@ kbd {
   font-size: 18px;
   letter-spacing: -0.025em;
   margin-top: 30px;
-  color: var(--ink);
+  color: var(--reader-heading);
 }
 .reader-prose strong {
-  color: var(--ink);
+  color: var(--reader-heading);
   font-weight: 700;
 }
 .reader-prose a {
@@ -481,7 +518,7 @@ kbd {
   text-underline-offset: 3px;
 }
 .reader-prose a:hover {
-  color: var(--ink);
+  color: var(--reader-heading);
 }
 .reader-prose ul,
 .reader-prose ol {
@@ -501,7 +538,7 @@ kbd {
 .reader-prose th {
   background: var(--mist);
   text-align: left;
-  color: var(--ink);
+  color: var(--reader-heading);
   font-weight: 650;
 }
 .reader-prose th,
@@ -554,14 +591,14 @@ kbd {
 }
 .doc-pagination a:hover {
   border-color: var(--blue);
-  background: oklch(96% 0.012 286);
+  background: var(--reader-hover);
 }
 .doc-pagination a:last-child {
   text-align: right;
 }
 .doc-pagination span {
   font-size: 8px;
-  color: oklch(51% 0.013 275);
+  color: var(--reader-subtle);
 }
 .doc-pagination strong {
   font-size: 11px;
@@ -575,7 +612,7 @@ kbd {
   align-items: center;
   justify-content: space-between;
   font-size: 8px;
-  color: oklch(54% 0.012 275);
+  color: var(--reader-subtle);
 }
 .doc-footer-links {
   display: flex;
@@ -603,7 +640,7 @@ kbd {
 }
 .docs-toc .eyebrow {
   font-size: 8px;
-  color: oklch(45% 0.013 275);
+  color: var(--reader-muted);
   letter-spacing: 0.1em;
 }
 .docs-toc nav {
@@ -615,7 +652,7 @@ kbd {
 .docs-toc nav a {
   font-size: 9px;
   line-height: 1.65;
-  color: oklch(51% 0.013 275);
+  color: var(--reader-subtle);
 }
 .docs-toc nav a:hover,
 .docs-toc nav a[aria-current] {
@@ -642,7 +679,7 @@ kbd {
   align-items: center;
   gap: 9px;
   font-size: 8px;
-  color: oklch(51% 0.013 275);
+  color: var(--reader-subtle);
   margin-top: 13px;
 }
 .mobile-doc-nav {
@@ -721,7 +758,7 @@ kbd {
     background: transparent;
     border: 0;
     padding: 6px 0;
-    color: var(--ink);
+    color: var(--reader-heading);
   }
   .docs-main {
     padding: 30px var(--reader-gutter);
@@ -843,7 +880,7 @@ kbd {
 
 body#sourcey {
   background: var(--paper);
-  color: var(--ink);
+  color: var(--reader-heading);
   font-family: var(--font);
   font-size: 15px;
   line-height: 1.7;
@@ -994,6 +1031,16 @@ body#sourcey {
   }
 }
 @media print {
+  :root.dark {
+    --paper: white;
+    --mist: #f5f5f5;
+    --line-light: #ddd;
+    --reader-heading: black;
+    --reader-text: #222;
+    --reader-muted: #444;
+    --reader-subtle: #555;
+    --blue-ink: black;
+  }
   .site-header,
   .skip-link {
     display: none;

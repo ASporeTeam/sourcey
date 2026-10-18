@@ -1,5 +1,6 @@
 import { useContext } from "preact/hooks";
-import { NavigationContext, OptionsContext, SiteContext } from "../../renderer/context.js";
+import { NavigationContext, OptionsContext, PageContext, SiteContext } from "../../renderer/context.js";
+import { changelogNavigation } from "../changelog/navigation.js";
 import { SocialIcon, socialLabels } from "../ui/SocialIcon.js";
 import { Logo } from "../ui/Logo.js";
 import type { SiteNavGroup } from "../../core/navigation.js";
@@ -76,6 +77,7 @@ function NavGroups({ groups, activePageSlug, base }: {
                   <a
                     href={joinHref(base, item.href)}
                     class={`nav-link${isActive ? " active" : ""}`}
+                    aria-current={isActive ? (item.href.includes("#") ? "location" : "page") : undefined}
                   >
                     {item.method && <MethodPill method={item.method} />}
                     <span class="flex-1 break-words [word-break:break-word]">{item.label}</span>
@@ -108,6 +110,7 @@ export function Sidebar() {
   const nav = useContext(NavigationContext);
   const options = useContext(OptionsContext);
   const site = useContext(SiteContext);
+  const page = useContext(PageContext);
   const activeTab = nav.tabs.find((t) => t.slug === nav.activeTabSlug);
   if (!activeTab) return null;
 
@@ -116,7 +119,9 @@ export function Sidebar() {
   const wide = site.theme.name === "api-first";
   const { links } = site.navbar;
   const primaryAction = site.navbar.primary;
-  const groups = activeTab.groups;
+  const releases = changelogNavigation(page, nav);
+  const groups = releases?.groups ?? activeTab.groups;
+  const activePageSlug = releases?.activeId ?? nav.activePageSlug;
   const logoHref = site.logo?.href ?? joinHref(base, nav.tabs[0]?.href ?? "");
 
   return (
@@ -139,7 +144,7 @@ export function Sidebar() {
           <div class="relative text-sm leading-6">
             <div class="sticky top-0 h-8 z-10 bg-gradient-to-b from-[rgb(var(--color-background-light))] dark:from-[rgb(var(--color-background-dark))]" />
             <nav id="nav" role="navigation">
-              <NavGroups groups={groups} activePageSlug={nav.activePageSlug} base={base} />
+              <NavGroups groups={groups} activePageSlug={activePageSlug} base={base} />
             </nav>
           </div>
         </div>
@@ -185,7 +190,7 @@ export function Sidebar() {
 
         {/* Sidebar content for the active tab */}
         <nav class="pt-5 pb-3 px-4 flex-1 overflow-y-auto">
-          <NavGroups groups={groups} activePageSlug={nav.activePageSlug} base={base} />
+          <NavGroups groups={groups} activePageSlug={activePageSlug} base={base} />
         </nav>
 
         {/* Navbar links + CTA */}

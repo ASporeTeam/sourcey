@@ -142,7 +142,7 @@ The layout values above are the theme's defaults; `content` caps the reading col
 
 ### Reader
 
-`reader` is a light, three-column editorial theme for specifications and long-form documentation. It has a dark masthead, grouped chapter navigation, a page table of contents, previous/next links, and a compact chapter selector on mobile. Its configuration contains project content; the theme contains no project names or protocol assumptions.
+`reader` is a three-column editorial theme for specifications and long-form documentation, with light and dark reading modes. It has a dark masthead, grouped chapter navigation, a page table of contents, previous/next links, and a compact chapter selector on mobile. The theme toggle shares Sourcey's saved preference and sits after search in the masthead. Its configuration contains project content; the theme contains no project names or protocol assumptions.
 
 ```ts
 export default defineConfig({
