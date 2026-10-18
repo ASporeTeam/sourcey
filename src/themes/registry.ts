@@ -4,7 +4,7 @@ const foundation = { client: "index", css: ["default/sourcey.css"] };
 export const themeDefinitions = {
   default: foundation,
   minimal: foundation,
-  "api-first": foundation,
+  "api-first": { client: "index", css: ["default/sourcey.css", "api-first/sourcey.css"] },
   reader: { client: "reader", css: ["default/sourcey.css", "reader/sourcey.css"] },
 } as const;
 

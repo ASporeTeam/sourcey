@@ -30,6 +30,7 @@ import { ChangelogPage } from "../changelog/ChangelogPage.js";
  */
 function MarkdownPageContent({ page, className = "" }: { page: MarkdownPage; className?: string }) {
   const nav = useContext(NavigationContext);
+  const site = useContext(SiteContext);
 
   // Find the group label for the current page (eyebrow)
   const activeTab = nav.tabs.find((t) => t.slug === nav.activeTabSlug);
@@ -37,6 +38,13 @@ function MarkdownPageContent({ page, className = "" }: { page: MarkdownPage; cla
     g.items.some((item) => item.id === nav.activePageSlug),
   );
   const eyebrow = activeGroup?.label;
+  // The full-width theme names the page's place as a trail: tab, then group.
+  const trail =
+    site.theme.name === "api-first"
+      ? [nav.tabs.length > 1 ? activeTab?.label : undefined, eyebrow].filter(
+          (label): label is string => !!label,
+        )
+      : [];
 
   return (
     <div
@@ -45,10 +53,21 @@ function MarkdownPageContent({ page, className = "" }: { page: MarkdownPage; cla
     >
       <header class="relative leading-none">
         <div class="mt-0.5 space-y-2.5">
-          {eyebrow && (
-            <div class="h-5 text-[rgb(var(--color-primary-ink))] dark:text-[rgb(var(--color-primary-light))] text-sm font-semibold">
-              {eyebrow}
-            </div>
+          {trail.length > 0 ? (
+            <nav class="page-trail" aria-label="Breadcrumb">
+              {trail.map((label, i) => (
+                <span key={label} class="page-trail-item">
+                  {i > 0 && <span class="page-trail-separator" aria-hidden="true">/</span>}
+                  {label}
+                </span>
+              ))}
+            </nav>
+          ) : (
+            eyebrow && (
+              <div class="h-5 text-[rgb(var(--color-primary-ink))] dark:text-[rgb(var(--color-primary-light))] text-sm font-semibold">
+                {eyebrow}
+              </div>
+            )
           )}
           <div class="flex flex-col sm:flex-row items-start sm:items-center relative gap-2 min-w-0">
             <h1
@@ -331,31 +350,33 @@ function MinimalLayout() {
   );
 }
 
+/**
+ * The full-width frame: the sidebar is pinned to the left edge and the page
+ * fills the rest of the window. Guide pages centre a reading column with the
+ * table of contents beside it; spec pages give each operation the full width
+ * for its content and example columns.
+ */
 function ApiFirstLayout() {
   const page = useContext(PageContext);
 
   return (
-    <div class="max-w-[92rem] mx-auto relative px-4 lg:px-8">
+    <div class="relative">
       <Sidebar />
-      <main id="docs" class="pt-[8.5rem] lg:pt-10">
+      <main id="docs" class="api-first-main pt-[8.5rem] lg:pt-0">
         {page.kind === "markdown" ? (
-          <div class="flex flex-row-reverse gap-12 box-border w-full">
+          <div class="api-first-page">
+            <MarkdownPageContent page={page.markdown} className="api-first-reading" />
             <TableOfContents headings={page.markdown.headings} />
-            <MarkdownPageContent
-              page={page.markdown}
-              className="lg:pl-[23.7rem] lg:-ml-12 xl:w-[calc(100%-28rem)]"
-            />
           </div>
         ) : page.kind === "changelog" ? (
-          <div class="flex flex-row-reverse gap-12 box-border w-full">
+          <div class="api-first-page">
+            <ChangelogPageContent page={page.changelog} className="api-first-reading" />
             <TableOfContents headings={page.changelog.headings} />
-            <ChangelogPageContent
-              page={page.changelog}
-              className="lg:pl-[23.7rem] lg:-ml-12 xl:w-[calc(100%-28rem)]"
-            />
           </div>
         ) : (
-          <SpecPageContent className="lg:pl-[23.7rem] lg:-ml-12" />
+          <div class="api-first-spec">
+            <SpecPageContent />
+          </div>
         )}
       </main>
     </div>
@@ -389,6 +410,7 @@ export function Page() {
   return (
     <div
       id="page"
+      data-sourcey-theme={theme}
       class="relative antialiased text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]"
     >
       <Header />

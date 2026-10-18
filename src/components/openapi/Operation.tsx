@@ -24,10 +24,12 @@ interface OperationProps {
  * Single operation with sticky code panel:
  * - Endpoint bar at top
  * - Single-column content (left) + sticky code panel (right, xl+ only)
+ *
+ * The full-width theme renders the split layout instead.
  */
 export function Operation({ operation: op, serverUrl }: OperationProps) {
   const site = useContext(SiteContext);
-  const apiFirst = site.theme.name === "api-first";
+  if (site.theme.name === "api-first") return <SplitOperation operation={op} serverUrl={serverUrl} />;
   const id = `operation-${htmlId(op.path)}-${htmlId(op.method)}`;
   const hasParams = op.parameters.length > 0;
   const hasBody = !!op.requestBody;
@@ -60,7 +62,7 @@ export function Operation({ operation: op, serverUrl }: OperationProps) {
       )}
 
       {/* Content + sticky code panel */}
-      <div class={`flex flex-col ${apiFirst ? "lg:flex-row" : "xl:flex-row"} gap-8`}>
+      <div class="flex flex-col xl:flex-row gap-8">
         {/* Left: content column */}
         <div class="flex-1 min-w-0">
           {op.description && <Markdown content={op.description} class="mb-6 max-w-none" />}
@@ -95,7 +97,7 @@ export function Operation({ operation: op, serverUrl }: OperationProps) {
 
         {/* Right: sticky code panel */}
         <aside
-          class={`hidden ${apiFirst ? "lg:block" : "xl:block"} w-[28rem] shrink-0 sticky self-start overflow-y-auto space-y-4`}
+          class="hidden xl:block w-[28rem] shrink-0 sticky self-start overflow-y-auto space-y-4"
           style="top: calc(var(--header-height) + 2.5rem); max-height: calc(100vh - var(--header-height) - 5rem)"
         >
           <CodeSamplesExamples
@@ -113,7 +115,7 @@ export function Operation({ operation: op, serverUrl }: OperationProps) {
       </div>
 
       {/* Mobile: code examples shown inline below content */}
-      <div class={`${apiFirst ? "lg:hidden" : "xl:hidden"} mt-8 space-y-4`}>
+      <div class="xl:hidden mt-8 space-y-4">
         <CodeSamplesExamples
           operation={op}
           serverUrl={serverUrl}
@@ -127,6 +129,83 @@ export function Operation({ operation: op, serverUrl }: OperationProps) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The full-width theme's operation: two equal columns. The left starts with
+ * the title and a one-line method and path, then the description, body,
+ * parameters and responses. The right holds the request and response examples
+ * level with the title and stays on screen through the operation. Below the
+ * large breakpoint the examples follow the content.
+ */
+function SplitOperation({ operation: op, serverUrl }: OperationProps) {
+  const site = useContext(SiteContext);
+  const id = `operation-${htmlId(op.path)}-${htmlId(op.method)}`;
+  const hasParams = op.parameters.length > 0;
+  const hasBody = !!op.requestBody;
+  const mcp = op.mcpExtras;
+
+  const examples = (
+    <>
+      <CodeSamplesExamples operation={op} serverUrl={serverUrl} codeSampleLangs={site.codeSamples} />
+      {hasBody && <RequestBodyExample body={op.requestBody!} />}
+      {mcp ? <McpReturnsExample schema={mcp.outputSchema} /> : <ResponsesExamples responses={op.responses} />}
+    </>
+  );
+
+  return (
+    <section id={id} class="operation-split" data-traverse-target={id}>
+      <div class="operation-split-content">
+        <header class="operation-split-header">
+          <div class="flex items-baseline gap-2 flex-wrap">
+            <h2 class="operation-split-title">
+              {op.summary ? <Markdown content={op.summary} inline /> : op.path}
+            </h2>
+            {op.deprecated && <DeprecatedBadge />}
+            {mcp?.annotations && <AnnotationBadges annotations={mcp.annotations} />}
+          </div>
+          <div class="operation-line" data-method={op.method.toLowerCase()}>
+            <span class="operation-line-method">{op.method.toUpperCase()}</span>
+            {/* An MCP tool's path is its name, already the title. */}
+            {(op.summary ?? op.path) !== op.path && <span class="operation-line-path">{op.path}</span>}
+          </div>
+        </header>
+
+        {op.description && <Markdown content={op.description} class="operation-split-description max-w-none" />}
+
+        {hasBody && (
+          <div class="operation-split-section">
+            <SectionLabel meta={bodyMediaType(op.requestBody!)}>Body</SectionLabel>
+            <RequestBody body={op.requestBody!} />
+          </div>
+        )}
+
+        {hasParams && (
+          <div class="operation-split-section">
+            <SectionLabel>Parameters</SectionLabel>
+            <Parameters parameters={op.parameters} />
+          </div>
+        )}
+
+        {mcp ? (
+          <McpReturnsCopy schema={mcp.outputSchema} />
+        ) : (
+          op.responses.length > 0 && (
+            <div class="operation-split-section">
+              <SectionLabel>Response</SectionLabel>
+              <ResponsesCopy responses={op.responses} />
+            </div>
+          )
+        )}
+
+        {!mcp && <SecurityCopy security={op.security} />}
+
+        <div class="operation-split-examples-inline">{examples}</div>
+      </div>
+
+      <aside class="operation-split-examples">{examples}</aside>
+    </section>
   );
 }
 

@@ -1,0 +1,489 @@
+/**
+ * api-first: the full-width theme.
+ *
+ * Loaded after the default stylesheet and scoped to the theme attribute on
+ * the page. The frame runs edge to edge: a tinted header band, a sidebar
+ * pinned to the left edge, and on guide pages a centred reading column with
+ * the table of contents beside it. API and MCP operations split into a
+ * content column and an examples column. Accents use the site's primary
+ * colour; the grey scale is a cool slate.
+ */
+
+/* ── Tokens ───────────────────────────────────────────────────────── */
+
+[data-sourcey-theme="api-first"] {
+  --sidebar-wide-width: 17.5rem;
+  --toc-wide-width: 13.5rem;
+  --reading-width: 52rem;
+
+  --color-gray-50: 246 248 250;
+  --color-gray-100: 235 238 241;
+  --color-gray-200: 213 219 225;
+  --color-gray-300: 192 200 210;
+  --color-gray-400: 135 146 162;
+  --color-gray-500: 105 115 134;
+  --color-gray-600: 84 92 112;
+  --color-gray-700: 60 66 87;
+  --color-gray-800: 42 47 69;
+  --color-gray-900: 26 31 54;
+  --color-gray-950: 13 16 33;
+  --color-background-dark: 12 14 22;
+  --color-band-light: 246 248 250;
+}
+
+#sourcey #page[data-sourcey-theme="api-first"]::before {
+  display: none;
+}
+
+/* ── Header band ──────────────────────────────────────────────────── */
+
+#sourcey [data-sourcey-theme="api-first"] .navbar-band {
+  background: rgb(var(--color-band-light));
+  border-bottom-color: rgb(var(--color-gray-200));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .navbar-band {
+  background: rgb(var(--color-background-dark));
+  border-bottom-color: rgb(var(--color-gray-800));
+}
+
+/* ── Frame ────────────────────────────────────────────────────────── */
+
+#sourcey [data-sourcey-theme="api-first"] .api-first-main {
+  min-width: 0;
+}
+#sourcey [data-sourcey-theme="api-first"] .api-first-page {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  padding: 0 1.25rem;
+}
+#sourcey [data-sourcey-theme="api-first"] .api-first-reading {
+  flex: 1 1 auto;
+  max-width: var(--reading-width);
+  margin: 0;
+  padding: 0;
+}
+#sourcey [data-sourcey-theme="api-first"] .api-first-spec {
+  padding: 0 1.25rem;
+}
+@media (min-width: 1024px) {
+  #sourcey [data-sourcey-theme="api-first"] .api-first-main {
+    padding-left: var(--sidebar-wide-width);
+  }
+  #sourcey [data-sourcey-theme="api-first"] .api-first-page {
+    padding: 2.5rem 3rem 0;
+  }
+  #sourcey [data-sourcey-theme="api-first"] .api-first-spec {
+    max-width: 96rem;
+    padding: 2.5rem 3.5rem 0;
+  }
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────── */
+
+#sourcey [data-sourcey-theme="api-first"] #nav > div + div {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgb(var(--color-gray-200));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] #nav > div + div {
+  border-top-color: rgb(var(--color-gray-800));
+}
+#sourcey [data-sourcey-theme="api-first"] .nav-group-label {
+  padding: 0 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(var(--color-gray-900));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .nav-group-label {
+  color: rgb(var(--color-gray-200));
+}
+#sourcey [data-sourcey-theme="api-first"] .nav-link {
+  padding: 0.375rem 0.75rem;
+  gap: 0.625rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  border-radius: 0.375rem;
+  color: rgb(var(--color-gray-700));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .nav-link {
+  color: rgb(var(--color-gray-400));
+}
+#sourcey [data-sourcey-theme="api-first"] .nav-link:hover {
+  background: transparent;
+  color: rgb(var(--color-gray-900));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .nav-link:hover {
+  background: transparent;
+  color: rgb(var(--color-gray-200));
+}
+#sourcey [data-sourcey-theme="api-first"] .nav-link.active {
+  background: transparent;
+  color: rgb(var(--color-primary-ink));
+  font-weight: 500;
+  text-shadow: none;
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .nav-link.active {
+  background: transparent;
+  color: rgb(var(--color-primary-light));
+}
+
+/* ── Reading column ───────────────────────────────────────────────── */
+
+#sourcey [data-sourcey-theme="api-first"] .prose {
+  --tw-prose-body: rgb(var(--color-gray-700));
+  --tw-prose-headings: rgb(var(--color-gray-900));
+  --tw-prose-lead: rgb(var(--color-gray-700));
+  --tw-prose-links: rgb(var(--color-primary-ink));
+  --tw-prose-bold: rgb(var(--color-gray-900));
+  --tw-prose-counters: rgb(var(--color-gray-500));
+  --tw-prose-bullets: rgb(var(--color-gray-300));
+  --tw-prose-hr: rgb(var(--color-gray-200));
+  --tw-prose-quotes: rgb(var(--color-gray-900));
+  --tw-prose-quote-borders: rgb(var(--color-gray-200));
+  --tw-prose-captions: rgb(var(--color-gray-500));
+  --tw-prose-code: rgb(var(--color-gray-900));
+  --tw-prose-th-borders: rgb(var(--color-gray-200));
+  --tw-prose-td-borders: rgb(var(--color-gray-100));
+  line-height: 1.625;
+}
+/* Set the dark values directly: the light values above outrank the
+   typography plugin's own dark-mode switch. */
+.dark #sourcey [data-sourcey-theme="api-first"] .prose {
+  --tw-prose-body: rgb(var(--color-gray-300));
+  --tw-prose-headings: rgb(var(--color-gray-100));
+  --tw-prose-lead: rgb(var(--color-gray-300));
+  --tw-prose-links: rgb(var(--color-primary-light));
+  --tw-prose-bold: rgb(var(--color-gray-100));
+  --tw-prose-counters: rgb(var(--color-gray-400));
+  --tw-prose-bullets: rgb(var(--color-gray-600));
+  --tw-prose-hr: rgb(var(--color-gray-800));
+  --tw-prose-quotes: rgb(var(--color-gray-100));
+  --tw-prose-quote-borders: rgb(var(--color-gray-700));
+  --tw-prose-captions: rgb(var(--color-gray-400));
+  --tw-prose-code: rgb(var(--color-gray-100));
+  --tw-prose-th-borders: rgb(var(--color-gray-700));
+  --tw-prose-td-borders: rgb(var(--color-gray-800));
+}
+#sourcey [data-sourcey-theme="api-first"] .prose a {
+  font-weight: 500;
+  text-decoration: none;
+}
+#sourcey [data-sourcey-theme="api-first"] .prose a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+#sourcey [data-sourcey-theme="api-first"] .prose h2 {
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+  padding-top: 2rem;
+  border-top: 1px solid rgb(var(--color-gray-200));
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .prose h2 {
+  border-top-color: rgb(var(--color-gray-800));
+}
+#sourcey [data-sourcey-theme="api-first"] .prose h3 {
+  margin-top: 2rem;
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+}
+
+#sourcey [data-sourcey-theme="api-first"] #content-area > header h1 {
+  font-size: 1.75rem;
+  line-height: 2.25rem;
+  letter-spacing: 0;
+  color: rgb(var(--color-gray-900));
+}
+@media (min-width: 640px) {
+  #sourcey [data-sourcey-theme="api-first"] #content-area > header h1 {
+    font-size: 2rem;
+    line-height: 2.5rem;
+  }
+}
+.dark #sourcey [data-sourcey-theme="api-first"] #content-area > header h1 {
+  color: rgb(var(--color-gray-100));
+}
+#sourcey [data-sourcey-theme="api-first"] .page-description {
+  margin-top: 0.75rem;
+  font-family: inherit;
+  font-style: normal;
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  color: rgb(var(--color-gray-700));
+}
+@media (min-width: 1024px) {
+  #sourcey [data-sourcey-theme="api-first"] .page-description {
+    font-size: 1.25rem;
+    line-height: 1.875rem;
+  }
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .page-description {
+  color: rgb(var(--color-gray-300));
+}
+
+/* Below the desktop breakpoint the header carries the trail. */
+#sourcey [data-sourcey-theme="api-first"] .page-trail {
+  display: none;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: rgb(var(--color-gray-500));
+}
+#sourcey [data-sourcey-theme="api-first"] .page-trail-separator {
+  margin-right: 0.5rem;
+  color: rgb(var(--color-gray-300));
+}
+@media (min-width: 1024px) {
+  #sourcey [data-sourcey-theme="api-first"] .page-trail {
+    display: flex;
+  }
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .page-trail {
+  color: rgb(var(--color-gray-400));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .page-trail-separator {
+  color: rgb(var(--color-gray-600));
+}
+
+/* ── On this page ─────────────────────────────────────────────────── */
+
+#sourcey [data-sourcey-theme="api-first"] #toc.toc-wide {
+  width: var(--toc-wide-width);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+#sourcey [data-sourcey-theme="api-first"] .toc-wide-label {
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(var(--color-gray-900));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .toc-wide-label {
+  color: rgb(var(--color-gray-200));
+}
+#sourcey [data-sourcey-theme="api-first"] #toc.toc-wide .toc-item {
+  padding: 0.3125rem 0;
+  border-left: none;
+  font-weight: 400;
+  color: rgb(var(--color-gray-600));
+}
+#sourcey [data-sourcey-theme="api-first"] #toc.toc-wide ul ul {
+  margin: 0.125rem 0 0.375rem 0.125rem;
+  border-left: 1px solid rgb(var(--color-gray-200));
+}
+#sourcey [data-sourcey-theme="api-first"] #toc.toc-wide ul ul .toc-item {
+  margin-left: 0;
+  padding-left: 0.875rem;
+  color: rgb(var(--color-gray-600));
+}
+#sourcey [data-sourcey-theme="api-first"] #toc.toc-wide .toc-item:hover {
+  color: rgb(var(--color-gray-900));
+}
+#sourcey [data-sourcey-theme="api-first"] #toc.toc-wide .toc-item.active {
+  border-left: none;
+  font-weight: 500;
+  color: rgb(var(--color-primary-ink));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] #toc.toc-wide .toc-item {
+  color: rgb(var(--color-gray-400));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] #toc.toc-wide ul ul {
+  border-left-color: rgb(var(--color-gray-800));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] #toc.toc-wide .toc-item:hover {
+  color: rgb(var(--color-gray-200));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] #toc.toc-wide .toc-item.active {
+  color: rgb(var(--color-primary-light));
+}
+
+/* The API introduction keeps a readable line length. */
+#sourcey [data-sourcey-theme="api-first"] #introduction .prose {
+  max-width: var(--reading-width);
+}
+
+/* ── Operations: content left, examples right ─────────────────────── */
+
+#sourcey [data-sourcey-theme="api-first"] .operation-split {
+  padding: 3rem 0;
+  border-top: 1px solid rgb(var(--color-gray-200));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .operation-split {
+  border-top-color: rgb(var(--color-gray-800));
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-split-content {
+  min-width: 0;
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-split-header {
+  margin-bottom: 1.5rem;
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-split-title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 700;
+  color: rgb(var(--color-gray-900));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .operation-split-title {
+  color: rgb(var(--color-gray-100));
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-line-method {
+  font-weight: 600;
+  color: rgb(var(--color-gray-600));
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-line[data-method="get"] .operation-line-method,
+#sourcey [data-sourcey-theme="api-first"] .operation-line[data-method="resource"] .operation-line-method {
+  color: var(--method-get);
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-line[data-method="post"] .operation-line-method,
+#sourcey [data-sourcey-theme="api-first"] .operation-line[data-method="prompt"] .operation-line-method {
+  color: var(--method-post);
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-line[data-method="put"] .operation-line-method {
+  color: var(--method-put);
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-line[data-method="delete"] .operation-line-method {
+  color: var(--method-delete);
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-line[data-method="patch"] .operation-line-method,
+#sourcey [data-sourcey-theme="api-first"] .operation-line[data-method="tool"] .operation-line-method {
+  color: var(--method-patch);
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-line-path {
+  color: rgb(var(--color-gray-600));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .operation-line-path {
+  color: rgb(var(--color-gray-400));
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-split-description {
+  font-size: 1rem;
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-split-section {
+  margin-top: 2rem;
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-split-section > div:first-child h3 {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-split-examples {
+  display: none;
+}
+#sourcey [data-sourcey-theme="api-first"] .operation-split-examples-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+@media (min-width: 1024px) {
+  #sourcey [data-sourcey-theme="api-first"] .operation-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 3rem;
+    align-items: start;
+  }
+  #sourcey [data-sourcey-theme="api-first"] .operation-split-examples {
+    position: sticky;
+    top: calc(var(--header-height) + 1.5rem);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-height: calc(100vh - var(--header-height) - 3rem);
+    overflow-y: auto;
+  }
+  #sourcey [data-sourcey-theme="api-first"] .operation-split-examples-inline {
+    display: none;
+  }
+}
+
+/* Parameters: monospace name, quiet type and location, a plain required. */
+#sourcey [data-sourcey-theme="api-first"] .param-name {
+  font-weight: 600;
+  color: rgb(var(--color-gray-900));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .param-name {
+  color: rgb(var(--color-gray-100));
+}
+#sourcey [data-sourcey-theme="api-first"] .param-in {
+  padding: 0;
+  background: none;
+  font-weight: 400;
+  color: rgb(var(--color-gray-500));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .param-in {
+  background: none;
+  color: rgb(var(--color-gray-400));
+}
+#sourcey [data-sourcey-theme="api-first"] .required-badge {
+  padding: 0;
+  background: none;
+  font-weight: 600;
+  color: rgb(194 65 12);
+  text-transform: capitalize;
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .required-badge {
+  background: none;
+  color: rgb(251 146 60);
+}
+
+/* Request samples sit on a dark card; responses stay light. */
+#sourcey [data-sourcey-theme="api-first"] .code-group > div:first-child {
+  background: rgb(var(--color-gray-50));
+}
+#sourcey [data-sourcey-theme="api-first"] .code-group {
+  border-color: rgb(var(--color-gray-200));
+}
+#sourcey [data-sourcey-theme="api-first"] .code-samples {
+  border-color: transparent;
+  background: rgb(var(--color-gray-800));
+}
+#sourcey [data-sourcey-theme="api-first"] .code-samples > div:first-child {
+  background: rgb(var(--color-gray-700));
+}
+#sourcey [data-sourcey-theme="api-first"] .code-samples > div:first-child span,
+#sourcey [data-sourcey-theme="api-first"] .code-samples .code-lang-trigger {
+  color: rgb(var(--color-gray-200));
+}
+#sourcey [data-sourcey-theme="api-first"] .code-samples .code-lang-panel > div {
+  background: transparent;
+}
+#sourcey [data-sourcey-theme="api-first"] .code-samples .shiki,
+#sourcey [data-sourcey-theme="api-first"] .code-samples .shiki span {
+  color: var(--shiki-dark);
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .code-group > div:first-child {
+  background: rgb(var(--color-surface-dark-tint) / 0.03);
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .code-group {
+  border-color: rgb(var(--color-gray-800));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .code-samples {
+  background: rgb(var(--color-gray-950));
+  border-color: rgb(var(--color-gray-800));
+}
+.dark #sourcey [data-sourcey-theme="api-first"] .code-samples > div:first-child {
+  background: rgb(var(--color-gray-900));
+}

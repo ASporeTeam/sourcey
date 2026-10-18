@@ -1,4 +1,6 @@
+import { useContext } from "preact/hooks";
 import type { PageHeading } from "../../core/markdown-loader.js";
+import { SiteContext } from "../../renderer/context.js";
 import { iconPath } from "../../utils/icons.js";
 
 /**
@@ -42,7 +44,24 @@ function TocList({ headings }: { headings: PageHeading[] }) {
 }
 
 export function TableOfContents({ headings }: { headings: PageHeading[] }) {
+  const site = useContext(SiteContext);
   if (headings.length === 0) return null;
+
+  if (site.theme.name === "api-first") {
+    // The full-width theme: a plain column pinned beside the reading column.
+    return (
+      <aside
+        id="toc"
+        class="toc-wide hidden xl:block self-start sticky shrink-0 overflow-y-auto"
+        style="max-height: calc(100vh - var(--header-height) - 2.5rem); top: calc(var(--header-height) + 2.5rem)"
+      >
+        <h5 class="toc-wide-label">On this page</h5>
+        <nav>
+          <TocList headings={headings} />
+        </nav>
+      </aside>
+    );
+  }
 
   return (
     <aside

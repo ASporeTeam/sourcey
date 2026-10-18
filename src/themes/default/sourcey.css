@@ -139,16 +139,28 @@ h6[id] {
   display: block;
 }
 
-/* ── Inline Code (not-prose containers lose Tailwind prose styling) ── */
+/* ── Inline Code ──────────────────────────────────────────────────── */
+/* A quiet chip, in prose and outside it. The typography plugin's       */
+/* literal backticks read as unrendered Markdown, so they are removed.  */
 
+#sourcey .prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::before,
+#sourcey .prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::after {
+  content: none;
+}
+#sourcey .prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *)),
 #sourcey .not-prose :not(pre) > code {
   font-size: 0.875em;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--tw-prose-code);
+  background: rgb(var(--color-gray-100));
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
-#sourcey .not-prose :not(pre) > code::before,
-#sourcey .not-prose :not(pre) > code::after {
-  content: "`";
+.dark #sourcey .prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *)),
+.dark #sourcey .not-prose :not(pre) > code {
+  background: rgb(var(--color-surface-dark-tint) / 0.07);
 }
 
 /* ── Prose Code Block (fenced code in markdown pages) ─────────────── */

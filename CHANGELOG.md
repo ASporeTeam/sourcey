@@ -4,6 +4,11 @@ All notable changes to Sourcey. Format based on [Keep a Changelog](https://keepa
 
 ## Unreleased
 
+### Changed
+
+- The `api-first` theme is now full width. The header and tab row run edge to edge on a tinted band, and the sidebar is pinned to the left edge. Guide pages centre a reading column beside "On this page". Each API and MCP operation splits into a content column and an examples column, with the request sample on a dark card. Sites already on `api-first` will see their layout widen.
+- Inline code renders as a chip in every theme instead of showing literal backticks.
+
 ### Fixed
 
 - Generated links no longer carry `rel="noreferrer"`, so the sites your docs link to, including the “Docs by Sourcey” attribution, can see the visit came from your docs. Links that open in a new tab keep `rel="noopener"`.

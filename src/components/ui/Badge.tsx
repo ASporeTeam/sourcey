@@ -17,7 +17,7 @@ export function Badge({ children, class: className, style }: BadgeProps) {
 
 export function RequiredBadge() {
   return (
-    <span class="whitespace-nowrap rounded-md bg-red-100/50 px-2 py-0.5 text-xs font-medium text-red-600 dark:bg-red-400/10 dark:text-red-300">
+    <span class="required-badge whitespace-nowrap rounded-md bg-red-100/50 px-2 py-0.5 text-xs font-medium text-red-600 dark:bg-red-400/10 dark:text-red-300">
       required
     </span>
   );

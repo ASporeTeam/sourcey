@@ -112,6 +112,8 @@ export function Sidebar() {
   if (!activeTab) return null;
 
   const base = options.assetBase;
+  // The full-width theme pins the sidebar to the window's left edge.
+  const wide = site.theme.name === "api-first";
   const { links } = site.navbar;
   const primaryAction = site.navbar.primary;
   const groups = activeTab.groups;
@@ -122,11 +124,15 @@ export function Sidebar() {
       {/* Desktop sidebar — fixed, shows active tab only */}
       <div
         id="sidebar"
-        class="z-20 hidden lg:block fixed bottom-0 right-auto w-[18rem]"
+        class={`z-20 hidden lg:block fixed bottom-0 right-auto ${
+          wide
+            ? "left-0 w-[var(--sidebar-wide-width)] border-r border-[rgb(var(--color-gray-200))] dark:border-[rgb(var(--color-gray-800))]"
+            : "w-[18rem]"
+        }`}
         style="top: var(--header-height)"
       >
         <div
-          class="absolute inset-0 z-10 overflow-auto pr-8 pb-10"
+          class={`absolute inset-0 z-10 overflow-auto ${wide ? "pl-3 pr-4" : "pr-8"} pb-10`}
           data-sourcey-sidebar-scroll
           data-sourcey-sidebar-tab={nav.activeTabSlug || "default"}
         >

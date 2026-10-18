@@ -24,10 +24,12 @@ describe("reader theme", () => {
 
   it("selects assets for every theme through one registry", () => {
     for (const theme of ["default", "minimal", "api-first"] as const) {
-      expect(themeDefinitions[theme]).toEqual(themeDefinitions.default);
-      expect(resolveThemeAssets(theme).sourceyCssPaths).toHaveLength(1);
       expect(resolveThemeAssets(theme).clientEntry).toMatch(/client\/index\.(ts|js)$/);
+      expect(resolveThemeAssets(theme).sourceyCssPaths[0]).toMatch(/default\/sourcey\.css$/);
     }
+    expect(themeDefinitions.minimal).toEqual(themeDefinitions.default);
+    expect(resolveThemeAssets("default").sourceyCssPaths).toHaveLength(1);
+    expect(resolveThemeAssets("api-first").sourceyCssPaths.at(-1)).toMatch(/api-first\/sourcey\.css$/);
     expect(resolveThemeAssets("reader").clientEntry).toMatch(/client\/reader\.(ts|js)$/);
     expect(resolveThemeAssets("reader").sourceyCssPaths.at(-1)).toMatch(/reader\/sourcey\.css$/);
   });

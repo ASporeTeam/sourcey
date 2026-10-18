@@ -21,7 +21,7 @@ export function CodeSamplesExamples({ operation, serverUrl, codeSampleLangs }: C
   const title = operation.summary ?? `${operation.method.toUpperCase()} ${operation.path}`;
 
   return (
-    <div class="code-group not-prose">
+    <div class="code-group code-samples not-prose">
       {/* Header bar */}
       <div class="relative flex items-center justify-between gap-2 px-3">
         {/* Title */}

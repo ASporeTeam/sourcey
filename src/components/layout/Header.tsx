@@ -89,16 +89,22 @@ export function Header() {
 
   const base = options.assetBase;
   const logoHref = site.logo?.href ?? joinHref(base, nav.tabs[0]?.href ?? "");
+  // The full-width theme runs the header edge to edge on a tinted band.
+  const wide = site.theme.name === "api-first";
 
   return (
     <div id="navbar" class="z-30 fixed lg:sticky top-0 w-full">
-      <div class="absolute w-full h-full flex-none border-b border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-300)/0.06)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))]" />
+      <div class="navbar-band absolute w-full h-full flex-none border-b border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-300)/0.06)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))]" />
 
-      <div class="max-w-[92rem] mx-auto relative">
+      <div class={wide ? "relative w-full" : "max-w-[92rem] mx-auto relative"}>
         {/* Row 1: Logo + Search + Actions */}
         <div class="relative">
-          <div class="flex items-center lg:px-12 h-16 min-w-0 mx-4 lg:mx-0">
-            <div class="h-full relative flex-1 flex items-center gap-x-4 min-w-0 border-b border-[rgb(var(--color-gray-500)/0.08)] dark:border-[rgb(var(--color-gray-300)/0.08)]">
+          <div class={`flex items-center ${wide ? "lg:px-6" : "lg:px-12"} h-16 min-w-0 mx-4 lg:mx-0`}>
+            <div
+              class={`h-full relative flex-1 flex items-center gap-x-4 min-w-0${
+                wide ? "" : " border-b border-[rgb(var(--color-gray-500)/0.08)] dark:border-[rgb(var(--color-gray-300)/0.08)]"
+              }`}
+            >
               {/* Logo */}
               <div class="flex-1 flex items-center gap-x-4">
                 <Logo href={logoHref} logo={site.logo} name={site.name} />
@@ -187,7 +193,7 @@ export function Header() {
 
         {/* Desktop: Navigation tabs (hidden when single tab) */}
         {nav.tabs.length > 1 && (
-        <div class="hidden lg:flex px-12 h-12">
+        <div class={`hidden lg:flex ${wide ? "px-6" : "px-12"} h-12`}>
           <div class="h-full flex text-sm gap-x-6">
             {nav.tabs.map((tab) => {
               const isActive = tab.slug === nav.activeTabSlug;
