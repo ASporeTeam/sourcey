@@ -5,6 +5,30 @@ import { join } from "node:path";
 import { startDevServer } from "../src/dev-server.js";
 
 describe("standalone development transport", () => {
+  it("serves every stylesheet and script a reference page links, its code-language icons included", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sourcey-dev-assets-"));
+    let server: Awaited<ReturnType<typeof startDevServer>> | undefined;
+    try {
+      await writeFile(join(root, "spec.json"), JSON.stringify({ openapi: "3.1.0", info: { title: "Pets API", version: "1" }, paths: { "/pets": { get: { summary: "List pets", responses: { "200": { description: "OK" } } } } } }));
+      await writeFile(join(root, "sourcey.config.ts"), `export default {theme:{fonts:{google:false}},navigation:{tabs:[{tab:'API',slug:'',openapi:'spec.json'}]}};`);
+      server = await startDevServer({ port: 0, host: "127.0.0.1", config: root });
+      const origin = server.resolvedUrls!.local[0];
+      const html = await (await fetch(new URL("/", origin))).text();
+      const styles = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(match => match[1]);
+      const scripts = [...html.matchAll(/<script[^>]*\ssrc="([^"]+)"/g)].map(match => match[1]);
+      expect(styles.some(href => /lang(uage)?-icons/.test(href))).toBe(true);
+      for (const href of styles) {
+        // As a browser asks for a stylesheet.
+        const response = await fetch(new URL(href.replace(/&amp;/g, "&"), origin), { headers: { accept: "text/css,*/*;q=0.1" } });
+        expect([href, response.status, response.headers.get("content-type")?.split(";")[0]]).toEqual([href, 200, "text/css"]);
+      }
+      for (const src of scripts) expect([src, (await fetch(new URL(src.replace(/&amp;/g, "&"), origin))).status]).toEqual([src, 200]);
+    } finally {
+      await server?.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("serves query-bearing and Unicode documents and issues the compiled redirect status", async () => {
     const root = await mkdtemp(join(tmpdir(), "sourcey-dev-proof-"));
     let server: Awaited<ReturnType<typeof startDevServer>> | undefined;

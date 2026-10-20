@@ -12,14 +12,17 @@ import { cachedArtifacts } from "../core/artifact-cache.js";
 import { langIconCSS } from "../utils/lang-icons.js";
 import type { RenderAssetPaths } from "./context.js";
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const languageIconsModule = "virtual:sourcey-language-icons.css";
-export const languageIconsDevUrl = `/@id/__x00__${languageIconsModule}?direct`;
-/** One generated stylesheet for both Vite development and static bundling. */
+/** Where development serves the code-language icons, the stylesheet a build publishes beside its others. */
+export const languageIconsDevUrl = "/@sourcey/sourcey-lang-icons.css";
 export function languageIconsPlugin(): Plugin {
   return {
     name: "sourcey-language-icons",
-    resolveId(id) { if (id === languageIconsModule) return "\0" + id; },
-    load(id) { if (id === "\0" + languageIconsModule) return langIconCSS(); },
+    configureServer(server) {
+      server.middlewares.use(languageIconsDevUrl, (_request, response) => {
+        response.setHeader("Content-Type", "text/css; charset=utf-8");
+        response.end(langIconCSS());
+      });
+    },
   };
 }
 export interface EngineAssets {
