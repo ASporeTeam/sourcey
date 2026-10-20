@@ -89,6 +89,13 @@ describe("projectNavigation", () => {
     const groups = projectNavigation(nav, "api", "introduction").tabs[0].groups;
     expect(groups.map(group => group.items.map(item => item.label))).toEqual([["a", "b", "c"], ["a", "b", "c"]]);
   });
+
+  it("keeps a single-page reference's whole tree, its operations all sections of that one page", () => {
+    const onePage = (group: (typeof families)[number]) => ({ ...group, items: group.items.map(sub => ({ ...sub, items: sub.items.map(item => ({ ...item, href: `/api/#${item.id}` })) })) });
+    const single = { ...nav, tabs: [{ ...nav.tabs[0], groups: families.map(onePage) }] };
+    const groups = projectNavigation(single, "api", "introduction").tabs[0].groups;
+    expect(groups.flatMap(group => group.items.map(sub => (sub as { items: unknown[] }).items.length))).toEqual([20, 20, 20, 20, 20, 20]);
+  });
 });
 
 describe("withActivePage", () => {

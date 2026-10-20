@@ -271,6 +271,8 @@ export function* readingOrder(groups: readonly SiteNavGroup[]): Generator<string
 interface NavigationIndex {
   adjacent: Map<string, NonNullable<SiteNavigation["adjacentPages"]>>;
   count: number;
+  /** The pages its entries lead to. */
+  pages: number;
   ancestors: Map<string, Set<SiteNavGroup>>;
   positions: Map<SiteNavGroup, Map<string, number>>;
 }
@@ -278,7 +280,7 @@ const navigationIndexes = new WeakMap<SiteTab, NavigationIndex>();
 function navigationIndex(tab: SiteTab): NavigationIndex {
   let index = navigationIndexes.get(tab);
   if (index) return index;
-  index = { count: 0, ancestors: new Map(), positions: new Map(), adjacent: new Map() };
+  index = { count: 0, pages: 0, ancestors: new Map(), positions: new Map(), adjacent: new Map() };
   function visit(groups: readonly SiteNavGroup[], parents: SiteNavGroup[] = []) {
     for (const group of groups) {
       const ancestors = [...parents, group], positions = new Map<string, number>();
@@ -304,6 +306,7 @@ function navigationIndex(tab: SiteTab): NavigationIndex {
     if (seen.has(item.id) || pages.has(page)) return false;
     seen.add(item.id); pages.add(page); return true;
   });
+  index.pages = pages.size;
   for (const [position, item] of ordered.entries()) index.adjacent.set(item.id, { previous: ordered[position - 1], next: ordered[position + 1] });
   navigationIndexes.set(tab, index); return index;
 }
@@ -315,8 +318,9 @@ export function projectNavigation(nav: SiteNavigation, tabSlug: string, pageSlug
   const index = navigationIndex(active);
   // Every page carries its tab's sidebar. A reference's runs to thousands of operations, so past
   // a hundred only the branch around the page keeps its contents; an authored tree is shown
-  // whole, as readers expect, until it is several times that.
-  if (index.count <= (active.kind === "spec" ? 100 : 400)) return withActivePage(nav, tabSlug, pageSlug);
+  // whole, as readers expect, until it is several times that. A tab of one page, such as a
+  // single-page reference, has no other page to carry it, and is shown whole.
+  if (index.pages <= 1 || index.count <= (active.kind === "spec" ? 100 : 400)) return withActivePage(nav, tabSlug, pageSlug);
   function branch(group: SiteNavGroup): SiteNavGroup {
     const contains = index.ancestors.get(pageSlug)?.has(group);
     if (contains) {
