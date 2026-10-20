@@ -135,6 +135,19 @@ describe("loadMarkdownPage", { timeout: 30_000 }, () => {
     expect(page.html).not.toContain('class="steps not-prose"');
   });
 
+  it("draws a steps block written as a numbered list, one step per item", async () => {
+    await withTempDir(async (dir) => {
+      const file = join(dir, "steps.md");
+      await writeFile(file, [":::steps", "1. Register", "   Send the request.", "2. Verify", "   Check the signature.", ":::"].join("\n"));
+      const page = await loadMarkdownPage(file, "steps");
+
+      expect(page.html).toContain('class="steps not-prose"');
+      expect(page.html.match(/class="step-item"/g)?.length).toBe(2);
+      expect(page.html).toContain('<p class="step-title">Register</p>');
+      expect(page.html).toContain("Check the signature.");
+    });
+  });
+
   it("extracts h2 and h3 headings with IDs", async () => {
     const page = await loadMarkdownPage(resolve(FIXTURE_DIR, "test-page.md"), "test-page");
     expect(page.headings).toEqual([

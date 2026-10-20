@@ -119,7 +119,7 @@ function container(name: string): NativeComponentDefinition {
               const heading = lines[0].replace(/^\s*\d+[.)]\s+/, "");
               const body = dedent(lines.slice(1).join("\n"));
               expanded.push({ kind: "component", name: "Step", id: context.id("step"), definition: builtins.Step,
-                resolved: { content: [label(heading), ...await context.parseMarkdown(body)] } });
+                resolved: { content: [label(heading), ...await context.parseMarkdown(body)], data: { props: {} } satisfies ContainerData } });
             }
           }
         }
