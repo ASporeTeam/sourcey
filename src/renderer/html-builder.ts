@@ -99,6 +99,7 @@ export function createRenderOptions(
     assets: options?.assets && {
       ...options.assets,
       styles: options.assets.styles.map(path => assetBase + path),
+      languageIcons: assetBase + options.assets.languageIcons,
       client: assetBase + options.assets.client,
       theme: assetBase + options.assets.theme,
       search: assetBase + options.assets.search,

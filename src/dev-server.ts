@@ -69,7 +69,8 @@ export async function startDevServer(options: DevServerOptions): Promise<ViteDev
 
     const renderOptions = createRenderOptions(page, snapshot.site);
     renderOptions.assets = {
-      styles: [fsUrl(tailwindCssPath), ...sourceyCssPaths.map(path => fsUrl(path) + "?direct"), languageIconsDevUrl],
+      styles: [fsUrl(tailwindCssPath), ...sourceyCssPaths.map(path => fsUrl(path) + "?direct")],
+      languageIcons: languageIconsDevUrl,
       client: fsUrl(clientEntry), clientType: "module", theme: fsUrl(themeInit),
       search: fsUrl(searchEntry), tryIt: fsUrl(tryItEntry),
     };

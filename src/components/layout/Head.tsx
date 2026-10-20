@@ -121,6 +121,7 @@ export function Head() {
       <style dangerouslySetInnerHTML={{ __html: themeCSS }} />
       {options.assets && <script src={options.assets.theme} data-default={site.theme.appearance?.default ?? "system"} data-storage-key={site.theme.appearance?.storageKey ?? "sourcey-theme"} />}
       {options.assets?.styles.map(href => <link rel="stylesheet" href={href} />)}
+      {page.kind === "spec" && options.assets && <link rel="stylesheet" href={options.assets.languageIcons} />}
       {site.customCSS && <style dangerouslySetInnerHTML={{ __html: site.customCSS }} />}
       {site.favicon && <link rel="icon" href={site.favicon} />}
     </head>

@@ -18,6 +18,8 @@ import type {
 /** The engine files a page links, as it addresses them (content-addressed in builds, source modules in dev). */
 export interface RenderAssetPaths {
   styles: string[];
+  /** The code-language icons, linked only by pages that draw code samples. */
+  languageIcons: string;
   client: string;
   clientType?: "module";
   theme: string;

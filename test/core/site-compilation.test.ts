@@ -10,7 +10,7 @@ import { loadMarkdownPage } from "../../src/core/markdown-loader.js";
 import { createSearch } from "../../src/core/search-query.js";
 import { writeArtifacts } from "../../src/renderer/writer.js";
 import { openDocumentation } from "../../src/exports/document-index.js";
-import { engineAsset } from "../built-site.js";
+import { engineAsset, engineHref } from "../built-site.js";
 
 async function fixture(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "sourcey-compilation-"));
@@ -366,6 +366,21 @@ describe("native compilation", () => {
     expect(trail("api.html")).toMatch(/<span>API<\/span><svg[^]*?<\/svg><\/span><span[^>]*>Introduction<\/span>/);
     // A missing page is in no tab.
     expect(trail("404.html")).not.toContain("<span>Docs</span>");
+  }));
+
+  it("links the code-language icons only from pages that draw code samples, outside the shared stylesheet", () => fixture(async root => {
+    await file(root, "docs/install.md", "# Install\n\nRun it.\n");
+    await file(root, "spec.json", JSON.stringify({ openapi: "3.1.0", info: { title: "Pets API", version: "1" }, paths: { "/pets": { get: { summary: "List pets", responses: { "200": { description: "OK" } } } } } }));
+    const config = await resolveConfigFromRaw({ theme: { fonts: { google: false } }, navigation: { tabs: [
+      { tab: "Docs", slug: "", source: markdown({ root: "docs", groups: [{ group: "Start", pages: ["install"] }] }) },
+      { tab: "API", slug: "api", source: openapi("spec.json") },
+    ] } }, root);
+    const files = await sourceyArtifacts(await buildSourceySite({ config, generateOgImages: false }));
+    const html = (path: string) => files.get(path)!.toString();
+    expect(engineHref(html("install.html"), "sourcey-lang-icons.css")).toBeUndefined();
+    const icons = engineHref(html("api.html"), "sourcey-lang-icons.css")!;
+    expect(files.get(icons.slice(1))!.toString()).toContain('[data-lang="python"]');
+    expect(files.get(engineHref(html("install.html"), "sourcey.css")!.slice(1))!.toString()).not.toContain("M49.33%2062h29.159");
   }));
 
   it("keeps IDs, authored slugs, sparse translations, archives and canonical exports in agreement", () => fixture(async root => {

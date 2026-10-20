@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A page without code samples no longer waits on the code-language icons before it paints. They are a stylesheet of their own, linked by the reference pages that draw them, so a guide's render-blocking stylesheet is 20 KB rather than 28 KB.
+
 ## 3.8.0 - 2026-10-20
 
 ### Added

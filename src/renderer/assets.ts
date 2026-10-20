@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFile, readFile, readdir, mkdtemp, rm, realpath } from "node:fs/promises";
+import { copyFile, readFile, readdir, mkdtemp, rm, realpath, writeFile } from "node:fs/promises";
 import { resolve, dirname, join, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -68,6 +68,7 @@ export async function buildAssets(
         files: new Map([...files].map(([name, body]) => [prefix + name, body])),
         paths: {
           styles: [prefix + "sourcey.css"],
+          languageIcons: prefix + "sourcey-lang-icons.css",
           client: prefix + "sourcey.js",
           theme: prefix + "sourcey-theme.js",
           search: prefix + "sourcey-search.js",
@@ -101,10 +102,9 @@ async function bundleAssets(
         // after it so the complete cascade passes through Vite's minifier.
         transform(code, id) {
           if (id === clientEntry)
-            return code + "\n" + sourceyCssPaths.map(path => `import ${JSON.stringify(path)};`).join("\n") + `\nimport ${JSON.stringify(languageIconsModule)};`;
+            return code + "\n" + sourceyCssPaths.map(path => `import ${JSON.stringify(path)};`).join("\n");
         },
       },
-      languageIconsPlugin(),
       tailwindcss(),
     ],
     build: {
@@ -158,6 +158,8 @@ async function bundleAssets(
   }
 
   await copyFile(themeInit, resolve(outputDir, "sourcey-theme.js"));
+  // Only pages that draw code samples show language icons, so they stay out of the stylesheet every page waits on.
+  await writeFile(resolve(outputDir, "sourcey-lang-icons.css"), langIconCSS());
 }
 
 interface ComponentBundle {
