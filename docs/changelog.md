@@ -5,6 +5,10 @@ description: Recent Sourcey releases.
 
 # Changelog
 
+## 3.8.1
+
+Pages without code samples no longer wait on the code-language icons before they paint: the icons are a stylesheet of their own, linked by the reference pages that draw them.
+
 ## 3.8.0
 
 Documentation can publish versions and languages with route-aware selectors, every API operation has a Try it console, and site pages such as a home page publish beside the docs in a layout of their own. One-time migrations convert Astro, Docusaurus, Mintlify and MkDocs projects to native configuration with route and fragment checks. Large references can give each operation its own page, search downloads only the index shards a query needs, and engine files are named by their content so hosts can cache them indefinitely. See the [complete release notes](https://github.com/sourcey/sourcey/blob/main/CHANGELOG.md#380---2026-10-20).
