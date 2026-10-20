@@ -30,7 +30,9 @@ export function collectSiteDiagnostics(
     const route = routes.byKey.get(identityKey(page));
     if (!route || page.status === 404) continue;
     const warn = (code: SiteDiagnostic["code"], message: string) => diagnostics.push({ severity: "warning", code, page: route.publicPath, message });
-    if (route.index) {
+    // A page Sourcey composes from navigation, such as a large tree's section page, has no source to summarise.
+    const composed = page.currentPage.kind === "markdown" && !page.currentPage.markdown.sourcePath;
+    if (route.index && !composed) {
       const metadata = pageMetadata(page.currentPage, config);
       if (metadata.description === metadata.title) warn("missing-description", "No source summary is available; metadata uses the page title.");
       else if (metadata.summary && metadata.summary.split(/\s+/).length === 1) warn("short-description", `The source summary is only one word: ${JSON.stringify(metadata.summary)}.`);

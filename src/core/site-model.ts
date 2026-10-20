@@ -11,6 +11,7 @@ import {
   referenceOperation,
 } from "./reference-identity.js";
 import { toPublicPath, normalizeBaseUrl } from "../site-url.js";
+import { Parser } from "htmlparser2";
 
 export interface AlternateLink {
   rel?: "alternate" | "describedby" | "ard" | "api-catalog";
@@ -146,11 +147,19 @@ export function identityKey(page: Pick<SitePage, "identity" | "context">): strin
   ]);
 }
 
+/** The ids a page's HTML draws: the anchors of a page generated as HTML, such as a Rust or Go reference page. */
+function drawnAnchors(html: string): string[] {
+  const ids: string[] = [];
+  const parser = new Parser({ onopentag(_name, attributes) { if (attributes.id) ids.push(attributes.id); } });
+  parser.end(html);
+  return ids;
+}
+
 function pageAnchors(current: CurrentPage): string[] {
   if (current.kind === "not-found") return [];
   if (current.kind !== "spec")
     return current.kind === "markdown"
-      ? (current.markdown.anchors ?? current.markdown.headings.map((heading) => heading.id))
+      ? (current.markdown.anchors ?? [...current.markdown.headings.map((heading) => heading.id), ...drawnAnchors(current.markdown.html)])
       : current.changelog.headings.map((heading) => heading.id);
   const { spec, view } = current;
   if (view?.kind === "operation")

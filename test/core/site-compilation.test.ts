@@ -155,6 +155,16 @@ describe("native compilation", () => {
     expect(cold.contentDiagnostics).toHaveLength(1);
   }));
 
+  it("counts the anchors a generated reference page draws, so its section links are not reported missing", () => fixture(async root => {
+    const config = await resolveConfigFromRaw({ siteUrl: "https://docs.example.com", theme: { fonts: { google: false } }, navigation: { tabs: [
+      { tab: "Rust", slug: "", source: rustdoc({ manifest: new URL("../fixtures/rustdoc/basic/Cargo.toml", import.meta.url).pathname, mode: "snapshot", snapshot: new URL("../fixtures/rustdoc/basic/snapshots/rustdoc.json", import.meta.url).pathname }) },
+    ] } }, root);
+    const site = await buildSourceySite({ config, generateOgImages: false });
+    const module = site.pages.find(page => page.outputPath === "pkg-basic-basic.html")!;
+    expect(module.currentPage.kind === "markdown" && module.currentPage.markdown.html).toMatch(/href="#[a-z]+"/);
+    expect(site.siteDiagnostics.filter(diagnostic => diagnostic.code === "broken-fragment")).toEqual([]);
+  }));
+
   it("shares immutable Go/Rust snapshot output across edits and invalidates changed snapshot bytes", () => fixture(async root => {
     const guide = await file(root, "guide.md", "# Guide\n\nFirst article.\n");
     const goData = { schema_version: GODOC_SCHEMA_VERSION, source: "sourcey-godoc", module_path: "example.test/fixture", generated_at: "2026-05-04T00:00:00Z", packages: [{ importPath: "example.test/fixture", name: "fixture", synopsis: "First Go snapshot.", doc: "First Go snapshot.", dir: ".", files: [], consts: [], vars: [], funcs: [], types: [], examples: [] }] };
@@ -268,6 +278,9 @@ describe("native compilation", () => {
     expect(html).toContain('href="/page-201.html"');
     expect(html).toContain("Guide 201");
     expect(html).not.toContain("Guide 401");
+    // Its section pages are composed from navigation, with no source to give them a summary.
+    expect(site.pages.some(page => page.outputPath.startsWith("_sections/"))).toBe(true);
+    expect(site.siteDiagnostics.filter(diagnostic => diagnostic.page?.includes("_sections"))).toEqual([]);
   }));
 
   it("keeps inline components in sentences and table cells and publishes the explicit public asset closure", () => fixture(async root => {
