@@ -45,8 +45,17 @@ function MoonIcon() {
   );
 }
 
+function BreadcrumbChevron() {
+  return (
+    <svg width="3" height="24" viewBox="0 -9 3 24" class="h-5 overflow-visible shrink-0">
+      <path d="M0 0L3 3L0 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /**
- * Current page in the mobile navigation row.
+ * The current page in the mobile navigation row, after its tab where the site has several,
+ * since a phone shows the tabs only in the drawer.
  */
 function MobileBreadcrumbs({ nav }: { nav: SiteNavigation }) {
   const page = useContext(PageContext);
@@ -54,10 +63,17 @@ function MobileBreadcrumbs({ nav }: { nav: SiteNavigation }) {
   const activePage = (activeTab ? [...walkNavItems(activeTab.groups)] : []).find((item) => item.id === nav.activePageSlug);
   // A page the navigation does not list names itself; a reference's overview, its tab.
   const label = activePage?.label ?? (page.kind === "markdown" ? page.markdown.title : page.kind === "not-found" ? page.title : activeTab?.label);
+  const tab = nav.tabs.length > 1 && activeTab && page.kind !== "not-found" && label !== activeTab.label ? activeTab.label : undefined;
 
   return (
     <div class="sourcey-mobile-trail">
       <div class="flex items-center min-w-0 space-x-3 leading-6 whitespace-nowrap">
+        {tab && (
+          <span class="flex items-center space-x-3 shrink-0 text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
+            <span>{tab}</span>
+            <BreadcrumbChevron />
+          </span>
+        )}
         {label && (
           <span class="font-semibold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] truncate min-w-0">
             {label}

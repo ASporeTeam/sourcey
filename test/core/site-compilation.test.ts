@@ -352,6 +352,22 @@ describe("native compilation", () => {
     }
   }));
 
+  it("names the page's tab before the page in the phone row, where the site has several", () => fixture(async root => {
+    await file(root, "docs/install.md", "# Install\n\nRun it.\n");
+    await file(root, "spec.json", JSON.stringify({ openapi: "3.1.0", info: { title: "Pets API", version: "1" }, paths: { "/pets": { get: { summary: "List pets", responses: { "200": { description: "OK" } } } } } }));
+    const config = await resolveConfigFromRaw({ theme: { fonts: { google: false } }, navigation: { tabs: [
+      { tab: "Docs", slug: "", source: markdown({ root: "docs", groups: [{ group: "Start", pages: ["install"] }] }) },
+      { tab: "API", slug: "api", source: openapi("spec.json") },
+    ] } }, root);
+    const site = await buildSourceySite({ config, generateOgImages: false });
+    const files = await sourceyArtifacts(site);
+    const trail = (path: string) => { const html = files.get(path)!.toString(); return html.slice(html.indexOf('class="sourcey-mobile-trail"'), html.indexOf('class="sourcey-section-tabs"')); };
+    expect(trail("install.html")).toMatch(/<span>Docs<\/span><svg[^]*?<\/svg><\/span><span[^>]*>Install<\/span>/);
+    expect(trail("api.html")).toMatch(/<span>API<\/span><svg[^]*?<\/svg><\/span><span[^>]*>Introduction<\/span>/);
+    // A missing page is in no tab.
+    expect(trail("404.html")).not.toContain("<span>Docs</span>");
+  }));
+
   it("keeps IDs, authored slugs, sparse translations, archives and canonical exports in agreement", () => fixture(async root => {
     await file(root, "guide.md", "---\nid: install\nslug: setup\ntitle: Install\n---\n\n## Details {#stable-heading}\n\nThe marmalade is in the full body.\n");
     await file(root, "fr/guide.md", "---\nid: install\nslug: installation\ntitle: Installer\n---\n\n## Détails\n\nBonjour.\n");
