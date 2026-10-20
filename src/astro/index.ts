@@ -128,7 +128,9 @@ export default function sourceyAstro(options: SourceyAstroOptions = {}): AstroIn
         const publicFile = resolve(fileURLToPath(config.publicDir), pattern.replace(/^\/+/, ""));
         const publicArtifact = resolve(fileURLToPath(config.publicDir), emitted);
         if (await access(publicArtifact).then(() => true, () => false) || await stat(publicFile).then(info => info.isFile(), () => false)) throw new Error(`Sourcey output conflicts with host public asset: ${publicPath}`);
-        if (!type.startsWith("text/html")) {
+        // A page search engines are not to index, such as the missing-page page, is written as a
+        // file rather than registered as a page the host's sitemap would list.
+        if (!type.startsWith("text/html") || compiledRoute?.index === false) {
           written.set(pattern.replace(/\/$/, "") || "/", { file: emitted, body });
           continue;
         }

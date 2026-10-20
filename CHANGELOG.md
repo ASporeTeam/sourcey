@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Under Astro, a page search engines are not to index, such as the documentation's missing-page page, is written into the output as a file rather than registered as an Astro page, so a host sitemap no longer lists it.
+
 ## 3.8.1 - 2026-10-20
 
 ### Fixed

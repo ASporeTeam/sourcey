@@ -48,16 +48,18 @@ describe("sourcey/astro", () => {
     await mkdir(join(root, "public"));
     await writeFile(join(root, "public/download.bin"), binary);
     await writeFile(join(root, "introduction.md"), "# Introduction\n\nCafé, 日本語 and 🧀 survive packaging.\n");
-    const entries: string[] = [];
+    const entries: string[] = [], patterns: string[] = [];
     const adapter = sourceyAstro({ config: { ...reader, publicDir: "public" } as never, configDir: root, routeBase: "/docs" });
     await adapter.hooks["astro:config:setup"]!({
       command: "build",
       config: { root: dirUrl(root), publicDir: dirUrl(join(root, "host-public")), build: { format: "directory" }, redirects: {} },
       createCodegenDir: () => dirUrl(prepared), addWatchFile() {}, updateConfig() {},
-      injectRoute({ entrypoint }: { entrypoint: string | URL }) { entries.push(String(entrypoint)); },
+      injectRoute({ entrypoint, pattern }: { entrypoint: string | URL; pattern: string }) { entries.push(String(entrypoint)); patterns.push(pattern); },
     } as never);
     // Only pages are routes: the page entry, and the endpoint for none of them here.
     expect(new Set(entries.map(entry => entry.slice(entry.lastIndexOf("/") + 1)))).toEqual(new Set(["page.astro"]));
+    expect(patterns).toContain("/docs/introduction");
+    expect(patterns).not.toContain("/docs/404");
     const client = join(root, "client");
     await adapter.hooks["astro:build:generated"]!({ dir: dirUrl(client) } as never);
     expect(await readFile(join(client, "docs/download.bin"))).toEqual(binary);
@@ -73,8 +75,9 @@ describe("sourcey/astro", () => {
     const { GET } = await import(pathToFileURL(join(root, "bundle/endpoint.mjs")).href);
     const page = await GET({ url: new URL("https://host.test/docs/introduction/") });
     expect(await page.text()).toContain("Café, 日本語 and 🧀 survive packaging.");
-    const missing = await GET({ url: new URL("https://host.test/docs/404") });
-    expect(missing.status).toBe(404);
+    // The missing-page page is not indexed, so it is a file in the output rather than a route the host's sitemap lists.
+    expect(await readFile(join(client, "docs/404/index.html"), "utf8")).toContain('name="robots" content="noindex');
+    await expect(GET({ url: new URL("https://host.test/docs/404") })).rejects.toThrow("Unknown Sourcey artifact");
   }));
 
   it("registers redirects through the real host router under its base without injecting duplicate pages", () => fixture(async root => {
