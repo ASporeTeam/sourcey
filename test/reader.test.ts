@@ -107,6 +107,8 @@ describe("reader theme", () => {
     expect(index).toContain('data-sourcey-theme="reader"');
     expect(index).toContain("<h1>The interaction contract</h1>");
     expect(index).toContain("<span>Overview</span>");
+    // On a phone the folded chapters name the edition and the chapter being read.
+    expect(chapter).toMatch(/class="reader-chapters-trigger"><span class="reader-chapters-place"><strong>[^<]+<\/strong><span>Authorization<\/span><\/span>/);
     expect(index).toContain('href="/specification/authorization/"');
     expect(index).toContain('href="#scope"');
     expect(index).toContain('id="search-dialog"');

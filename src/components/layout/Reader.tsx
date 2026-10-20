@@ -289,7 +289,14 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
       ) : (
         <div class="docs-shell">
           <details open class="docs-sidebar" data-reader-chapters aria-label={`${tab?.label ?? "Documentation"} navigation`}>
-            <summary class="reader-chapters-trigger">{edition}<Icon name="chevron" size={14} /></summary>
+            {/* On a phone the chapters fold under the edition and the chapter being read. */}
+            <summary class="reader-chapters-trigger">
+              <span class="reader-chapters-place">
+                <strong>{edition}</strong>
+                {items[index] && items[index].label !== edition && <span>{items[index].label}</span>}
+              </span>
+              <Icon name="chevron" size={14} />
+            </summary>
             <div class="docs-project">
               <a
                 class={`docs-map${document ? "" : " docs-project-title"}`}

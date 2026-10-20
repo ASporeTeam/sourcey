@@ -1145,7 +1145,10 @@ body#sourcey {
   .docs-shell { display:block; }
   details.docs-sidebar { display:block; position:static; width:auto; height:auto; max-height:60vh; top:auto; border:1px solid var(--line-light); border-radius:8px; padding:12px 16px; margin:20px var(--reader-gutter) 0; }
   .reader-chapters-trigger { display:flex; align-items:center; justify-content:space-between; gap:1rem; cursor:pointer; font-size:.85rem; }
-  .reader-chapters-trigger svg { transform:rotate(90deg); }
+  .reader-chapters-trigger svg { transform:rotate(90deg); flex-shrink:0; }
+  .reader-chapters-place { display:flex; align-items:baseline; gap:.75rem; min-width:0; }
+  .reader-chapters-place strong { flex-shrink:0; font-size:.75rem; font-weight:650; }
+  .reader-chapters-place span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   details.docs-sidebar[open] .reader-chapters-trigger { margin-bottom:16px; }
   details.docs-sidebar[open] .reader-chapters-trigger svg { transform:rotate(-90deg); }
   html.sourcey-js [data-reader-chapters]:not([data-ready]) > :not(summary) { display:none; }
