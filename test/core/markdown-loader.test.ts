@@ -148,6 +148,28 @@ describe("loadMarkdownPage", { timeout: 30_000 }, () => {
     });
   });
 
+  it("names a code group's tabs by its fences' titles, which its panels do not repeat", async () => {
+    await withTempDir(async (dir) => {
+      const file = join(dir, "install.md");
+      await writeFile(file, '# Install\n\n:::code-group\n```bash title="npm"\nnpm i x\n```\n```bash title="pnpm"\npnpm add x\n```\n:::\n');
+      const page = await loadMarkdownPage(file, "install");
+
+      expect(page.html.match(/class="directive-tab[ "][^>]*>(npm|pnpm)</g)).toHaveLength(2);
+      expect(page.html).not.toContain("prose-code-title");
+      expect(page.markdown).toContain("**npm**");
+    });
+  });
+
+  it("names the page whose code fence carries metadata it cannot read, in a code group or on its own", async () => {
+    await withTempDir(async (dir) => {
+      const own = join(dir, "own.md"), grouped = join(dir, "grouped.md");
+      await writeFile(own, "# Install\n\n```bash npm\nnpm i x\n```\n");
+      await writeFile(grouped, "# Install\n\n:::code-group\n```bash npm\nnpm i x\n```\n:::\n");
+      await expect(loadMarkdownPage(own, "own")).rejects.toThrow(`${own}: Unknown code metadata: npm`);
+      await expect(loadMarkdownPage(grouped, "grouped")).rejects.toThrow(/Unknown code metadata: npm at \S*grouped\.md:\d+/);
+    });
+  });
+
   it("extracts h2 and h3 headings with IDs", async () => {
     const page = await loadMarkdownPage(resolve(FIXTURE_DIR, "test-page.md"), "test-page");
     expect(page.headings).toEqual([

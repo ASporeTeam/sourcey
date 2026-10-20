@@ -107,7 +107,7 @@ function container(name: string): NativeComponentDefinition {
     },
     async resolve({ props, children }, context) {
       let content = [...children];
-      if (name === "CodeGroup") content = content.flatMap(node => node.kind !== "markdown" ? [node] : codeChildren(node.value));
+      if (name === "CodeGroup") content = content.flatMap(node => node.kind !== "markdown" ? [node] : codeChildren(node.value, context.location));
       if (name === "Steps" && !content.some(node => node.kind === "component" && node.name === "Step")) {
         const expanded: ContentNode[] = [];
         for (const node of content) {
@@ -158,10 +158,12 @@ function container(name: string): NativeComponentDefinition {
         const outside = bodyNodes(result).filter(n => !panels.includes(n));
         if (!panels.length) return content;
         const id = text(props.id);
+        // A code group's tabs name its panels, so a panel's code carries no title of its own.
+        const panel = (n: ContentNode) => n.kind === "component" ? h.render(bodyNodes(n.resolved)) : h.render([n.kind === "code" ? { ...n, title: undefined, metadata: n.metadata && { ...n.metadata, title: undefined } } : n]);
         return `${h.render(outside)}<div class="directive-tabs${name === "CodeGroup" ? " directive-code-group" : ""} not-prose" data-sourcey-tabs><div class="directive-tab-bar" role="tablist">${panels.map((n, i) => {
           const name = n.kind === "component" ? title(n.resolved)?.text : n.kind === "code" ? n.title || n.language : "";
           return `<button type="button" role="tab" id="${id}-tab-${i}" aria-controls="${id}-panel-${i}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" class="directive-tab${i === 0 ? " active" : ""}" data-tab-group="${id}" data-tab-index="${i}">${escapeHtml(name || `Example ${i + 1}`)}</button>`;
-        }).join("")}</div>${panels.map((n, i) => `<section role="tabpanel" id="${id}-panel-${i}" aria-labelledby="${id}-tab-${i}" class="directive-tab-panel${i === 0 ? " active" : ""}" data-tab-group="${id}" data-tab-index="${i}">${n.kind === "component" ? h.render(bodyNodes(n.resolved)) : h.render([n])}</section>`).join("")}</div>`;
+        }).join("")}</div>${panels.map((n, i) => `<section role="tabpanel" id="${id}-panel-${i}" aria-labelledby="${id}-tab-${i}" class="directive-tab-panel${i === 0 ? " active" : ""}" data-tab-group="${id}" data-tab-index="${i}">${panel(n)}</section>`).join("")}</div>`;
       }
       return content;
     },
@@ -719,11 +721,13 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
   return options.normalize === false ? withAssets : normalizeHeadings(withAssets);
 }
 
-function codeChildren(markdown: string): ContentNode[] {
+function codeChildren(markdown: string, location: SourceLocation): ContentNode[] {
   return lexMarkdown(markdown).map(token => {
     if (token.type !== "code") return { kind: "markdown", value: token.raw };
     const code = token as Tokens.Code;
-    const metadata = parseCodeFenceInfo(code.lang);
+    let metadata: CodeFenceMetadata;
+    try { metadata = parseCodeFenceInfo(code.lang); }
+    catch (error) { throw new Error(`${(error as Error).message} at ${location.file}:${location.offset}`, { cause: error }); }
     return { kind: "code", language: metadata.language, title: metadata.title, metadata, value: code.text };
   });
 }

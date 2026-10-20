@@ -275,7 +275,10 @@ export function renderDocsSource(source: DocsSource, navigation?: import("./navi
   if (source.kind === "changelog") return source;
   const { nodes: sourceNodes, explicitDescription, messages, smartypants: smart, ...metadata } = source;
   const nodes = resolveSectionIndexes(sourceNodes, navigation, documentId);
-  const markdown = readableContent(nodes), html = renderContent(nodes, messages);
+  let markdown: string, html: string;
+  // Content that cannot render, such as a code fence's unknown metadata, names its page.
+  try { markdown = readableContent(nodes); html = renderContent(nodes, messages); }
+  catch (error) { throw new Error(`${source.sourcePath}: ${(error as Error).message}`, { cause: error }); }
   const readerMarkdown = hasAgentContent(nodes) ? readableContent(nodes, "people") : undefined;
   const page = { ...metadata, markdown, ...(readerMarkdown !== undefined ? { readerMarkdown } : {}), headings: contentHeadings(nodes), anchors: contentAnchors(nodes), diagnostics: contentDiagnostics(nodes), componentStyles: componentStyles(nodes) };
   // A page drawn by its author keeps its own heading and opening; the doc frame draws both for it.
