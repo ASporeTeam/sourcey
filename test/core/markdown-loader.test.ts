@@ -175,7 +175,7 @@ describe("loadMarkdownPage", { timeout: 30_000 }, () => {
       const own = join(dir, "own.md"), grouped = join(dir, "grouped.md");
       await writeFile(own, "# Install\n\n```bash npm\nnpm i x\n```\n");
       await writeFile(grouped, "# Install\n\n:::code-group\n```bash npm\nnpm i x\n```\n:::\n");
-      await expect(loadMarkdownPage(own, "own")).rejects.toThrow(`${own}: Unknown code metadata: npm`);
+      await expect(loadMarkdownPage(own, "own")).rejects.toThrow(/own\.md: Unknown code metadata: npm/);
       await expect(loadMarkdownPage(grouped, "grouped")).rejects.toThrow(/Unknown code metadata: npm at \S*grouped\.md:\d+/);
     });
   });
