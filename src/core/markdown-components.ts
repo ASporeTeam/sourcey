@@ -638,11 +638,13 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
         } else plain += raw;
         cursor += length; continue;
       }
+      // An escaped character is text, so `Handle\<T\>` opens no component.
+      if (input[cursor] === "\\") { plain += input.slice(cursor, cursor + 2); cursor += 2; continue; }
       if (input[cursor] === "`") {
         const end = inlineCodeEnd(input, cursor);
         if (end !== undefined) { plain += input.slice(cursor, end); cursor = end; continue; }
       }
-      const alert = (cursor === 0 || input[cursor - 1] === "\n") && input.slice(cursor).match(ALERT);
+      const alert =(cursor === 0 || input[cursor - 1] === "\n") && input.slice(cursor).match(ALERT);
       if (alert) {
         flush(); const callout = alertCallout(alert[1], options.context?.messages ?? english);
         nodes.push(await component(callout.kind, callout.title ? { title: callout.title } : {}, await parse(alertBody(alert[2])), cursor));

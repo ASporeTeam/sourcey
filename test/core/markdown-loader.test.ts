@@ -148,6 +148,16 @@ describe("loadMarkdownPage", { timeout: 30_000 }, () => {
     });
   });
 
+  it("keeps an escaped angle bracket as text rather than a component's tag", async () => {
+    await withTempDir(async (dir) => {
+      const file = join(dir, "handles.md");
+      await writeFile(file, "# Handles\n\n**Handle\\<T\\>** wraps every handle.\n");
+      const page = await loadMarkdownPage(file, "handles");
+
+      expect(page.html).toContain("<strong>Handle&lt;T&gt;</strong> wraps every handle.");
+    });
+  });
+
   it("names a code group's tabs by its fences' titles, which its panels do not repeat", async () => {
     await withTempDir(async (dir) => {
       const file = join(dir, "install.md");
