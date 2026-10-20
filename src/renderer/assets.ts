@@ -234,7 +234,8 @@ export async function buildComponentAssets(
         outDir: directory,
         emptyOutDir: false,
         minify: true,
-        lib: { entry, formats: ["es"], fileName: () => "component.js" },
+        // Named here, so a component's styles build in a project without a package name.
+        lib: { entry, formats: ["es"], fileName: () => "component.js", cssFileName: "component" },
         rollupOptions: {
           output: { assetFileNames: "[name]-[hash][extname]", chunkFileNames: "[name]-[hash].js" },
         },
