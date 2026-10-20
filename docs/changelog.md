@@ -5,6 +5,10 @@ description: Recent Sourcey releases.
 
 # Changelog
 
+## 3.8.0
+
+Documentation can publish versions and languages with route-aware selectors, every API operation has a Try it console, and site pages such as a home page publish beside the docs in a layout of their own. One-time migrations convert Astro, Docusaurus, Mintlify and MkDocs projects to native configuration with route and fragment checks. Large references can give each operation its own page, search downloads only the index shards a query needs, and engine files are named by their content so hosts can cache them indefinitely. See the [complete release notes](https://github.com/sourcey/sourcey/blob/main/CHANGELOG.md#380---2026-10-20).
+
 ## 3.7.1
 
 Markdown views now accompany every page, API operation and schema. Configure public OpenAPI bundles and scoped ARD/API discovery, or query a built directory with the separate `sourcey-docs-mcp` package. Rich guides and native library examples retain their readable content in the exports. See [documentation for agents](machine-readable.md).

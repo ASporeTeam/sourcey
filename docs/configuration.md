@@ -137,7 +137,7 @@ markdown: { smartypants: true },
 
 ## Themes
 
-Sourcey ships `default`, `minimal`, `api-first`, and `reader` themes. Select the complete renderer with `theme.name`; shared theme settings let you set brand colours, fonts, layout, and extra CSS without giving up a deterministic static build. The deprecated `theme.preset` key remains accepted through the 3.x line for compatibility.
+Sourcey ships `default`, `minimal`, `api-first`, and `reader` themes. Select the complete renderer with `theme.name`; shared theme settings let you set brand colours, fonts, layout, and extra CSS without giving up a deterministic static build.
 
 Use `theme.fonts: { sans: "system", mono: "system" }` for the reader's platform fonts with no font download. A named `sans` or `mono` family loads from Google Fonts, one stylesheet each, at the weights the theme uses (a family without one of them shows its nearest); `google: false` lets your own stylesheet supply them.
 
@@ -224,7 +224,7 @@ export default defineConfig({
 });
 ```
 
-All `reader` settings are optional. A mark-only logo is `logo.mark` (the earlier `reader.logoMark` is accepted through the 3.x line). `document.updated` is authored publication metadata, never the build date. `sidebar.links`, `sidebar.note`, `aside.links`, and `footer.links` are host-authored arrays; the theme does not supply project content for those areas. `pagination.before` and `pagination.after` provide destinations at the beginning and end of a chapter sequence. Omit `searchHref` to use Sourcey's built-in search. The reader footer includes Sourcey's standard “Docs by Sourcey” attribution. Without JavaScript, ordinary chapter and site links remain available.
+All `reader` settings are optional. A mark-only logo is `logo.mark`. `document.updated` is authored publication metadata, never the build date. `sidebar.links`, `sidebar.note`, `aside.links`, and `footer.links` are host-authored arrays; the theme does not supply project content for those areas. `pagination.before` and `pagination.after` provide destinations at the beginning and end of a chapter sequence. Omit `searchHref` to use Sourcey's built-in search. The reader footer includes Sourcey's standard “Docs by Sourcey” attribution. Without JavaScript, ordinary chapter and site links remain available.
 
 Set `navTitle` in Markdown frontmatter when the sidebar needs a shorter label than the article title. This works with every theme. Use `index.md` for the landing page and `prettyUrls: "slash"` for directory URLs.
 

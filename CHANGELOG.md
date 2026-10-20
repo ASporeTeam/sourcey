@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.8.0 - 2026-10-20
 
 ### Added
 
@@ -12,7 +12,7 @@
 - Native components support build-time data, includes, responsive light/dark figures, static diagrams, page lists and optional client widgets. Generated headings and readable content feed HTML, search and Markdown.
 - Authored field lists reuse the reference's parameter and schema presentation. Reference fields have stable destinations across layouts, with checked aliases for existing incoming links. Schema alternatives have a native picker that reveals addressed fields and keeps every branch in static HTML and readable exports.
 - `<ForAgents>` keeps instructions in Markdown and agent exports while leaving the visible page, human search and page metadata unchanged. Heroicons remain the default; sites can select optional Lucide icons.
-- One-time Astro, Docusaurus, Mintlify and MkDocs migrations produce reviewable native configuration and content edits, with route, fragment, content and media checks and reports for unsupported content. The MkDocs runtime reader is removed.
+- One-time Astro, Docusaurus, Mintlify and MkDocs migrations produce reviewable native configuration and content edits, with route, fragment, content and media checks and reports for unsupported content.
 - OpenAPI operations have a lazy-loaded Try it console in every theme, with editable parameters and bodies, authentication, local drafts, file uploads, cancellation, and live response inspection. Shared form styles expose global CSS overrides.
 - Reader supports light and dark reading modes, using the same saved preference and pre-paint theme script as the other themes. Its masthead toggle sits after search.
 - `footer.text` adds a line of inline Markdown to the foot of every page, such as a copyright or licence notice.

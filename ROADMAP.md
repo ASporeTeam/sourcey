@@ -1,6 +1,6 @@
 # Roadmap
 
-What's coming for Sourcey. Last updated: June 2026.
+What's coming for Sourcey. Last updated: October 2026.
 
 ## Shipped
 
@@ -13,21 +13,19 @@ What's coming for Sourcey. Last updated: June 2026.
 - **llms.txt generation**: auto-generate llms.txt and llms-full.txt alongside HTML output
 - **Readable documentation and discovery**: per-page, operation and schema Markdown, a document index, public OpenAPI bundles, scoped ARD/API catalogs and an optional docs MCP server
 - **Dark mode**: semantic design tokens, light/dark logo variants
-- **Client-side search**: fuzzy search across all pages and API operations
-- **Theme presets**: default, minimal, api-first layouts
+- **Client-side search**: fuzzy search across all pages and API operations, loading only the index shards a query needs
+- **Theme presets**: default, minimal, api-first and reader layouts
+- **Versions and languages**: documentation versions and translations with route-aware selectors, shared page identities, and scoped search and exports
+- **API playground**: a Try it console on every operation, with editable parameters and bodies, authentication, file uploads and live responses
+- **Site pages**: home and product pages outside the documentation, in the docs frame, inside the site's header and footer, or on their own
+- **Migrations**: one-time converters from Astro, Docusaurus, Mintlify and MkDocs, with route, fragment, content and media checks
 - **Docker and Nix**: Dockerfile and Nix flake for reproducible builds
 
 ## Planned
 
 ### Documentation experience
 
-- **Version switcher**: multiple doc versions with dropdown selector
 - **Incremental builds**: only re-render changed pages
-- **i18n**: multi-language documentation support
-
-### API reference
-
-- **API playground**: try-it-live requests with parameter inputs, auth, cURL export
 
 ### Agent surface
 
