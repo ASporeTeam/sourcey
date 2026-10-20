@@ -25,7 +25,7 @@ npx sourcey init
 - **API reference from OpenAPI**: endpoints, parameters, request/response schemas, and auto-generated code samples across 10 supported languages. The default set is cURL, JavaScript, and Python; configure TypeScript, Go, Ruby, Java, PHP, Rust, and C# when you want them
 - **MCP server documentation**: tools, resources, prompts rendered as browsable reference with JSON-RPC, TypeScript, and Python code samples. Color-coded method types, annotation badges, connection config cards
 - **Rich guides**: markdown pages with steps, cards, accordions, syntax-highlighted code blocks, and prose alongside your API reference
-- **MkDocs source import**: point a tab at `mkdocs.yml`; Sourcey reads `docs_dir` and `nav` so existing MkDocs markdown sites can render without hand-copying the sidebar structure
+- **One-time migration**: convert an existing Astro or MkDocs documentation project to native Sourcey Markdown and configuration, with a dry-run diff and checks for routes, fragments, content and media. [Migration guide](docs/migrating.md)
 - **Product story pages**: changelog, roadmap pages, examples, reference material, search, and portable context exports in one source-owned site
 - **C++ and Doxygen**: feed Doxygen XML output, get modern searchable API docs with exact member search, source links, templates, qualifiers, examples, inherited members, and relationship sections. No new parser, no four-tool Breathe/Exhale/Sphinx pipeline
 - **Go and godoc**: native package documentation extracted from Go source via the toolchain. Render Go modules as Sourcey tabs, generate standalone static Go docs sites, or commit `godoc.json` snapshots for JS-only docs hosts. No Doxygen detour
@@ -45,7 +45,7 @@ npx sourcey init
 
 ### Sourcey CLI
 
-The full Sourcey binary handles OpenAPI, MCP, Doxygen, godoc, rustdoc, MkDocs, and Markdown sources.
+The full Sourcey binary handles OpenAPI, MCP, Doxygen, godoc, rustdoc, and Markdown sources. Existing Astro and MkDocs projects have one-time converters.
 
 | Path     | Command                                        | Requires          |
 | -------- | ---------------------------------------------- | ----------------- |
@@ -127,7 +127,7 @@ export default defineConfig({
 });
 ```
 
-To give the mount root to an Astro page of your own, such as a product page at `/docs` above the documentation, set `landingPage: false`. Sourcey writes every page beneath the root and leaves the root itself to Astro, in dev and in the build. The first page then needs a path of its own, such as `introduction`.
+To give the mount root to an Astro page of your own, such as a product page at `/docs` above the documentation, set `landingPage: false`. Sourcey leaves an automatic root copy out of the build and lets Astro serve its own landing page. An authored `index.md` is still a real documentation route; give it a separate slug when the host owns that address.
 
 ## Configuration
 
@@ -144,7 +144,7 @@ export default defineConfig({
 });
 ```
 
-Each tab has one `source`, usually created with `markdown()`, `mkdocs()`, `openapi()`, `mcp()`, `doxygen()`, `godoc()`, or `rustdoc()`. Pages are referenced by slug (e.g. `"quickstart"` resolves to `quickstart.md`). See [docs/configuration.md](docs/configuration.md) for theme, navbar, footer, logo, and full tab options.
+Each tab has one `source`, usually created with `markdown()`, `openapi()`, `mcp()`, `doxygen()`, `godoc()`, or `rustdoc()`. Pages are referenced by slug (e.g. `"quickstart"` resolves to `quickstart.md`). See [docs/configuration.md](docs/configuration.md) for theme, navbar, footer, logo, and full tab options.
 
 ### Go documentation (godoc)
 

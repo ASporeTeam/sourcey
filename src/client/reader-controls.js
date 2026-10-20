@@ -12,13 +12,13 @@
   function closeMenu() {
     menu.hidden = true;
     toggle.setAttribute("aria-expanded", "false");
-    toggle.setAttribute("aria-label", "Open navigation");
+    toggle.setAttribute("aria-label", toggle.getAttribute("data-open-label"));
   }
   toggle.addEventListener("click", function () {
     var open = toggle.getAttribute("aria-expanded") !== "true";
     menu.hidden = !open;
     toggle.setAttribute("aria-expanded", String(open));
-    toggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+    toggle.setAttribute("aria-label", toggle.getAttribute(open ? "data-close-label" : "data-open-label"));
   });
   window.matchMedia("(min-width: 901px)").addEventListener("change", function (event) {
     if (event.matches) closeMenu();
@@ -41,23 +41,25 @@
       window.location.href = search.href;
     }
   });
-  var select = root.querySelector("#chapter-select");
-  var chapters = root.querySelectorAll(".reader-chapter-fallback a");
-  select.addEventListener("change", function () {
-    window.location.href = chapters[select.selectedIndex].href;
-  });
+  var chapters = root.querySelector('[data-reader-chapters]');
+  var desktop = window.matchMedia('(min-width: 901px)');
+  if (chapters) {
+    chapters.open = desktop.matches;
+    chapters.setAttribute('data-ready', '');
+    desktop.addEventListener('change', function (event) { chapters.open = event.matches; });
+  }
   var copy = root.querySelector("[data-copy-page]");
   if (copy)
     copy.addEventListener("click", async function () {
       var label = copy.querySelector("span");
       try {
         await navigator.clipboard.writeText(window.location.href);
-        label.textContent = "Copied";
+        label.textContent = copy.getAttribute("data-copied-label");
       } catch {
-        label.textContent = "Copy the address bar URL";
+        label.textContent = copy.getAttribute("data-failure-label");
       }
       setTimeout(function () {
-        label.textContent = "Copy link";
+        label.textContent = copy.getAttribute("data-copy-label");
       }, 2500);
     });
   var links = Array.from(root.querySelectorAll(".docs-toc nav a"));

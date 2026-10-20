@@ -1,4 +1,5 @@
 import type { ExampleObject, MediaTypeContent, NormalizedSchema } from "../core/types.js";
+import type { SchemaUsage } from "../core/schema.js";
 import { generateExample } from "./example-generator.js";
 import { highlightCode } from "./highlighter.js";
 
@@ -84,8 +85,9 @@ export function variantFromSchema(
   schema: NormalizedSchema,
   label = "Example",
   mediaType = "application/json",
+  usage?: SchemaUsage,
 ): ExampleVariant | null {
-  const value = schema.example ?? generateExample(schema);
+  const value = schema.example ?? generateExample(schema, usage);
   if (value === undefined) return null;
   return variantFromValue(value, { label, mediaType });
 }
@@ -99,6 +101,7 @@ export function variantFromSchema(
  */
 export function buildExampleVariants(
   content?: Record<string, MediaTypeContent>,
+  usage?: SchemaUsage,
 ): ExampleVariant[] {
   if (!content) return [];
   const entries = Object.entries(content);
@@ -126,6 +129,7 @@ export function buildExampleVariants(
         media.schema,
         multiMedia ? mediaType : "Example",
         mediaType,
+        usage,
       );
       if (variant) variants.push(variant);
     }

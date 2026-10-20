@@ -3,13 +3,14 @@ import { SchemaDatatype } from "../schema/SchemaDatatype.js";
 import { Badge, DeprecatedBadge, RequiredBadge } from "../ui/Badge.js";
 
 interface MediaTypeDetailsProps {
-  mediaType: string;
+  /** The media types this content is offered as: one, or several sharing a schema. */
+  mediaTypes: readonly string[];
   content: MediaTypeContent;
   showLabel?: boolean;
 }
 
 export function MediaTypeDetails(
-  { mediaType, content, showLabel = true }: MediaTypeDetailsProps,
+  { mediaTypes, content, showLabel = true }: MediaTypeDetailsProps,
 ) {
   const hasEncodings = hasEncodingDetails(content);
   if (!showLabel && !hasEncodings) return null;
@@ -18,9 +19,11 @@ export function MediaTypeDetails(
     <div class={showLabel ? "mt-4" : ""}>
       {showLabel && (
         <div class="mb-3 flex flex-wrap items-center gap-2">
-          <code class="text-xs font-medium text-[rgb(var(--color-gray-800))] dark:text-[rgb(var(--color-gray-200))]">
-            {mediaType}
-          </code>
+          {mediaTypes.map((mediaType, index) => (
+            <code key={mediaType} class="whitespace-nowrap text-xs font-medium text-[rgb(var(--color-gray-800))] dark:text-[rgb(var(--color-gray-200))]">
+              {index < mediaTypes.length - 1 ? `${mediaType},` : mediaType}
+            </code>
+          ))}
           {content.schema && (
             <span class="param-type">
               <SchemaDatatype schema={content.schema} />
@@ -44,7 +47,7 @@ export function contentMediaTypes(content?: Record<string, MediaTypeContent>): s
   return content ? Object.keys(content) : [];
 }
 
-function hasEncodingDetails(content: MediaTypeContent): boolean {
+export function hasEncodingDetails(content: MediaTypeContent): boolean {
   return Object.keys(content.encoding ?? {}).length > 0
     || (content.prefixEncoding?.length ?? 0) > 0
     || !!content.itemEncoding;

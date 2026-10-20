@@ -1,90 +1,90 @@
-import { access, readdir } from "node:fs/promises";
-import type { Dirent } from "node:fs";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
-import type { ResolvedGroup, ResolvedPage } from "../config.js";
-import { slugFromPath } from "../core/markdown-loader.js";
-import type { PageMarkdownOptions, ResolvedSourceAsset, SourceAdapterContext } from "./types.js";
+import { access, glob } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import type { GroupConfig, ResolvedGroup, ResolvedPage } from "../config.js";
+import type {
+  PageMarkdownOptions,
+  SourceAdapterContext,
+  SourceLocaleContext,
+} from "./types.js";
 
-export const STATIC_ASSET_EXTENSIONS = new Set([
-  ".apng",
-  ".avif",
-  ".bmp",
-  ".css",
-  ".gif",
-  ".ico",
-  ".jpeg",
-  ".jpg",
-  ".js",
-  ".json",
-  ".mjs",
-  ".mp4",
-  ".pdf",
-  ".png",
-  ".svg",
-  ".txt",
-  ".webm",
-  ".webp",
-  ".woff",
-  ".woff2",
-  ".zip",
-]);
 
 export async function resolveMarkdownGroups(
-  groups: { group: string; pages: string[] }[],
+  groups: GroupConfig[],
   tabName: string,
-  configDir: string,
+  sourceRoot: string,
   markdown?: PageMarkdownOptions,
+  locale?: SourceLocaleContext,
 ): Promise<ResolvedGroup[]> {
-  const resolved: ResolvedGroup[] = [];
-
-  for (const group of groups) {
-    if (!group.group) throw new Error(`Group missing "group" name in tab "${tabName}"`);
-    if (!group.pages?.length)
-      throw new Error(`Group "${group.group}" in tab "${tabName}" has no pages`);
-
-    const pages: ResolvedPage[] = [];
-    for (const pageSlug of group.pages) {
-      if (pageSlug.includes("*")) {
-        const expanded = await expandGlob(pageSlug, configDir);
-        for (const file of expanded) {
-          const rel = relative(configDir, file).replace(/\.[^.]+$/, "");
-          pages.push({ slug: rel, file, ...markdown });
-        }
-      } else {
-        const absPath = await resolvePagePath(pageSlug, configDir);
-        pages.push({ slug: pageSlug, file: absPath, ...markdown });
-      }
+  const localRoot = resolve(sourceRoot, locale?.content ?? "");
+  const fallbackRoot = resolve(sourceRoot, locale?.defaultContent ?? "");
+  async function page(slug: string, label?: string, hidden?: boolean): Promise<ResolvedPage> {
+    let file: string;
+    let contentLocale = locale?.locale;
+    try {
+      file = await resolvePagePath(slug, localRoot);
+    } catch (error) {
+      if (!locale?.fallback || localRoot === fallbackRoot) throw error;
+      file = await resolvePagePath(slug, fallbackRoot);
+      contentLocale = locale.defaultLocale;
     }
-
-    resolved.push({ label: group.group, pages });
+    return {
+      kind: "page",
+      slug,
+      file,
+      label,
+      hidden,
+      sourceRoot: contentLocale === locale?.defaultLocale ? fallbackRoot : localRoot,
+      ...markdown,
+      contentLocale,
+    };
   }
-
-  return resolved;
-}
-
-export async function collectStaticAssets(sourceRoot: string): Promise<ResolvedSourceAsset[]> {
-  const assets: ResolvedSourceAsset[] = [];
-
-  async function walk(dir: string): Promise<void> {
-    const entries = await readdir(dir, { withFileTypes: true });
-    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-      if (entry.name.startsWith(".")) continue;
-      const absolutePath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(absolutePath);
+  async function group(input: GroupConfig, parent: string): Promise<ResolvedGroup> {
+    const id = input.id ?? [parent, input.group].filter(Boolean).join("/");
+    const items: ResolvedGroup["items"] = [];
+    for (const item of input.pages) {
+      if (typeof item === "object" && "group" in item) {
+        items.push(await group(item, id));
         continue;
       }
-      if (!entry.isFile()) continue;
-      if (!STATIC_ASSET_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
-      assets.push({
-        file: absolutePath,
-        outputPath: relative(sourceRoot, absolutePath).replace(/\\/g, "/"),
-      });
+      if (typeof item === "object" && "href" in item) {
+        items.push({ kind: "link", ...item });
+        continue;
+      }
+      if (typeof item === "object" && ("operation" in item || "tab" in item)) {
+        items.push({ kind: "target", target: item });
+        continue;
+      }
+      const slug = typeof item === "string" ? item : item.page;
+      const label = typeof item === "string" ? undefined : item.label;
+      if (slug.includes("*")) {
+        const patterns = /\.(md|mdx)$/.test(slug) ? [slug] : [`${slug}.md`, `${slug}.mdx`];
+        const matches = new Set<string>();
+        for (const root of new Set([localRoot, ...(locale?.fallback ? [fallbackRoot] : [])])) {
+          for await (const file of glob(patterns, { cwd: root }))
+            matches.add(file.replace(/\.(md|mdx)$/i, "").replace(/\\/g, "/"));
+        }
+        if (!matches.size) throw new Error(`Glob "${slug}" matched no Markdown in ${localRoot}`);
+        for (const match of [...matches].sort()) items.push(await page(match, label, typeof item === "object" ? item.hidden : undefined));
+      } else items.push(await page(slug, label, typeof item === "object" ? item.hidden : undefined));
     }
+    return {
+      kind: "group",
+      label: input.group,
+      id,
+      href: input.href,
+      collapsed: input.collapsed,
+      items,
+    };
   }
+  return Promise.all(groups.map((g) => group(g, tabName)));
+}
 
-  await walk(sourceRoot);
-  return assets;
+export function* markdownPages(groups: readonly ResolvedGroup[]): Generator<ResolvedPage> {
+  for (const group of groups)
+    for (const item of group.items) {
+      if (item.kind === "group") yield* markdownPages([item]);
+      else if (item.kind === "page") yield item;
+    }
 }
 
 export function toWatchPaths(paths: Array<string | undefined>): string[] {
@@ -98,42 +98,9 @@ export function assertLocalPath(ctx: SourceAdapterContext, source: string, label
   return ctx.resolvePath(source);
 }
 
-/**
- * Expand a simple glob pattern like "doc/api-*" into matching .md/.mdx files.
- * Supports trailing * only (e.g. "doc/api-*", "guides/*").
- */
-async function expandGlob(pattern: string, configDir: string): Promise<string[]> {
-  const absPattern = resolve(configDir, pattern);
-  const dir = dirname(absPattern);
-  const prefix = basename(absPattern).replace("*", "");
-  let entries: Dirent[];
-
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`Glob directory not found: ${dir}`, { cause: err });
-    }
-    throw err;
-  }
-
-  const matches = entries
-    .filter(
-      (entry) => entry.isFile() && entry.name.startsWith(prefix) && /\.(md|mdx)$/i.test(entry.name),
-    )
-    .map((entry) => join(dir, entry.name))
-    .sort();
-
-  if (matches.length === 0) {
-    throw new Error(`Glob "${pattern}" matched no files in ${dir}`);
-  }
-
-  return matches;
-}
-
 async function resolvePagePath(pageSlug: string, configDir: string): Promise<string> {
   const direct = resolve(configDir, pageSlug);
-  const candidates = extname(direct)
+  const candidates = /\.(md|mdx)$/i.test(direct)
     ? [direct]
     : [`${direct}.md`, `${direct}.mdx`, join(direct, "index.md"), join(direct, "index.mdx")];
 
@@ -154,6 +121,4 @@ async function resolvePagePath(pageSlug: string, configDir: string): Promise<str
   );
 }
 
-export function outputSlugForPage(page: ResolvedPage): string {
-  return slugFromPath(page.slug);
-}
+

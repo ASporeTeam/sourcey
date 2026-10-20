@@ -1,15 +1,18 @@
+import type { CurrentPage } from "../../src/core/site-model.js";
 import { describe, it, expect } from "vitest";
 import { renderPage } from "../../src/renderer/static-renderer.js";
 import { buildNavFromSpec, buildSiteNavigation } from "../../src/core/navigation.js";
 import type { SiteNavigation } from "../../src/core/navigation.js";
 import type { NormalizedChangelog, NormalizedSpec } from "../../src/core/types.js";
 import type { ChangelogPage, MarkdownPage } from "../../src/core/markdown-loader.js";
-import type { RenderOptions, CurrentPage, SiteConfig } from "../../src/renderer/context.js";
+import type { RenderOptions, SiteConfig } from "../../src/renderer/context.js";
 import { loadSpec } from "../../src/core/loader.js";
 import { parseSpec } from "../../src/core/parser.js";
 import { convertToOpenApi3 } from "../../src/core/converter.js";
 import { normalizeSpec } from "../../src/core/normalizer.js";
 import { resolve } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { GOOGLE_FONT_WEIGHTS } from "../../src/components/layout/Head.js";
 
 const FIXTURES = resolve(import.meta.dirname, "../fixtures");
 
@@ -46,10 +49,11 @@ const defaultSite: SiteConfig = {
     fonts: {
       sans: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
       mono: "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
-      googleFont: "Inter",
+      google: ["Inter"],
     },
     layout: { sidebar: "18rem", toc: "19rem", content: "44rem" },
     css: [],
+    icons: "heroicons",
   },
   codeSamples: ["curl", "javascript", "python"],
   navbar: { links: [] },
@@ -156,13 +160,76 @@ function createDocsNavigation(): SiteNavigation {
 }
 
 describe("renderPage (spec)", () => {
-  it("renders a complete HTML document", () => {
-    const html = renderSpec(createMinimalSpec(), defaultOptions);
+  it("renders network links as named icons and the call to action in the header and drawer", () => {
+    const tab = buildNavFromSpec(createMinimalSpec(), "api");
+    const site: SiteConfig = {
+      ...defaultSite,
+      navbar: {
+        links: [
+          { type: "discourse", href: "https://community.example.com", label: "Community Forum" },
+          { type: "github", href: "https://github.com/example" },
+          { type: "link", href: "https://example.com/blog", label: "Blog" },
+        ],
+        primary: { type: "button", label: "Try it", href: "https://example.com" },
+      },
+    };
+    const html = renderPage(createMinimalSpec(), defaultOptions, buildSiteNavigation([tab]), { kind: "spec", spec: createMinimalSpec() }, site);
+    const header = html.slice(html.indexOf("sourcey-header-actions"), html.indexOf("theme-toggle"));
+    // The label names the icon for assistive technology; the header shows only the brand mark, at the controls' 16px.
+    const forum = header.match(/<a[^>]*aria-label="Community Forum"[^>]*>(.*?)<\/a>/s)?.[1] ?? "";
+    expect(forum).toContain('class="sourcey-social-icon');
+    expect(forum).toContain('width="16"');
+    expect(forum).not.toContain("Community Forum");
+    expect(header).toContain('aria-label="GitHub"');
+    expect(header).toMatch(/<a[^>]*href="https:\/\/example.com\/blog"[^>]*>Blog<\/a>/);
+    // The drawer lists each link with its icon and its name, and repeats the call to action.
+    expect(html.match(/class="sourcey-primary-action[^"]*"/g)).toHaveLength(2);
+    expect(html).toMatch(/<span>Community Forum<\/span>/);
+  });
+
+  it("opens a configured link to another site in a new tab and one on this site in place", () => {
+    const tab = buildNavFromSpec(createMinimalSpec(), "api");
+    const site: SiteConfig = {
+      ...defaultSite,
+      siteUrl: "https://example.com",
+      navbar: {
+        links: [
+          { type: "link", href: "/pricing", label: "Pricing" },
+          { type: "link", href: "https://example.com/blog", label: "Blog" },
+          { type: "github", href: "https://github.com/example" },
+        ],
+        primary: { type: "button", label: "Get started", href: "/install" },
+      },
+    };
+    const html = renderPage(createMinimalSpec(), defaultOptions, buildSiteNavigation([tab]), { kind: "spec", spec: createMinimalSpec() }, site);
+    const header = html.slice(html.indexOf("sourcey-header-actions"), html.indexOf("theme-toggle"));
+    const opening = (href: string) => header.match(new RegExp(`<a href="${href.replace(/[./]/g, "\\$&")}"[^>]*>`))?.[0] ?? "";
+    for (const href of ["/pricing", "https://example.com/blog", "/install"]) {
+      expect(opening(href)).toMatch(/^<a /);
+      expect(opening(href)).not.toContain("_blank");
+    }
+    expect(opening("https://github.com/example")).toContain('target="_blank"');
+  });
+
+  it("renders a complete HTML document with the engine files it is given", () => {
+    const assets = { styles: ["_assets/test/sourcey.css"], client: "_assets/test/sourcey.js", theme: "_assets/test/sourcey-theme.js", search: "_assets/test/sourcey-search.js" };
+    const html = renderSpec(createMinimalSpec(), { ...defaultOptions, assets });
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<html");
     expect(html).toContain("Test API");
     expect(html).toContain("API Reference");
-    expect(html).toContain("sourcey.css");
+    expect(html).toContain('<link rel="stylesheet" href="_assets/test/sourcey.css"/>');
+    expect(html).toContain('<script src="_assets/test/sourcey.js" defer></script>');
+    expect(html).toContain('<meta name="sourcey-search-module" content="_assets/test/sourcey-search.js"/>');
+  });
+
+  it("requests Google families at every weight the themes set", () => {
+    const html = renderSpec(createMinimalSpec(), defaultOptions);
+    expect(html).toContain(`family=Inter:wght@${GOOGLE_FONT_WEIGHTS}&amp;display=swap`);
+    const themes = resolve(import.meta.dirname, "../../src/themes");
+    const css = readdirSync(themes, { recursive: true, encoding: "utf8" }).filter(file => file.endsWith(".css")).map(file => readFileSync(resolve(themes, file), "utf8")).join("\n");
+    const used = new Set([...css.matchAll(/font-weight:\s*(\d+)/g)].map(match => match[1]));
+    expect([...used].filter(weight => !GOOGLE_FONT_WEIGHTS.split(";").includes(weight))).toEqual([]);
   });
 
   it("includes sidebar navigation", () => {
@@ -214,6 +281,42 @@ describe("renderPage (spec)", () => {
     expect(html).toContain("operation-pets-get");
   });
 
+  it("links the further reading the spec names for its API, a tag and an operation", () => {
+    const operation = {
+      method: "get" as const, path: "/search", summary: "Search", tags: ["search"], parameters: [], responses: [], security: [], deprecated: false,
+      externalDocs: { description: "Search Documentation", url: "/how-to/search/" },
+    };
+    const spec = createMinimalSpec({
+      externalDocs: { url: "https://example.com/guide" },
+      tags: [{ name: "search", description: "Find things.", externalDocs: { description: "Search syntax", url: "https://example.com/syntax" }, operations: [operation] }],
+      operations: [operation],
+    });
+    const html = renderSpec(spec, defaultOptions);
+    expect(html).toContain('<p class="reference-external-docs mb-6"><a href="https://example.com/guide" target="_blank" rel="noopener">https://example.com/guide<span aria-hidden="true"> →</span></a></p>');
+    expect(html).toContain('<a href="https://example.com/syntax" target="_blank" rel="noopener">Search syntax<span aria-hidden="true"> →</span></a>');
+    expect(html).toContain('<a href="/how-to/search/">Search Documentation<span aria-hidden="true"> →</span></a>');
+  });
+
+  it("names an endpoint's address as its samples do, its path parameters drawn as parameters", () => {
+    const operation = {
+      method: "get" as const, path: "/v{version}/items/{id}", summary: "Get an item", tags: ["items"], responses: [], security: [], deprecated: false,
+      parameters: [{ name: "version", in: "path" as const, required: true, schema: { type: "string", enum: ["3", "2"] } }, { name: "id", in: "path" as const, required: true, schema: { type: "string" } }],
+    };
+    const endpoint = (servers: NormalizedSpec["servers"]) => {
+      const html = renderSpec(createMinimalSpec({ servers, tags: [{ name: "items", operations: [operation] }], operations: [operation] }), defaultOptions);
+      return { bar: html.match(/data-endpoint-url="true"[^>]*>([\s\S]*?)<\/div>/)![1], html };
+    };
+    // Each variable takes its default, as in the request sample beside it.
+    const hosted = endpoint([{ url: "{scheme}://{host}/api", variables: { scheme: { default: "https", enum: ["https", "http"] }, host: { default: "s.test" } } }]);
+    expect(hosted.bar).toContain(">https://s.test/api</span>");
+    expect(hosted.bar).not.toContain("{scheme}");
+    expect(hosted.html).toContain("https://s.test/api/v3/items/");
+    expect(hosted.bar).toContain('<a class="sourcey-endpoint-param" href="#fields/GET/~002fv~007bversion~007d~002fitems~002f~007bid~007d/parameters/path/version">{version}</a>');
+    expect(hosted.bar).toContain(">{id}</a>");
+    // A host no one can guess is the reader's: the endpoint names the path alone.
+    expect(endpoint([{ url: "{scheme}://{host}/api", variables: { scheme: { default: "https" }, host: { default: "" } } }]).bar).toMatch(/^<span[^>]*>\/api<\/span>/);
+  });
+
   it("renders schema definitions", () => {
     const spec = createMinimalSpec({
       schemas: {
@@ -233,6 +336,61 @@ describe("renderPage (spec)", () => {
     expect(html).toContain("Models");
     expect(html).toContain("definition-pet");
     expect(html).toContain("Pet");
+  });
+
+  it("lists a body's fields once when its media types carry one schema, keeping each type's field anchors", () => {
+    const schema = { type: "object", properties: { name: { type: "string", description: "The pet's name." } } } as const;
+    const operation = {
+      method: "post" as const, path: "/pets", summary: "Add a pet", tags: ["pets"], parameters: [], responses: [], security: [], deprecated: false,
+      requestBody: { required: true, content: { "application/json": { schema }, "application/x-www-form-urlencoded": { schema } } },
+    };
+    const html = renderSpec(createMinimalSpec({ tags: [{ name: "pets", operations: [operation] }], operations: [operation] }), defaultOptions);
+    const root = "fields/POST/~002fpets/request-body";
+    expect(html.match(/The pet's name\./g)).toHaveLength(1);
+    expect(html).toMatch(/>Body<\/h3><\/div>/);
+    expect(html).toContain(">application/json,</code>");
+    expect(html).toContain(">application/x-www-form-urlencoded</code>");
+    expect(html).toContain(`id="${root}/application~002fjson/properties/name"`);
+    expect(html).toContain(`<span class="reference-anchor-alias" id="${root}/application~002fx-www-form-urlencoded/properties/name" aria-hidden="true"></span>`);
+  });
+
+  it("reads an allOf as one field list and leaves out what a request never sends", () => {
+    const record = { name: "Record", refName: "Record", type: "object", required: ["id"], properties: { id: { type: "integer", readOnly: true } } } as const;
+    const schema = { allOf: [record, { type: "object", properties: { name: { type: "string" }, audit: { type: "object", properties: { by: { type: "string", readOnly: true } } } } }], required: ["name"] } as const;
+    const operation = {
+      method: "post" as const, path: "/pets", summary: "Add a pet", tags: ["pets"], parameters: [], security: [], deprecated: false,
+      requestBody: { required: true, content: { "application/json": { schema } } },
+      responses: [{ statusCode: "201", description: "Created", content: { "application/json": { schema } } }],
+    };
+    const html = renderSpec(createMinimalSpec({ tags: [{ name: "pets", operations: [operation] }], operations: [operation] }), defaultOptions);
+    const [body, response] = html.split(/id="[^"]*-responses"/);
+    const fields = (section: string) => [...section.matchAll(/<code class="param-name">([^<]*)<\/code>/g)].map(match => match[1]);
+    expect(fields(body)).toEqual(["name", "audit"]);
+    expect(body.match(/class="params-list"/g)).toHaveLength(1);
+    expect(body.match(/class="required-badge"/g)).toHaveLength(1);
+    expect(body).not.toContain("Show child attributes");
+    expect(fields(response)).toEqual(["id", "name", "audit", "by"]);
+    expect(response.match(/class="required-badge"/g)).toHaveLength(2);
+  });
+
+  it("heads a model's own page with its name, as an operation's page is headed", () => {
+    const spec = createMinimalSpec({ schemas: { Pet: { name: "Pet", type: "object", properties: { name: { type: "string" } } } } });
+    const tab = buildNavFromSpec(spec, "api");
+    const own = renderPage(spec, defaultOptions, buildSiteNavigation([tab]), { kind: "spec", spec, view: { kind: "schema", name: "Pet" } }, defaultSite);
+    expect(own.match(/<h1[^>]*>([^<]*)<\/h1>/g)).toEqual([expect.stringMatching(/>Pet<\/h1>$/)]);
+    expect(own).not.toMatch(/id="definition-pet" class="[^"]*border-t/);
+    expect(renderSpec(spec, defaultOptions)).toMatch(/<h2[^>]*>Pet<\/h2>/);
+  });
+
+  it("shows a field's format only where it says more than its type", () => {
+    const spec = createMinimalSpec({
+      schemas: {
+        Note: { name: "Note", type: "object", properties: { title: { type: "string", format: "string" }, id: { type: "integer", format: "int64" } } },
+      },
+    });
+    const html = renderSpec(spec, defaultOptions);
+    expect(html).toContain('<span class="json-property-type">string</span>');
+    expect(html).toContain('<span class="json-property-type">integer&lt;int64></span>');
   });
 
   it("renders security schemes in sidebar", () => {
@@ -262,6 +420,23 @@ describe("renderPage (spec)", () => {
     const html = renderSpec(spec, defaultOptions);
     expect(html).toContain("https://api.example.com");
     expect(html).toContain("Production");
+  });
+
+  it("names what each placeholder of a templated server URL takes", () => {
+    const spec = createMinimalSpec({
+      servers: [{
+        url: "{scheme}://{host}",
+        variables: {
+          scheme: { default: "https", enum: ["https", "http"] },
+          host: { default: "", description: "Your instance's domain" },
+        },
+      }],
+    });
+
+    const text = renderSpec(spec, defaultOptions).replace(/<[^>]+>/g, "");
+    expect(text).toContain("{scheme}://{host}");
+    expect(text).toContain("schemedefault https; one of https, http");
+    expect(text).toContain("hostno default. Your instance's domain");
   });
 
   it("renders response summaries and device authorization URLs", () => {
@@ -324,7 +499,6 @@ describe("renderPage (spec)", () => {
     expect(html).toContain("Index Management");
     expect(html).toContain("admin-index");
     expect(html).toContain("audience");
-    expect(html).toContain("Administration / Index Management");
     expect(html).toContain("querystring");
     expect(html).toContain("Structured query string payload.");
     expect(html).toContain("application/x-www-form-urlencoded");
@@ -371,6 +545,67 @@ describe("renderPage (spec)", () => {
     expect(html).toContain('href="#namespaces"');
     expect(html).toContain('href="#classes"');
     expect(html).toContain('href="#functions"');
+  });
+
+  it("keeps a deeper heading that comes before the page's first section in the table of contents", () => {
+    const currentPage: CurrentPage = {
+      kind: "markdown",
+      markdown: createMarkdownPage({
+        headings: [
+          { level: 3, text: "RoadRunner", id: "roadrunner" },
+          { level: 2, text: "FrankenPHP", id: "frankenphp" },
+          { level: 3, text: "Classic web server", id: "classic-web-server" },
+        ],
+      }),
+    };
+
+    const html = renderPage(createMinimalSpec(), defaultOptions, createDocsNavigation(), currentPage, defaultSite);
+
+    expect(html).toContain('href="#roadrunner"');
+    expect(html).toContain('href="#frankenphp"');
+    expect(html).toContain('href="#classic-web-server"');
+  });
+
+  it("keeps a section that opens in place on its siblings' edge, its pages one step in", () => {
+    const navigation: SiteNavigation = {
+      tabs: [{ label: "Docs", slug: "", href: "start/", kind: "docs", groups: [
+        { label: "Get started", items: [
+          { label: "Requirements", href: "requirements/", id: "requirements" },
+          { label: "Installation", collapsed: true, items: [{ label: "Docker", href: "installation/docker/", id: "installation/docker" }] },
+        ] },
+      ] }],
+      activeTabSlug: "",
+      activePageSlug: "installation/docker",
+    };
+    const html = renderPage(createMinimalSpec(), defaultOptions, navigation, { kind: "markdown", markdown: createMarkdownPage({ slug: "installation/docker" }) }, defaultSite);
+    const nav = html.match(/<nav id="nav"[\s\S]*?<\/nav>/)![0];
+    expect(nav).toContain('<li><a href="requirements/" class="nav-link">');
+    expect(nav).toMatch(/<li><details open class="sourcey-nav-group"><summary><span class="nav-group-label">Installation<\/span><\/summary><ul class="pl-3 space-y-px"><li><a href="installation\/docker\/" class="nav-link active"/);
+  });
+
+  it("draws a tag whose operations are elsewhere as a link, and keeps a heading a heading", () => {
+    const navigation: SiteNavigation = {
+      tabs: [{ label: "API", slug: "api", href: "api/", kind: "docs", groups: [
+        { label: "", items: [{ label: "Introduction", href: "api/#introduction", id: "introduction" }] },
+        { label: "Accounts", href: "api/#tag-accounts", id: "tag-accounts", items: [{ label: "Piggy banks", href: "api/#tag-piggy-banks", id: "tag-piggy-banks", items: [] }] },
+        { label: "Administration", items: [{ label: "Backups", href: "api/backups/", id: "tag-backups", items: [] }] },
+      ] }],
+      activeTabSlug: "api",
+      activePageSlug: "introduction",
+    };
+    const html = renderPage(createMinimalSpec(), defaultOptions, navigation, { kind: "markdown", markdown: createMarkdownPage({ slug: "introduction" }) }, defaultSite);
+    const nav = html.match(/<nav id="nav"[\s\S]*?<\/nav>/)![0];
+    expect(nav).toMatch(/<div class="mt-px"><a href="[^"]*api\/#tag-accounts" class="nav-link">/);
+    expect(nav).toMatch(/<ul class="pl-3 mt-px space-y-px"><li><a href="[^"]*api\/#tag-piggy-banks" class="nav-link">/);
+    expect(nav).toMatch(/<div class="mt-6 lg:mt-8"><span class="nav-group-label">Administration<\/span><ul class="space-y-px"><li><a href="[^"]*api\/backups\/" class="nav-link">/);
+    expect(nav).not.toContain("nav-group-link");
+    expect(nav).not.toContain('<ul class="space-y-px"></ul>');
+  });
+
+  it("renders the footer text as inline Markdown on every page", () => {
+    const site = { ...defaultSite, footer: { text: "© Example, licensed under [CC BY-SA 4.0](https://example.com/license).", links: [] } };
+    const html = renderPage(createMinimalSpec(), defaultOptions, createDocsNavigation(), { kind: "markdown", markdown: createMarkdownPage() }, site);
+    expect(html).toContain('<span class="sourcey-footer-text">© Example, licensed under <a href="https://example.com/license" target="_blank" rel="noopener">CC BY-SA 4.0</a>.</span>');
   });
 
   it("uses the global edit base for markdown pages unless the page overrides it", () => {

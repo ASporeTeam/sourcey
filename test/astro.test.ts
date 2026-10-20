@@ -1,391 +1,163 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { createServer, type Plugin } from "vite";
+import { build as bundle, createServer, type Plugin } from "vite";
 import sourceyAstro, { prepareAstroSourcey } from "../src/astro/index.js";
 import { defineConfig, markdown, openapi } from "../src/index.js";
+import { engineAsset, engineHref, publishedSearchRows } from "./built-site.js";
 
-const outputDir = resolve(import.meta.dirname, "../.test-output-astro");
+const run = promisify(execFile);
+const astroEntry = createRequire(import.meta.url).resolve("astro");
+const astroPackage = dirname(createRequire(import.meta.url).resolve("astro/package.json"));
+const integration = pathToFileURL(resolve(import.meta.dirname, "../dist/astro/index.js")).href;
 const llmsSiteDir = resolve(import.meta.dirname, "llms-site");
+const dirUrl = (path: string) => pathToFileURL(path + "/");
+const reader = { name: "Reader", theme: { name: "reader", fonts: { google: false } }, navigation: { tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["introduction", "authorization"] }] }] } };
 
-const logger = {
-  info() {},
-  warn() {},
-  error() {},
-};
+async function fixture(test: (root: string) => Promise<void>) {
+  const root = await mkdtemp(join(tmpdir(), "sourcey-astro-test-"));
+  try {
+    await mkdir(join(root, "node_modules"));
+    await symlink(astroPackage, join(root, "node_modules/astro"));
+    await mkdir(join(root, "src/pages/docs"), { recursive: true });
+    await writeFile(join(root, "package.json"), '{"private":true,"type":"module"}');
+    await writeFile(join(root, "introduction.md"), "# Introduction\n\nThe documentation stays useful.\n");
+    await writeFile(join(root, "authorization.md"), "# Authorization\n\nThe exact permission contract.\n");
+    await writeFile(join(root, "src/pages/index.astro"), "<html><body>Host home</body></html>");
+    await test(root);
+  } finally { await rm(root, { recursive: true, force: true }); }
+}
 
-function dirUrl(path: string): URL {
-  return pathToFileURL(path.endsWith("/") ? path : `${path}/`);
+async function build(root: string, mounts: object[], host: object = {}) {
+  const script = `import {build} from ${JSON.stringify(pathToFileURL(astroEntry).href)};\nimport sourcey from ${JSON.stringify(integration)};\nawait build({root:new URL('./',import.meta.url),configFile:false,site:'https://host.test',outDir:'./site-output',logLevel:'error',...${JSON.stringify(host)},integrations:${JSON.stringify(mounts)}.map(options=>sourcey({config:${JSON.stringify(reader)},configDir:${JSON.stringify(root)},...options}))});\n`;
+  const path = join(root, "build-proof.mjs");
+  await writeFile(path, script);
+  await run(process.execPath, [path], { cwd: root, maxBuffer: 2 * 1024 * 1024 });
+  return (file: string) => readFile(join(root, "site-output", file), "utf8");
 }
 
 describe("sourcey/astro", () => {
-  it("serves reader HTML as a document in Astro development", async () => {
-    const root = resolve(outputDir, "reader-dev");
-    let plugins: Plugin[] = [];
-    const integration = sourceyAstro({
-      configDir: llmsSiteDir,
-      config: defineConfig({
-        name: "Reader",
-        theme: { name: "reader", fonts: { google: false } },
-        navigation: {
-          tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["introduction"] }] }],
-        },
-      }),
-      routeBase: "/docs",
-      prettyUrls: "slash",
+  it("bundles pages for prerenderers without the build filesystem and writes every other file into the client output", () => fixture(async root => {
+    const prepared = join(root, ".sourcey");
+    const binary = Buffer.from([0, 255, 128, 13, 10, 0]);
+    await mkdir(join(root, "public"));
+    await writeFile(join(root, "public/download.bin"), binary);
+    await writeFile(join(root, "introduction.md"), "# Introduction\n\nCafé, 日本語 and 🧀 survive packaging.\n");
+    const entries: string[] = [];
+    const adapter = sourceyAstro({ config: { ...reader, publicDir: "public" } as never, configDir: root, routeBase: "/docs" });
+    await adapter.hooks["astro:config:setup"]!({
+      command: "build",
+      config: { root: dirUrl(root), publicDir: dirUrl(join(root, "host-public")), build: { format: "directory" }, redirects: {} },
+      createCodegenDir: () => dirUrl(prepared), addWatchFile() {}, updateConfig() {},
+      injectRoute({ entrypoint }: { entrypoint: string | URL }) { entries.push(String(entrypoint)); },
+    } as never);
+    // Only pages are routes: the page entry, and the endpoint for none of them here.
+    expect(new Set(entries.map(entry => entry.slice(entry.lastIndexOf("/") + 1)))).toEqual(new Set(["page.astro"]));
+    const client = join(root, "client");
+    await adapter.hooks["astro:build:generated"]!({ dir: dirUrl(client) } as never);
+    expect(await readFile(join(client, "docs/download.bin"))).toEqual(binary);
+    expect(await readFile(await engineAsset(join(client, "docs"), "sourcey.css"), "utf8")).toContain("#sourcey");
+    // The page entry is Astro markup; its bridge, beside it, is what a prerenderer imports.
+    await writeFile(join(root, "page-entry.mjs"), `import {response} from ${JSON.stringify(pathToFileURL(join(dirname(entries[0]), "bridge.js")).href)};\nexport const GET=({url})=>response(url);\n`);
+    await bundle({
+      root, configFile: false, publicDir: false, logLevel: "silent",
+      build: { ssr: join(root, "page-entry.mjs"), outDir: join(root, "bundle"),
+        rollupOptions: { output: { entryFileNames: "endpoint.mjs", chunkFileNames: "chunks/[name]-[hash].mjs" } } },
     });
-    await integration.hooks["astro:config:setup"]!({
-      command: "dev",
-      config: { root: dirUrl(root) },
-      logger,
-      addWatchFile() {},
-      updateConfig(config) {
-        plugins = config.vite?.plugins ?? [];
-      },
-    });
-    const server = await createServer({
-      configFile: false,
-      root,
-      plugins,
-      server: { host: "127.0.0.1", port: 0 },
-      logLevel: "silent",
-    });
-    try {
-      await server.listen();
-      const origin = server.resolvedUrls!.local[0];
-      const response = await fetch(new URL("/docs/", origin));
-      expect(response.status).toBe(200);
-      expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
-      expect(await response.text()).toContain('data-sourcey-theme="reader"');
-      const documents = await fetch(new URL("/docs/documents.json", origin));
-      const index = await documents.json();
-      const intro = index.documents.find(
-        (entry: { title: string }) => entry.title === "Welcome to Mixed Docs",
-      );
-      expect(intro).toBeDefined();
-      const readable = await fetch(new URL(intro.markdown, origin));
-      expect(readable.headers.get("content-type")).toContain("text/markdown");
-      expect(readable.headers.get("link")).toContain('rel="canonical"');
-      expect(await readable.text()).toContain("Welcome to Mixed Docs");
-      const css = await fetch(new URL("/docs/sourcey.css", origin));
-      expect(css.headers.get("content-type")).toBe("text/css; charset=utf-8");
-      expect(await css.text()).toContain(".docs-shell");
-    } finally {
-      await server.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+    await rm(prepared, { recursive: true });
+    const { GET } = await import(pathToFileURL(join(root, "bundle/endpoint.mjs")).href);
+    const page = await GET({ url: new URL("https://host.test/docs/introduction/") });
+    expect(await page.text()).toContain("Café, 日本語 and 🧀 survive packaging.");
+    const missing = await GET({ url: new URL("https://host.test/docs/404") });
+    expect(missing.status).toBe(404);
+  }));
 
-  it("keeps the host base in reader aliases written to a Cloudflare client directory", async () => {
-    const root = resolve(outputDir, "reader-base");
-    const client = resolve(root, "client/project");
-    await mkdir(client, { recursive: true });
-    const integration = sourceyAstro({
-      configDir: llmsSiteDir,
-      config: defineConfig({
-        name: "Reader",
-        theme: { name: "reader", fonts: { google: false } },
-        navigation: {
-          tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["introduction"] }] }],
-        },
-      }),
-      routeBase: "/docs",
-      prettyUrls: "slash",
-      build: { generateOgImages: false },
-    });
-    try {
-      await integration.hooks["astro:config:setup"]!({
-        command: "build",
-        config: { root: dirUrl(root), base: "/project", site: "https://example.org" },
-        logger,
-        addWatchFile() {},
-        updateConfig() {},
-      });
-      await integration.hooks["astro:build:done"]!({ dir: dirUrl(client), logger });
-      const alias = await readFile(resolve(client, "docs.html"), "utf8");
-      expect(alias).toContain('href="/project/docs/sourcey.css"');
-      expect(alias).toContain('src="/project/docs/sourcey.js"');
-      expect(alias).toContain('content="/project/docs/search-index.json"');
-      expect(alias).toContain('href="/project/docs/introduction/"');
-      expect(alias).not.toContain('href="/docs/');
-      const index = JSON.parse(await readFile(resolve(client, "docs/search-index.json"), "utf8"));
-      expect(index[0].url).toMatch(/^\/project\/docs\//);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+  it("registers redirects through the real host router under its base without injecting duplicate pages", () => fixture(async root => {
+    const config = { ...reader, redirects: { "/project/docs/old": "/project/docs/introduction/", "/project/docs/home": "/project/" } };
+    const output = await build(root, [{ routeBase: "/docs", config }], { base: "/project/", build: { format: "directory" } });
+    expect(await output("docs/old/index.html")).toContain("/project/docs/introduction/");
+    expect(await output("docs/home/index.html")).toContain("/project/");
+    await expect(output("project/docs/old/index.html")).rejects.toThrow();
+    await expect(output("docs/_redirects")).rejects.toThrow();
+  }));
 
-  it("links a strip-mode reader alias to its route without a trailing slash", async () => {
-    const root = resolve(outputDir, "reader-strip");
-    const client = resolve(root, "client");
-    await mkdir(client, { recursive: true });
-    await writeFile(resolve(root, "index.md"), "---\ntitle: Overview\n---\n\nThe contract.\n");
-    await writeFile(
-      resolve(root, "authorization.md"),
-      "---\ntitle: Authorization\n---\n\nPermission.\n",
-    );
-    const integration = sourceyAstro({
-      configDir: root,
-      config: defineConfig({
-        name: "Reader",
-        theme: { name: "reader", fonts: { google: false } },
-        navigation: {
-          tabs: [
-            {
-              tab: "Docs",
-              slug: "",
-              groups: [{ group: "Start", pages: ["index", "authorization"] }],
-            },
-          ],
-        },
-      }),
-      routeBase: "/docs",
-      prettyUrls: "strip",
-      build: { generateOgImages: false },
-    });
-    try {
-      await integration.hooks["astro:config:setup"]!({
-        command: "build",
-        config: { root: dirUrl(root), base: "/project", site: "https://example.org" },
-        logger,
-        addWatchFile() {},
-        updateConfig() {},
-      });
-      await integration.hooks["astro:build:done"]!({ dir: dirUrl(client), logger });
-      const alias = await readFile(resolve(client, "docs.html"), "utf8");
-      expect(alias).toContain('href="/project/docs"');
-      expect(alias).toContain('href="/project/docs/authorization"');
-      expect(alias).not.toMatch(/href="\/project\/docs\/(?:#[^"]*)?"/);
-      expect(alias).not.toMatch(/<option[^>]*\bvalue=/);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+  it("registers two real mounts, preserves host pages and emits native HTML, endpoints and status pages", () => fixture(async root => {
+    await writeFile(join(root, "src/pages/docs/index.astro"), "<html><body>Host docs landing</body></html>");
+    const output = await build(root, [
+      { routeBase: "/docs", landingPage: false, prettyUrls: "slash" },
+      { routeBase: "/reference", prettyUrls: false },
+    ], { base: "/project/", build: { format: "directory" } });
+    expect(await output("index.html")).toContain("Host home");
+    expect(await output("docs/index.html")).toContain("Host docs landing");
+    expect(await output("docs/introduction/index.html")).toContain("The documentation stays useful.");
+    expect(await output("reference/introduction.html")).toContain('data-sourcey-theme="reader"');
+    const alias = await output("reference/index.html");
+    expect(alias).toContain('href="https://host.test/project/reference/introduction.html"');
+    expect(engineHref(alias, "sourcey.css")).toMatch(/^\/project\/reference\/_assets\//);
+    expect(engineHref(alias, "sourcey.js")).toMatch(/^\/project\/reference\/_assets\//);
+    const head = alias.slice(0, alias.indexOf("</head>"));
+    expect(engineHref(head, "sourcey-theme.js")).toMatch(/^\/project\/reference\/_assets\//);
+    expect(head).toContain('data-default="system"');
+    for (const [, attrs] of alias.matchAll(/<script([^>]*)>(?!<\/script>)/g)) expect(attrs).toMatch(/\bsrc=|type="application\/ld\+json"/);
+    expect(await output("docs/introduction/index.md")).toContain("The documentation stays useful.");
+    expect((await publishedSearchRows(join(root, "site-output/docs")))[0].url).toMatch(/^\/project\/docs\//);
+    expect(await output("docs/404/index.html")).toContain('name="robots" content="noindex');
+    expect(await output("docs/sitemap.xml")).not.toContain("/404");
+  }));
 
-  it("passes shared config through Astro site/base routing", async () => {
-    const config = defineConfig({
-      name: "Shared Docs",
-      navigation: {
-        tabs: [
-          {
-            tab: "Docs",
-            slug: "",
-            source: markdown({
-              groups: [{ group: "Guides", pages: ["introduction"] }],
-            }),
-          },
-          {
-            tab: "API",
-            slug: "api",
-            source: openapi("../fixtures/petstore-openapi3.yaml"),
-          },
-        ],
-      },
-    });
+  it("preserves strip-mode authored indexes with landingPage off and resolves assets at their public base", () => fixture(async root => {
+    const config = { ...reader, navigation: { tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["index", "authorization"] }] }] } };
+    await writeFile(join(root, "index.md"), "# Overview\n\nAn authored index is a real document.\n");
+    const output = await build(root, [{ routeBase: "/docs", config, prettyUrls: "strip", landingPage: false }], { base: "/project/", build: { format: "file" } });
+    const html = await output("docs.html");
+    expect(html).toContain("An authored index is a real document.");
+    expect(engineHref(html, "sourcey.css")).toMatch(/^\/project\/docs\/_assets\//);
+    expect(html).toContain('href="/project/docs/authorization"');
+    expect(html).not.toContain('href="/project/docs/authorization/"');
+    expect(await output("docs/authorization.html")).toContain("The exact permission contract.");
+  }));
 
-    const prepared = await prepareAstroSourcey(
-      {
-        config,
-        configDir: llmsSiteDir,
-        routeBase: "/docs",
-      },
-      {
-        root: dirUrl(resolve(import.meta.dirname, "..")),
-        site: "https://sourcey.com",
-        base: "/product",
-      },
-      dirUrl(resolve(outputDir, ".astro")),
-    );
+  it("refuses to shadow an authored host route", () => fixture(async root => {
+    await writeFile(join(root, "src/pages/docs/index.astro"), "<html><body>Host owns this</body></html>");
+    await expect(build(root, [{ routeBase: "/docs" }])).rejects.toThrow("Sourcey route conflicts with host");
+  }));
 
+  it("retains shared source configuration under the host origin and base", async () => {
+    const prepared = await prepareAstroSourcey({ configDir: llmsSiteDir, routeBase: "/docs", config: defineConfig({ name: "Shared Docs", navigation: { tabs: [
+      { tab: "Docs", slug: "", source: markdown({ groups: [{ group: "Guides", pages: ["introduction"] }] }) },
+      { tab: "API", slug: "api", source: openapi("../fixtures/petstore-openapi3.yaml") },
+    ] } }) }, { root: dirUrl(resolve(import.meta.dirname, "..")), site: "https://sourcey.com", base: "/product" });
     expect(prepared.routeBase).toBe("/docs/");
-    expect(prepared.outputRoute).toBe("docs/");
+    expect(prepared.outputRoute).toBe("docs");
     expect(prepared.config.siteUrl).toBe("https://sourcey.com");
     expect(prepared.config.baseUrl).toBe("/product/docs/");
-    expect(prepared.config.tabs[0]?.source.kind).toBe("markdown");
-    expect(prepared.watchPaths.some((path) => path.endsWith("introduction.md"))).toBe(true);
+    expect(prepared.config.contexts[0].tabs[0].source.kind).toBe("markdown");
+    expect(prepared.watchPaths.some(path => path.endsWith("introduction.md"))).toBe(true);
   });
 
-  it("builds Sourcey into Astro output under /docs", async () => {
-    await rm(outputDir, { recursive: true, force: true });
-    await mkdir(outputDir, { recursive: true });
-
-    try {
-      const integration = sourceyAstro({
-        config: "sourcey.config.ts",
-        routeBase: "/docs",
-        build: { generateOgImages: false },
-      });
-
-      const watched: string[] = [];
-      await integration.hooks["astro:config:setup"]?.({
-        command: "build",
-        config: {
-          root: dirUrl(llmsSiteDir),
-          site: "https://sourcey.com",
-          base: "/",
-        },
-        logger,
-        addWatchFile(path) {
-          watched.push(path.toString());
-        },
-        createCodegenDir() {
-          return dirUrl(resolve(outputDir, ".astro"));
-        },
-        updateConfig() {
-          throw new Error("build setup should not install the dev Vite plugin");
-        },
-      });
-
-      await integration.hooks["astro:build:done"]?.({
-        dir: dirUrl(outputDir),
-        logger,
-      });
-
-      expect(watched.some((path) => path.endsWith("sourcey.config.ts"))).toBe(true);
-      expect(existsSync(resolve(outputDir, "docs.html"))).toBe(true);
-      expect(existsSync(resolve(outputDir, "docs/index.html"))).toBe(true);
-      expect(existsSync(resolve(outputDir, "docs/introduction.html"))).toBe(true);
-      expect(existsSync(resolve(outputDir, "docs/sourcey.css"))).toBe(true);
-      expect(existsSync(resolve(outputDir, "docs/sourcey.js"))).toBe(true);
-      expect(existsSync(resolve(outputDir, "docs/sourcey-theme.js"))).toBe(true);
-
-      const rootAlias = await readFile(resolve(outputDir, "docs.html"), "utf-8");
-      expect(rootAlias).toContain('href="/docs/sourcey.css"');
-      expect(rootAlias).toContain('src="/docs/sourcey.js"');
-      // The saved theme applies from <head>, and no page carries an inline script a strict
-      // Content-Security-Policy would block.
-      const head = rootAlias.slice(0, rootAlias.indexOf("</head>"));
-      expect(head).toContain('<script src="/docs/sourcey-theme.js"></script>');
-      for (const [, attributes] of rootAlias.matchAll(/<script([^>]*)>(?!<\/script>)/g)) {
-        expect(attributes, "inline executable script").toMatch(
-          /\bsrc=|type="application\/ld\+json"/,
-        );
-      }
-      expect(rootAlias).toContain('content="/docs/search-index.json"');
-
-      const introduction = await readFile(resolve(outputDir, "docs/introduction.html"), "utf-8");
-      expect(introduction).toContain(
-        '<link rel="canonical" href="https://sourcey.com/docs/introduction.html"',
-      );
-
-      const searchIndex = await readFile(resolve(outputDir, "docs/search-index.json"), "utf-8");
-      expect(searchIndex).toContain('"url":"/docs/introduction.html"');
-      expect(searchIndex).toContain('"url":"/docs/api.html');
-    } finally {
-      await rm(outputDir, { recursive: true, force: true });
-    }
-  });
-
-  it("leaves the mount root to the host when landingPage is off", async () => {
-    const root = resolve(outputDir, "host-landing");
-    const client = resolve(root, "client");
-    await mkdir(client, { recursive: true });
-    await writeFile(resolve(client, "docs.html"), "<!doctype html><title>Host</title>");
-    const integration = sourceyAstro({
-      configDir: llmsSiteDir,
-      config: defineConfig({
-        name: "Docs",
-        navigation: {
-          tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["introduction"] }] }],
-        },
-      }),
-      routeBase: "/docs",
-      prettyUrls: "strip",
-      landingPage: false,
-      build: { generateOgImages: false },
-    });
-    try {
-      await integration.hooks["astro:config:setup"]!({
-        command: "build",
-        config: { root: dirUrl(root), site: "https://example.org" },
-        logger,
-        addWatchFile() {},
-        updateConfig() {},
-      });
-      await integration.hooks["astro:build:done"]!({ dir: dirUrl(client), logger });
-      expect(await readFile(resolve(client, "docs.html"), "utf8")).toContain("<title>Host</title>");
-      expect(existsSync(resolve(client, "docs/index.html"))).toBe(false);
-      expect(existsSync(resolve(client, "docs/introduction.html"))).toBe(true);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("passes the mount root to the host in development when landingPage is off", async () => {
-    const root = resolve(outputDir, "host-landing-dev");
+  it.each([true, false])("serves real development documents and leaves host ownership intact (landingPage=%s)", landingPage => fixture(async root => {
     let plugins: Plugin[] = [];
-    const integration = sourceyAstro({
-      configDir: llmsSiteDir,
-      config: defineConfig({
-        name: "Docs",
-        navigation: {
-          tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["introduction"] }] }],
-        },
-      }),
-      routeBase: "/docs",
-      prettyUrls: "strip",
-      landingPage: false,
-    });
-    await integration.hooks["astro:config:setup"]!({
-      command: "dev",
-      config: { root: dirUrl(root) },
-      logger,
-      addWatchFile() {},
-      updateConfig(config) {
-        plugins = config.vite?.plugins ?? [];
-      },
-    });
-    const server = await createServer({
-      configFile: false,
-      root,
-      appType: "custom",
-      plugins,
-      server: { host: "127.0.0.1", port: 0 },
-      logLevel: "silent",
-    });
+    const adapter = sourceyAstro({ config: reader as never, configDir: root, routeBase: "/docs", prettyUrls: "strip", landingPage });
+    await adapter.hooks["astro:config:setup"]!({ command: "dev", config: { root: dirUrl(root) }, createCodegenDir: () => dirUrl(join(root, ".sourcey")), addWatchFile() {}, updateConfig(config) { plugins = config.vite?.plugins as Plugin[] ?? []; } } as never);
+    const server = await createServer({ configFile: false, root, appType: "custom", plugins, server: { host: "127.0.0.1", port: 0 }, logLevel: "silent" });
     try {
       await server.listen();
       const origin = server.resolvedUrls!.local[0];
-      expect((await fetch(new URL("/docs", origin))).status).toBe(404);
-      expect((await fetch(new URL("/docs/introduction", origin))).status).toBe(200);
-    } finally {
-      await server.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("refuses landingPage off when the first page is the root", async () => {
-    const root = resolve(outputDir, "host-landing-index");
-    const client = resolve(root, "client");
-    await mkdir(client, { recursive: true });
-    await writeFile(resolve(root, "index.md"), "---\ntitle: Overview\n---\n\nThe contract.\n");
-    const integration = sourceyAstro({
-      configDir: root,
-      config: defineConfig({
-        name: "Docs",
-        navigation: {
-          tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["index"] }] }],
-        },
-      }),
-      routeBase: "/docs",
-      landingPage: false,
-      build: { generateOgImages: false },
-    });
-    try {
-      await integration.hooks["astro:config:setup"]!({
-        command: "build",
-        config: { root: dirUrl(root) },
-        logger,
-        addWatchFile() {},
-        updateConfig() {},
-      });
-      await expect(
-        integration.hooks["astro:build:done"]!({ dir: dirUrl(client), logger }),
-      ).rejects.toThrow("this site's first page is the root");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+      expect((await fetch(new URL("/docs", origin))).status).toBe(landingPage ? 200 : 404);
+      const response = await fetch(new URL("/docs/introduction", origin));
+      expect(response.headers.get("content-type")).toContain("text/html");
+      expect(await response.text()).toContain('data-sourcey-theme="reader"');
+      const index = await (await fetch(new URL("/docs/documents.json", origin))).json();
+      const intro = index.documents.find((entry: { title: string }) => entry.title === "Introduction");
+      const markdown = await fetch(new URL(intro.markdown, origin));
+      expect(markdown.headers.get("link")).toContain('rel="canonical"');
+      expect(await markdown.text()).toContain("The documentation stays useful.");
+      expect((await fetch(new URL("/docs/404", origin))).status).toBe(404);
+    } finally { await server.close(); }
+  }));
 });

@@ -1,17 +1,14 @@
-import type { NormalizedOperation } from "../core/types.js";
+import type { NormalizedOperation, SecurityScheme, ServerDefinition } from "../core/types.js";
 import type { CodeSample } from "../core/types.js";
-import { generateExample } from "./example-generator.js";
+import { describeRequest, initialDraft, normalizeRequestHeaders, type RequestDescription } from "../core/request.js";
+import { multipartSamples } from "./multipart-samples.js";
+import { codeString, sampleUrl, sampleOrigin } from "./code-literals.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface RequestInfo {
-  url: string;
-  method: string;
-  contentType?: string;
-  body?: string;
-}
+type RequestInfo = Pick<RequestDescription, "headers" | "url" | "method" | "credentials"> & { body?: string; originVariable?: boolean };
 
 type CodeSampleGenerator = (req: RequestInfo) => CodeSample;
 
@@ -20,64 +17,61 @@ type CodeSampleGenerator = (req: RequestInfo) => CodeSample;
 // ---------------------------------------------------------------------------
 
 const generators: Record<string, CodeSampleGenerator> = {
-  curl({ url, method, contentType, body }: RequestInfo): CodeSample {
-    const parts = [`curl -X ${method} ${shellSingleQuoted(url)}`];
-    if (contentType) parts.push(`  -H ${shellSingleQuoted(`Content-Type: ${contentType}`)}`);
-    if (body) parts.push(`  -d ${shellSingleQuoted(indent(body, 2))}`);
-    return { lang: "bash", label: "cURL", source: parts.join(" \\\n") };
+  curl({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
+    const parts = [`curl -X ${method} ${sampleUrl(url, "curl", originVariable)}`];
+    for (const [name, value] of headers)
+      parts.push("  -H " + shellSingleQuoted(name + ": " + value));
+    const binary = body?.includes("\0");
+    if (body !== undefined) parts.push(binary ? "  --data-binary @-" : `  --data-raw ${shellSingleQuoted(body)}`);
+    const pipe = binary ? `printf '%b' ${shellSingleQuoted(Array.from(new TextEncoder().encode(body!)).map(byte => `\\0${byte.toString(8).padStart(3, "0")}`).join(""))} | ` : "";
+    return { lang: "bash", label: "cURL", source: (originVariable ? sampleOrigin("curl") + "\n" : "") + pipe + parts.join(" \\\n") };
   },
 
-  javascript({ url, method, contentType, body }: RequestInfo): CodeSample {
-    const lines = [`const response = await fetch('${url}', {`];
+  javascript({ url, method, headers, body, credentials, originVariable }: RequestInfo): CodeSample {
+    const lines = [...(originVariable ? [sampleOrigin("javascript")] : []), `const response = await fetch(${sampleUrl(url, "javascript", originVariable)}, {`];
     lines.push(`  method: '${method}',`);
-    if (contentType) {
-      lines.push(`  headers: {`, `    'Content-Type': '${contentType}',`, `  },`);
-    }
-    if (body) lines.push(`  body: JSON.stringify(${indent(body, 4)}),`);
-    lines.push(`});`, ``, `const data = await response.json();`);
+    if (headers.length)
+      lines.push("  headers: " + JSON.stringify(Object.fromEntries(headers)) + ",");
+    if (credentials !== "same-origin")
+      lines.push("  credentials: " + singleLiteral(credentials) + ",");
+    if (body !== undefined)
+      lines.push("  body: " + JSON.stringify(body) + ",");
+    lines.push(`});`, ``, `const data = await response.text();`);
     return { lang: "javascript", label: "JavaScript", source: lines.join("\n") };
   },
 
-  typescript({ url, method, contentType, body }: RequestInfo): CodeSample {
-    const lines = [`const response = await fetch('${url}', {`];
-    lines.push(`  method: '${method}',`);
-    if (contentType) {
-      lines.push(`  headers: {`, `    'Content-Type': '${contentType}',`, `  },`);
-    }
-    if (body) lines.push(`  body: JSON.stringify(${indent(body, 4)}),`);
-    lines.push(`});`, ``, `const data: Record<string, unknown> = await response.json();`);
-    return { lang: "typescript", label: "TypeScript", source: lines.join("\n") };
+  typescript(req: RequestInfo): CodeSample {
+    const sample = generators.javascript(req);
+    return { ...sample, lang: "typescript", label: "TypeScript" };
   },
 
-  python({ url, method, contentType, body }: RequestInfo): CodeSample {
+  python({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
     const lines = ["import requests", ""];
-    const args = [`'${url}'`];
-    if (body) {
-      lines.push(`payload = ${pythonDict(body)}`, "");
-      args.push("json=payload");
-    } else if (contentType) {
-      args.push(`headers={'Content-Type': '${contentType}'}`);
-    }
+    if (originVariable) lines.push(sampleOrigin("python"));
+    const args = [sampleUrl(url, "python", originVariable)];
+    if (body !== undefined) args.push("data=" + singleLiteral(body) + ".encode('utf-8')");
+    if (headers.length) args.push("headers=" + JSON.stringify(Object.fromEntries(headers)));
     const request = pythonShortcutMethod(method)
-      ? `requests.${method.toLowerCase()}(${args.join(", ")})`
-      : `requests.request('${method}', ${args.join(", ")})`;
-    lines.push(`response = ${request}`);
-    lines.push(`data = response.json()`);
+      ? "requests." + method.toLowerCase() + "(" + args.join(", ") + ")"
+      : "requests.request(" + singleLiteral(method) + ", " + args.join(", ") + ")";
+    lines.push("response = " + request, "print(response.text)");
     return { lang: "python", label: "Python", source: lines.join("\n") };
   },
 
-  go({ url, method, body }: RequestInfo): CodeSample {
+  go({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
     const lines = ["package main", "", "import (", `  "fmt"`, `  "io"`, `  "net/http"`];
-    if (body) lines.push(`  "strings"`);
+    if (body !== undefined) lines.push(`  "strings"`);
     lines.push(")", "");
     lines.push("func main() {");
-    if (body) {
-      lines.push(`  body := strings.NewReader(\`${indent(body, 2)}\`)`);
-      lines.push(`  req, _ := http.NewRequest("${method}", "${url}", body)`);
+    if (originVariable) lines.push("  " + sampleOrigin("go"));
+    if (body !== undefined) {
+      lines.push("  body := strings.NewReader(" + JSON.stringify(body) + ")");
+      lines.push(`  req, _ := http.NewRequest(${codeString(method, "go")}, ${sampleUrl(url, "go", originVariable)}, body)`);
     } else {
-      lines.push(`  req, _ := http.NewRequest("${method}", "${url}", nil)`);
+      lines.push(`  req, _ := http.NewRequest(${codeString(method, "go")}, ${sampleUrl(url, "go", originVariable)}, nil)`);
     }
-    if (body) lines.push(`  req.Header.Set("Content-Type", "application/json")`);
+    for (const [name, value] of headers)
+      lines.push("  req.Header.Set(" + JSON.stringify(name) + ", " + JSON.stringify(value) + ")");
     lines.push(`  resp, _ := http.DefaultClient.Do(req)`);
     lines.push(`  defer resp.Body.Close()`);
     lines.push(`  data, _ := io.ReadAll(resp.Body)`);
@@ -86,53 +80,54 @@ const generators: Record<string, CodeSampleGenerator> = {
     return { lang: "go", label: "Go", source: lines.join("\n") };
   },
 
-  ruby({ url, method, contentType, body }: RequestInfo): CodeSample {
+  ruby({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
     const lines = [
       `require 'net/http'`,
       `require 'json'`,
       ``,
-      `uri = URI('${rubySingleQuoted(url)}')`,
+      ...(originVariable ? [sampleOrigin("ruby")] : []),
+      `uri = URI(${sampleUrl(url, "ruby", originVariable)})`,
     ];
     const methodClass = rubyShortcutMethod(method);
     if (methodClass) {
       lines.push(`request = Net::HTTP::${methodClass}.new(uri)`);
-      if (contentType) lines.push(`request['Content-Type'] = '${rubySingleQuoted(contentType)}'`);
-      if (body) lines.push(`request.body = '${rubySingleQuoted(indent(body, 2))}'`);
+      if (body !== undefined) lines.push(`request.body = ${codeString(body, "ruby")}`);
     } else {
-      const headers = contentType
-        ? `{ 'Content-Type' => '${rubySingleQuoted(contentType)}' }`
-        : "{}";
       lines.push(
-        `request = Net::HTTPGenericRequest.new('${method}', ${body ? "true" : "false"}, true, uri.request_uri, ${headers})`,
+        `request = Net::HTTPGenericRequest.new('${method}', ${body ? "true" : "false"}, true, uri.request_uri, {})`,
       );
-      if (body) lines.push(`request.body = '${rubySingleQuoted(indent(body, 2))}'`);
+      if (body !== undefined) lines.push(`request.body = ${codeString(body, "ruby")}`);
     }
+    for (const [name, value] of headers)
+      lines.push("request[" + codeString(name, "ruby") + "] = " + codeString(value, "ruby"));
     lines.push(
       ``,
-      `response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }`,
+      `response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') { |http| http.request(request) }`,
     );
     lines.push(`data = JSON.parse(response.body)`);
     return { lang: "ruby", label: "Ruby", source: lines.join("\n") };
   },
 
-  java({ url, method, body }: RequestInfo): CodeSample {
+  java({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
     const lines = [
       `import java.net.http.*;`,
       `import java.net.URI;`,
       ``,
       `HttpClient client = HttpClient.newHttpClient();`,
     ];
-    if (body) {
-      lines.push(`String body = """`, `    ${indent(body, 4)}""";`, ``);
+    if (originVariable) lines.push(sampleOrigin("java"));
+    if (body !== undefined) {
+      lines.push("String body = " + codeString(body, "java") + ";", "");
       lines.push(`HttpRequest request = HttpRequest.newBuilder()`);
-      lines.push(`    .uri(URI.create("${url}"))`);
-      lines.push(`    .header("Content-Type", "application/json")`);
+      lines.push(`    .uri(URI.create(${sampleUrl(url, "java", originVariable)}))`);
       lines.push(`    .method("${method}", HttpRequest.BodyPublishers.ofString(body))`);
     } else {
       lines.push(`HttpRequest request = HttpRequest.newBuilder()`);
-      lines.push(`    .uri(URI.create("${url}"))`);
+      lines.push(`    .uri(URI.create(${sampleUrl(url, "java", originVariable)}))`);
       lines.push(`    .method("${method}", HttpRequest.BodyPublishers.noBody())`);
     }
+    for (const [name, value] of headers)
+      lines.push("    .header(" + codeString(name, "java") + ", " + codeString(value, "java") + ")");
     lines.push(`    .build();`, ``);
     lines.push(
       `HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());`,
@@ -141,26 +136,28 @@ const generators: Record<string, CodeSampleGenerator> = {
     return { lang: "java", label: "Java", source: lines.join("\n") };
   },
 
-  php({ url, method, contentType, body }: RequestInfo): CodeSample {
-    const lines = [`<?php`, `$ch = curl_init('${phpSingleQuoted(url)}');`];
+  php({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
+    const lines = [`<?php`, ...(originVariable ? [sampleOrigin("php")] : []), `$ch = curl_init(${sampleUrl(url, "php", originVariable)});`];
     lines.push(`curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);`);
     if (method !== "GET") {
       lines.push(`curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '${phpSingleQuoted(method)}');`);
     }
-    if (contentType) {
+    if (headers.length) {
       lines.push(
-        `curl_setopt($ch, CURLOPT_HTTPHEADER, ['${phpSingleQuoted(`Content-Type: ${contentType}`)}']);`,
+        "curl_setopt($ch, CURLOPT_HTTPHEADER, [" +
+          headers.map(([k, v]) => codeString(k + ": " + v, "php")).join(", ") +
+          "]);",
       );
     }
-    if (body) {
-      lines.push(`curl_setopt($ch, CURLOPT_POSTFIELDS, '${phpSingleQuoted(indent(body, 2))}');`);
+    if (body !== undefined) {
+      lines.push(`curl_setopt($ch, CURLOPT_POSTFIELDS, ${codeString(body, "php")});`);
     }
     lines.push(``, `$response = curl_exec($ch);`, `curl_close($ch);`);
     lines.push(`$data = json_decode($response, true);`);
     return { lang: "php", label: "PHP", source: lines.join("\n") };
   },
 
-  rust({ url, method, body }: RequestInfo): CodeSample {
+  rust({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
     const lines = [
       `use reqwest;`,
       ``,
@@ -168,16 +165,19 @@ const generators: Record<string, CodeSampleGenerator> = {
       `async fn main() -> Result<(), reqwest::Error> {`,
       `    let client = reqwest::Client::new();`,
     ];
+    if (originVariable) lines.push("    " + sampleOrigin("rust"));
     const requestBuilder = rustShortcutMethod(method)
-      ? `client.${method.toLowerCase()}("${url}")`
-      : `client.request(reqwest::Method::from_bytes(b"${method}").unwrap(), "${url}")`;
-    if (body) {
-      lines.push(`    let body = serde_json::json!(${indent(body, 4)});`);
+      ? `client.${method.toLowerCase()}(${sampleUrl(url, "rust", originVariable)})`
+      : `client.request(reqwest::Method::from_bytes(b"${method}").unwrap(), ${sampleUrl(url, "rust", originVariable)})`;
+    if (body !== undefined) {
+      lines.push("    let body = " + codeString(body, "rust") + ";");
       lines.push(`    let response = ${requestBuilder}`);
-      lines.push(`        .json(&body)`);
+      lines.push(`        .body(body)`);
     } else {
       lines.push(`    let response = ${requestBuilder}`);
     }
+    for (const [name, value] of headers)
+      lines.push("        .header(" + codeString(name, "rust") + ", " + codeString(value, "rust") + ")");
     lines.push(`        .send()`);
     lines.push(`        .await?`);
     lines.push(`        .text()`);
@@ -188,25 +188,39 @@ const generators: Record<string, CodeSampleGenerator> = {
     return { lang: "rust", label: "Rust", source: lines.join("\n") };
   },
 
-  csharp({ url, method, body }: RequestInfo): CodeSample {
+  csharp({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
     const lines = [`using var client = new HttpClient();`, ``];
+    if (originVariable) lines.push(sampleOrigin("csharp"));
     const httpMethod = csharpShortcutMethod(method)
       ? `HttpMethod.${method[0] + method.slice(1).toLowerCase()}`
       : `new HttpMethod("${method}")`;
-    if (body) {
+    if (body !== undefined) {
       lines.push(
-        `var content = new StringContent("""`,
-        `    ${indent(body, 4)}""", System.Text.Encoding.UTF8, "application/json");`,
+        'var content = new StringContent(' + codeString(body, "csharp") + ', System.Text.Encoding.UTF8);',
       );
       lines.push(
-        `var response = await client.SendAsync(new HttpRequestMessage(${httpMethod}, "${url}") { Content = content });`,
+        `var request = new HttpRequestMessage(${httpMethod}, ${sampleUrl(url, "csharp", originVariable)}) { Content = content };`,
       );
     } else {
+      lines.push(`var request = new HttpRequestMessage(${httpMethod}, ${sampleUrl(url, "csharp", originVariable)});`);
+    }
+    for (const [name, value] of headers) {
       lines.push(
-        `var response = await client.SendAsync(new HttpRequestMessage(${httpMethod}, "${url}"));`,
+        name.toLowerCase() === "content-type"
+          ? "request.Content!.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(" +
+              codeString(value, "csharp") +
+              ");"
+          : "request.Headers.TryAddWithoutValidation(" +
+              codeString(name, "csharp") +
+              ", " +
+              codeString(value, "csharp") +
+              ");",
       );
     }
-    lines.push(`var data = await response.Content.ReadAsStringAsync();`);
+    lines.push(
+      "var response = await client.SendAsync(request);",
+      `var data = await response.Content.ReadAsStringAsync();`,
+    );
     return { lang: "csharp", label: "C#", source: lines.join("\n") };
   },
 };
@@ -228,49 +242,77 @@ export const SUPPORTED_CODE_SAMPLE_LANGS = Object.freeze(Object.keys(generators)
  */
 export function generateCodeSamples(
   op: NormalizedOperation,
-  serverUrl: string,
+  servers: readonly ServerDefinition[],
   langs: string[] = DEFAULT_CODE_SAMPLE_LANGS,
+  securitySchemes: Record<string, SecurityScheme> = {},
+  sourceUrl?: string,
 ): CodeSample[] {
   // Spec-defined samples always win
   if (op.codeSamples?.length) return op.codeSamples;
 
-  const url = `${serverUrl.replace(/\/$/, "")}${op.path}`;
-  const method = op.method.toUpperCase();
-  const hasBody = !!op.requestBody;
-  const contentType = hasBody
-    ? (Object.keys(op.requestBody!.content)[0] ?? "application/json")
-    : undefined;
+  const draft = initialDraft(op);
+  for (const name of Object.keys(op.security[draft.securityIndex] ?? {}))
+    draft.auth[name] = {
+      value: "YOUR_TOKEN",
+      username: "YOUR_USERNAME",
+      password: "YOUR_PASSWORD",
+    };
+  const { server, unfilled, base } = operationServer(op, servers, sourceUrl);
+  const originVariable = !/^https?:\/\//.test(base);
+  const request = describeRequest(
+    {
+      operation: op,
+      servers: [server],
+      securitySchemes,
+      baseUrl: !unfilled && sourceUrl ? sourceUrl : "https://sourcey.invalid/",
+    },
+    draft,
+  );
+  if (originVariable) request.url = request.url.replace(/^https:\/\/sourcey\.invalid(?=\/|$)/, "");
+  return generateRequestSamples(request, langs, { originVariable });
+}
 
-  const bodyExample = hasBody ? getRequestBodyExample(op) : undefined;
-  const body = bodyExample ? JSON.stringify(bodyExample, null, 2) : undefined;
+/**
+ * Where an operation's requests go, as its samples and its endpoint name it:
+ * its own servers before the API's, each variable at its default, and a
+ * relative address resolved against the published spec when that is known.
+ * An origin with a variable that has no default (a self-hosted instance's
+ * host) is the reader's to fill in, so it is left out, as is an origin a
+ * relative address cannot be resolved against. `base` has no trailing slash.
+ */
+export function operationServer(op: NormalizedOperation, servers: readonly ServerDefinition[], sourceUrl?: string) {
+  const declared = (op.servers?.length ? op.servers : servers)[0] ?? { url: "/" };
+  const origin = declared.url.match(/^[^/]*\/\/[^/]*/)?.[0] ?? "";
+  const unfilled = [...origin.matchAll(/\{([^}]+)\}/g)].some(([, name]) => !declared.variables?.[name]?.default);
+  const server = unfilled ? { ...declared, url: declared.url.slice(origin.length) || "/" } : declared;
+  const resolved = server.url.replace(/\{([^}]+)\}/g, (match, name: string) => server.variables?.[name]?.default ?? match);
+  const located = !unfilled && sourceUrl && !/^https?:\/\//.test(resolved) ? decodeURI(new URL(resolved, sourceUrl).href) : resolved;
+  return { server, unfilled, base: located.replace(/\/+$/, "") };
+}
 
-  const req: RequestInfo = { url, method, contentType, body };
-
-  return langs.map((lang) => generators[lang]?.(req)).filter((s): s is CodeSample => !!s);
+export function generateRequestSamples(
+  request: RequestDescription,
+  langs = DEFAULT_CODE_SAMPLE_LANGS,
+  options: { originVariable?: boolean } = {},
+): CodeSample[] {
+  request = { ...request, headers: normalizeRequestHeaders(request.headers) };
+  if (request.body?.kind === "multipart") return multipartSamples(request, langs, options);
+  const req: RequestInfo = {
+    url: request.url,
+    method: request.method,
+    headers: request.headers,
+    credentials: request.credentials,
+    body: request.body?.kind === "text" ? request.body.text : undefined,
+    originVariable: options.originVariable,
+  };
+  return langs
+    .map((lang) => generators[lang]?.(req))
+    .filter((sample): sample is CodeSample => !!sample);
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function getRequestBodyExample(op: NormalizedOperation): unknown {
-  const content = op.requestBody?.content;
-  if (!content) return undefined;
-
-  const mediaType = Object.values(content)[0];
-  if (!mediaType) return undefined;
-
-  if (mediaType.example !== undefined) return mediaType.example;
-  if (mediaType.schema) return generateExample(mediaType.schema);
-  return undefined;
-}
-
-function pythonDict(jsonStr: string): string {
-  return jsonStr
-    .replace(/: true/g, ": True")
-    .replace(/: false/g, ": False")
-    .replace(/: null/g, ": None");
-}
 
 function pythonShortcutMethod(method: string): boolean {
   return ["GET", "POST", "PUT", "DELETE", "PATCH"].includes(method);
@@ -305,16 +347,10 @@ function shellSingleQuoted(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function rubySingleQuoted(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
 function phpSingleQuoted(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-/** Indent all lines of a multi-line string except the first. */
-function indent(str: string, spaces: number): string {
-  const pad = " ".repeat(spaces);
-  return str.replace(/\n/g, "\n" + pad);
+function singleLiteral(value: string): string {
+  return codeString(value, "javascript");
 }

@@ -1,38 +1,24 @@
+import { pageMetadata } from "../core/page-metadata.js";
+import { referenceSearchText } from "../core/search-indexer.js";
 import { createHash } from "node:crypto";
 import type { NormalizedOperation, NormalizedSchema, NormalizedSpec } from "../core/types.js";
-import type { SitePage } from "../renderer/html-builder.js";
+import type { SitePage } from "../core/site-model.js";
 import type { SiteConfig } from "../renderer/context.js";
-import { htmlId, operationAnchor, definitionAnchor } from "../utils/html-id.js";
+import { htmlId } from "../utils/html-id.js";
+import { operationAnchor, definitionAnchor, referenceOperation } from "../core/reference-identity.js";
 import { generateCodeSamples } from "../utils/code-samples.js";
 import { toPublicUrl } from "../site-url.js";
 import { fencedCode } from "./markdown.js";
-import { rewriteMarkdownDestinations } from "../core/markdown-loader.js";
+import { rewriteMarkdownDestinations } from "../utils/markdown-links.js";
 
-export interface DocumentationEntry {
-  id: string;
-  kind: "page" | "operation" | "schema";
-  title: string;
-  description: string;
-  tab: string;
-  /** Canonical browser location, including the operation anchor when applicable. */
-  url: string;
-  /** Public Markdown location. */
-  markdown: string;
-  /** Path relative to the generated directory. */
-  file: string;
-  /** Compact body terms for keyword retrieval; content remains in the Markdown file. */
-  searchText?: string;
-  symbols?: { name: string; anchor?: string; kind: string }[];
-}
+import type { DocumentationEntry } from "./document-index.js";
+export type { DocumentationEntry, DocumentationIndex } from "./document-index.js";
 
-export interface DocumentationIndex {
-  version: 1;
-  name: string;
-  documents: DocumentationEntry[];
-}
+// Projection only: source pages and the complete readable-URL mapping own it.
+const readableLinks = new WeakMap<object, { key: string; input: string; content: string }>();
 
 export interface ReadableDocument {
-  entry: DocumentationEntry;
+  entry: Pick<DocumentationEntry, "id" | "kind" | "title" | "description" | "tab" | "url" | "markdown" | "file"> & Partial<DocumentationEntry>;
   content: string;
   /** Child operations and schemas already occur in their parent page. */
   aggregate: boolean;
@@ -51,8 +37,8 @@ export function schemaMarkdownPath(outputPath: string, name: string): string {
   return `${detailRoot(outputPath)}/schemas/${htmlId(name) || "schema"}-${digest}.md`;
 }
 
-export function operationMarkdownPath(outputPath: string, operation: NormalizedOperation): string {
-  return `${detailRoot(outputPath)}/operations/${operationAnchor(operation)}.md`;
+export function operationMarkdownPath(outputPath: string, operation: NormalizedOperation, spec: NormalizedSpec): string {
+  return `${detailRoot(outputPath)}/operations/${operationAnchor(operation, spec)}.md`;
 }
 
 export function operationName(operation: NormalizedOperation): string {
@@ -61,19 +47,21 @@ export function operationName(operation: NormalizedOperation): string {
 
 export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): ReadableDocument[] {
   const documents: ReadableDocument[] = [];
+  const sources = new Map<string, object>();
   const publicUrl = (file: string) =>
     toPublicUrl(file, site.siteUrl, site.baseUrl, site.prettyUrls);
   for (const page of pages) {
+    if (page.status === 404 || page.currentPage.kind === "not-found") continue;
     const file = markdownPath(page.outputPath);
-    let title: string;
-    let description: string;
+    const metadata = pageMetadata(page.currentPage, site);
+    const contextMetadata = { locale: page.context?.locale, contentLocale: page.contentLocale,
+      contentVersion: page.context?.version.id, versionScope: page.context?.scope };
     let body: string;
     const children: ReadableDocument[] = [];
     let symbols: DocumentationEntry["symbols"];
     if (page.currentPage.kind === "markdown") {
       const doc = page.currentPage.markdown;
-      title = doc.title;
-      description = doc.description;
+      sources.set(file, doc);
       body = doc.markdown;
       symbols = doc.searchEntries?.map((entry) => ({
         name: entry.qualifiedName || entry.title,
@@ -82,8 +70,6 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
       }));
     } else if (page.currentPage.kind === "changelog") {
       const doc = page.currentPage.changelog;
-      title = doc.title;
-      description = doc.description;
       const versions = doc.permalinkVersionId
         ? doc.changelog.versions.filter((version) => version.id === doc.permalinkVersionId)
         : doc.changelog.versions;
@@ -103,22 +89,37 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
         .join("\n\n");
     } else {
       const spec = page.currentPage.spec;
-      title = spec.info.title;
-      description = spec.info.summary || spec.info.description || "";
+      const view = page.currentPage.view;
+      if (view?.kind === "operation") {
+        const operation = referenceOperation(spec, view.id);
+        sources.set(file, operation);
+        documents.push({ entry: { ...contextMetadata, id: file, documentId: page.identity.document, kind: "operation", searchText: referenceSearchText(operation), title: metadata.title, description: metadata.description, tab: page.tabSlug, url: publicUrl(page.outputPath), markdown: publicUrl(file), file }, content: operationMarkdown(operation, spec, site, name => { const target = page.referenceTargets?.schemas[name]; return target ? publicUrl(target.anchor ? schemaMarkdownPath(target.outputPath, name) : markdownPath(target.outputPath)) : undefined; }), aggregate: true });
+        continue;
+      }
+      if (view?.kind === "schema") {
+        const schema = spec.schemas[view.name];
+        sources.set(file, schema);
+        documents.push({ entry: { ...contextMetadata, id: file, documentId: page.identity.document, kind: "schema", searchText: referenceSearchText(schema), title: metadata.title, description: metadata.description, tab: page.tabSlug, url: publicUrl(page.outputPath), markdown: publicUrl(file), file }, content: `# ${view.name}\n\n${schemaMarkdown(schema, new Set(), name => { const target = page.referenceTargets?.schemas[name]; return target ? publicUrl(target.anchor ? schemaMarkdownPath(target.outputPath, name) : markdownPath(target.outputPath)) : undefined; })}`, aggregate: true });
+        continue;
+      }
       const reference = (name: string) =>
         spec.schemas[name] ? publicUrl(schemaMarkdownPath(page.outputPath, name)) : undefined;
-      for (const operation of spec.operations) {
+      for (const operation of page.currentPage.view?.kind === "overview" ? [] : spec.operations) {
         if (operation.hidden) continue;
-        const operationFile = operationMarkdownPath(page.outputPath, operation);
-        const operationTitle = operationName(operation);
+        const operationFile = operationMarkdownPath(page.outputPath, operation, spec);
+        const operationMetadata = pageMetadata({ kind: "spec", spec, view: { kind: "operation", id: operationName(operation) } }, site);
+        sources.set(operationFile, operation);
         children.push({
           entry: {
+            ...contextMetadata,
             id: operationFile,
+            documentId: operationName(operation),
             kind: "operation",
-            title: operationTitle,
-            description: operation.summary || operation.description || "",
+            title: operationMetadata.title,
+            searchText: referenceSearchText(operation),
+            description: operationMetadata.description,
             tab: page.tabSlug,
-            url: `${publicUrl(page.outputPath)}#${operationAnchor(operation)}`,
+            url: `${publicUrl(page.outputPath)}#${operationAnchor(operation, spec)}`,
             markdown: publicUrl(operationFile),
             file: operationFile,
           },
@@ -126,16 +127,20 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
           aggregate: false,
         });
       }
-      for (const [name, schema] of Object.entries(spec.schemas)) {
+      for (const [name, schema] of page.currentPage.view?.kind === "overview" ? [] : Object.entries(spec.schemas)) {
         const schemaFile = schemaMarkdownPath(page.outputPath, name);
+        const schemaMetadata = pageMetadata({ kind: "spec", spec, view: { kind: "schema", name } }, site);
+        sources.set(schemaFile, schema);
         children.push({
           entry: {
+            ...contextMetadata,
             id: schemaFile,
             kind: "schema",
             title: name,
-            description: schema.description || "",
+            searchText: referenceSearchText(schema),
+            description: schemaMetadata.description,
             tab: page.tabSlug,
-            url: `${publicUrl(page.outputPath)}#${definitionAnchor(name)}`,
+            url: `${publicUrl(page.outputPath)}#${definitionAnchor(name, spec)}`,
             markdown: publicUrl(schemaFile),
             file: schemaFile,
           },
@@ -144,7 +149,7 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
         });
       }
       body = [
-        description,
+        spec.info.summary || spec.info.description,
         spec.info.version ? `Version: ${spec.info.version}` : "",
         securityMarkdown(spec),
         ...children.map((child) => child.content.replace(/^# /, "## ")),
@@ -152,15 +157,22 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
         .filter(Boolean)
         .join("\n\n");
     }
-    const hasTitle = body.trimStart().split("\n", 1)[0] === `# ${title}`;
+    const title = metadata.title;
+    const hasTitle = body.trimStart().split("\n", 1)[0].replace(/\s+\{#[^}]+\}$/, "") === `# ${title}`;
     const content = `${hasTitle ? "" : `# ${title}\n\n`}${body.trim()}\n`;
     documents.push(
       {
         entry: {
           id: file,
+          documentId: page.identity?.document,
+          locale: page.context?.locale,
+          contentLocale: page.contentLocale,
+          contentVersion: page.context?.version.id,
+          versionScope: page.context?.scope,
           kind: "page",
+          searchText: page.currentPage.kind === "spec" ? referenceSearchText({ info: page.currentPage.spec.info, servers: page.currentPage.spec.servers, tags: page.currentPage.spec.tags.map(tag => ({ name: tag.name, summary: tag.summary, description: tag.description, externalDocs: tag.externalDocs })), securitySchemes: page.currentPage.spec.securitySchemes }) : body,
           title,
-          description,
+          description: metadata.description,
           tab: page.tabSlug,
           url: publicUrl(page.outputPath),
           markdown: publicUrl(file),
@@ -175,19 +187,35 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
       ...children,
     );
   }
+  const owners = new Map(pages.map(page => [page.tabSlug, page]));
+  const equivalents = new Map<string, ReadableDocument[]>();
+  for (const document of documents) {
+    const owner = owners.get(document.entry.tab);
+    if (!owner?.context) continue;
+    document.entry.documentId ??= document.entry.kind === "schema" ? `schema:${document.entry.title}` : document.entry.title;
+    const key = JSON.stringify([owner.identity.tab, document.entry.kind, document.entry.documentId, document.entry.versionScope, document.entry.contentVersion]);
+    const group = equivalents.get(key) ?? []; group.push(document); equivalents.set(key, group);
+  }
+  for (const group of equivalents.values()) for (const document of group) document.entry.alternates = group.filter(other => other.entry.contentLocale === other.entry.locale).map(other => ({ locale: other.entry.locale!, contentVersion: other.entry.contentVersion, url: other.entry.url, markdown: other.entry.markdown }));
   const files = new Set<string>();
   const readableUrls = new Map(
     documents
-      .filter((document) => document.entry.kind === "page")
+      .filter((document) => !new URL(document.entry.url, "https://sourcey.invalid").hash)
       .map((document) => [
         new URL(document.entry.url, "https://sourcey.invalid").href,
-        document.entry.markdown,
+        { markdown: document.entry.markdown, fragments: document.entry.kind === "page" },
       ]),
   );
+  const linkKey = createHash("sha256").update(JSON.stringify([...readableUrls])).digest("hex");
   for (const document of documents) {
     if (files.has(document.entry.file))
       throw new Error(`Duplicate documentation export: ${document.entry.file}`);
     files.add(document.entry.file);
+    const source = sources.get(document.entry.file);
+    const key = `${linkKey}:${document.entry.url}`;
+    const previous = source && readableLinks.get(source);
+    if (previous?.key === key && previous.input === document.content) { document.content = previous.content; continue; }
+    const input = document.content;
     document.content = rewriteMarkdownDestinations(document.content, (href) => {
       if (href.startsWith("#")) return href;
       let target: URL;
@@ -200,9 +228,10 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
       const query = target.search;
       target.hash = "";
       target.search = "";
-      const markdown = readableUrls.get(target.href);
-      return markdown ? `${markdown}${query}${hash}` : href;
+      const readable = readableUrls.get(target.href);
+      return readable && (!hash || readable.fragments) ? `${readable.markdown}${query}${hash}` : href;
     });
+    if (source) readableLinks.set(source, { key, input, content: document.content });
   }
   return documents;
 }
@@ -213,7 +242,8 @@ export function operationMarkdown(
   site: SiteConfig,
   reference?: (name: string) => string | undefined,
 ): string {
-  const parts = [`# ${operationName(operation)}`, operation.summary, operation.description];
+  const docs = operation.externalDocs;
+  const parts = [`# ${operation.summary || operationName(operation)}`, operation.summary ? `\`${operationName(operation)}\`` : undefined, operation.description, docs ? `[${docs.description?.trim() || docs.url}](${docs.url})` : undefined];
   if (operation.deprecated) parts.push("Deprecated.");
   parts.push(securityMarkdown(spec, operation));
   if (operation.parameters.length) {
@@ -259,15 +289,9 @@ export function operationMarkdown(
         parts.push(fencedCode(JSON.stringify(media.example, null, 2), "json"));
     }
   }
-  const server = operation.servers?.[0] ?? spec.servers[0];
-  const serverUrl =
-    server?.url.replace(
-      /\{([^}]+)\}/g,
-      (match, name: string) => server.variables?.[name]?.default ?? match,
-    ) ?? "";
   const samples = operation.mcpExtras
     ? (operation.codeSamples ?? [])
-    : generateCodeSamples(operation, serverUrl, site.codeSamples);
+    : generateCodeSamples(operation, spec.servers, site.codeSamples, spec.securitySchemes, spec.sourceUrl ?? site.siteUrl);
   if (samples.length)
     parts.push(
       "## Examples",

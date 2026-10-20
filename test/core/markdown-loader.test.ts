@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, relative } from "node:path";
 import { loadDocsPage, loadMarkdownPage, slugFromPath } from "../../src/core/markdown-loader.js";
-import { preprocessMkDocsMarkdown } from "../../src/adapters/mkdocs.js";
 
 const FIXTURE_DIR = resolve(import.meta.dirname, "../fixtures");
 
@@ -38,6 +37,19 @@ describe("loadMarkdownPage", { timeout: 30_000 }, () => {
     expect(page.html).toContain("FetchContent");
     // cpp block should contain the server code (split across spans by Shiki)
     expect(page.html).toContain("ServerConnection");
+  });
+
+  it("keeps linked cards as block siblings and allows independent links in their body", async () => {
+    await withTempDir(async dir => {
+      const file = join(dir, "cards.md");
+      await writeFile(file, '<CardGroup cols={2}>\n<Card title="Install" href="/install">Run the server. [Requirements](/requirements).</Card>\n<Card title="Use the API" href="/api">Make a request.</Card>\n</CardGroup>');
+      const page = await loadMarkdownPage(file, "cards");
+      expect(page.html.match(/class="card-item"/g)).toHaveLength(2);
+      expect(page.html).toContain('<div class="card-group not-prose" data-cols="2"><div class="card-item">');
+      expect(page.html).toContain('<a class="card-item-link" href="/install">Install</a>');
+      expect(page.html).toContain('<a href="/requirements">Requirements</a>');
+      expect(page.html).not.toMatch(/<p>\s*<(?:a|div)[^>]*class="card-item"/);
+    });
   });
 
   it("does not expand directives or JSX components inside fenced code blocks", async () => {
@@ -140,10 +152,11 @@ describe("loadMarkdownPage", { timeout: 30_000 }, () => {
       const page = await loadMarkdownPage(filePath, "hash");
 
       expect(page.headings).toEqual([
-        { level: 2, text: "std::hash<json>", id: "small-std-small-hash-lt-json-gt" },
-        { level: 2, text: "Fish & chips", id: "fish-amp-chips" },
+        { level: 2, text: "std::hash<json>", id: "stdhashjson" },
+        { level: 2, text: "Fish & chips", id: "fish--chips" },
       ]);
       expect(page.html).toContain('id="small-std-small-hash-lt-json-gt"');
+      expect(page.html).toContain('id="fish-amp-chips"');
     });
   });
 
@@ -214,144 +227,6 @@ describe("slugFromPath", () => {
 });
 
 describe("loadDocsPage", () => {
-  it("normalizes MkDocs snippets, tabs, admonitions, and inline language markers", async () => {
-    await withTempDir(async (dir) => {
-      const docsDir = join(dir, "docs");
-      await mkdir(join(docsDir, "examples"), { recursive: true });
-      await writeFile(join(docsDir, "examples", "basic.cpp"), "nlohmann::json value = {1, 2};\n");
-      const filePath = join(docsDir, "index.md");
-      await writeFile(
-        filePath,
-        [
-          "# MkDocs page",
-          "",
-          "Inline code keeps `#!cpp json value;` readable.",
-          "Template names like <json> stay visible.",
-          "",
-          '!!! note "Read this"',
-          "    The note body survives.",
-          "",
-          '??? example "Example"',
-          "    ```cpp",
-          '    --8<-- "examples/basic.cpp"',
-          "    ```",
-          "",
-          '=== "Modern"',
-          "    ```cpp",
-          '    --8<-- "examples/basic.cpp"',
-          "    ```",
-        ].join("\n"),
-      );
-
-      const page = await loadDocsPage(filePath, "index", {
-        changelog: false,
-        sourceRoot: docsDir,
-        preprocess: [preprocessMkDocsMarkdown],
-      });
-
-      expect(page.kind).toBe("markdown");
-      if (page.kind !== "markdown") return;
-
-      expect(page.html).toContain("nlohmann");
-      expect(page.html).toContain("Read this");
-      expect(page.html).toContain("The note body survives.");
-      expect(page.html).toContain("Modern");
-      // The opening paragraph moves up to become the lede.
-      expect(page.description).toBe("Inline code keeps `json value;` readable. Template names like &lt;json&gt; stay visible.");
-      expect(page.html).not.toContain("readable.");
-      expect(page.html).not.toContain("--8<--");
-      expect(page.html).not.toContain("!!! note");
-      expect(page.html).not.toContain("??? example");
-      expect(page.html).not.toContain("=== &quot;Modern&quot;");
-      expect(page.html).not.toContain("#!cpp");
-    });
-  });
-
-  it("leaves code in MkDocs pages as written and reads attr_list, md_in_html and icons as MkDocs does", async () => {
-    await withTempDir(async (dir) => {
-      const docsDir = join(dir, "docs");
-      await mkdir(docsDir, { recursive: true });
-      await writeFile(join(docsDir, "basic.cpp"), "#include <iostream>\nstd::vector<int> v;\n");
-      const filePath = join(docsDir, "index.md");
-      await writeFile(
-        filePath,
-        [
-          "# Hatch",
-          '<div class="grid" markdown>',
-          '![Hatch logo](logo.svg){ role="img" }',
-          "</div>",
-          "",
-          "Hatch manages `std::vector<int>` projects. {: .lead }",
-          "",
-          "Templates keep {{ name }} and {name}.",
-          "",
-          '<div class="grid cards" markdown>',
-          "",
-          "-   :material-clock:{ .lg .middle } __Set up in 5 minutes__",
-          "",
-          "</div>",
-          "",
-          '!!! example "Example"',
-          "    ```cpp",
-          '    --8<-- "basic.cpp"',
-          "    ```",
-        ].join("\n"),
-      );
-
-      const page = await loadDocsPage(filePath, "index", {
-        changelog: false,
-        sourceRoot: docsDir,
-        preprocess: [preprocessMkDocsMarkdown],
-      });
-      if (page.kind !== "markdown") throw new Error("expected a markdown page");
-      const text = page.html.replace(/<[^>]+>/g, "");
-
-      expect(page.description).toBe("Hatch manages `std::vector<int>` projects.");
-      // The excerpt is not the body's opening, so the body keeps it and the header shows no lede.
-      expect(page.hideLede).toBe(true);
-      expect(page.html).toContain('<div class="grid"><p><img src="logo.svg" alt="Hatch logo" /></p>');
-      expect(page.html).toContain("<li><strong>Set up in 5 minutes</strong></li>");
-      expect(text).toContain("std::vector&lt;int&gt; projects.");
-      expect(text).toContain("#include &lt;iostream&gt;");
-      expect(text).toContain("Templates keep {{ name }} and {name}.");
-      expect(text).not.toMatch(/&amp;lt;|role=|\.lead|\.middle|:material-/);
-    });
-  });
-
-  it("rejects MkDocs snippets outside the source root", async () => {
-    await withTempDir(async (dir) => {
-      const docsDir = join(dir, "docs");
-      await mkdir(docsDir, { recursive: true });
-      await writeFile(join(dir, "secret.txt"), "do not publish\n");
-      const filePath = join(docsDir, "index.md");
-      await writeFile(filePath, ['# Home', '', '--8<-- "../secret.txt"'].join("\n"));
-
-      await expect(
-        loadDocsPage(filePath, "index", {
-          changelog: false,
-          sourceRoot: docsDir,
-          preprocess: [preprocessMkDocsMarkdown],
-        }),
-      ).rejects.toThrow(/escapes docs_dir/);
-    });
-  });
-
-  it("preserves MkDocs HTML headings while escaping C++ template-like names", async () => {
-    await withTempDir(async (dir) => {
-      const docsDir = join(dir, "docs");
-      const filePath = join(docsDir, "index.md");
-      await mkdir(docsDir, { recursive: true });
-      await writeFile(filePath, "# Home\n");
-
-      const preprocessed = preprocessMkDocsMarkdown(
-        "# <small>std::</small>hash<nlohmann::basic_json\\>",
-        { filePath, sourceRoot: docsDir },
-      );
-
-      expect(preprocessed).toContain("<small>std::</small>hash&lt;nlohmann::basic_json&gt;");
-    });
-  });
-
   it("never takes a title from a comment inside a fenced code block", async () => {
     await withTempDir(async (dir) => {
       const filePath = join(dir, "routing.md");

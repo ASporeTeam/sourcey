@@ -11,6 +11,7 @@ import { marked } from "marked";
 import { openDocumentation } from "../src/exports/document-index.js";
 import { writeSourceySite } from "../src/site.js";
 import { closeMarkdownFence } from "../src/core/markdown-loader.js";
+import { openapi } from "../src/adapters/index.js";
 
 const fixture = resolve(import.meta.dirname, "fixtures");
 const config = (overrides = {}) =>
@@ -29,6 +30,35 @@ const config = (overrides = {}) =>
   );
 
 describe("static documentation exports", () => {
+  it("links direct reference views to their readable documents without inventing readable section fragments", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sourcey-readable-reference-"));
+    try {
+      await writeFile(join(root, "guide.md"), "# Guide\n\n[Operation](/api/list/?limit=1) [Schema](/api/cheese/) [Section](/api/list/#responses)\n");
+      const resolved = await resolveConfigFromRaw({ prettyUrls: "slash", navigation: { tabs: [
+        { tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["guide"] }] },
+        { tab: "API", slug: "api", openapi: join(fixture, "cheese.yml"), reference: { split: "operations" }, routes: { "GET /cheeses": "list", "schema:Cheese": "cheese" } },
+      ] } }, root);
+      const site = await buildSourceySite({ config: resolved, generateOgImages: false });
+      const body = site.extraFiles.get("guide/index.md")!.toString();
+      expect(body).toContain("[Operation](/api/list/index.md?limit=1)");
+      expect(body).toContain("[Schema](/api/cheese/index.md)");
+      const section = new URL(body.match(/\[Section\]\(([^)]+)\)/)![1], "https://docs.example.test/guide/index.md");
+      expect(section.pathname + section.hash).toBe("/api/list/#responses");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("keeps an operation's further reading in its readable document", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sourcey-readable-external-docs-"));
+    try {
+      await writeFile(join(root, "reading.overlay.yaml"), "overlay: 1.0.0\ninfo: { title: Reading, version: 1.0.0 }\nactions:\n  - target: $.paths['/cheeses'].get\n    update:\n      externalDocs: { description: Cheese guide, url: 'https://example.com/cheese' }\n");
+      const resolved = await resolveConfigFromRaw({ prettyUrls: "slash", navigation: { tabs: [
+        { tab: "API", slug: "api", source: openapi({ spec: join(fixture, "cheese.yml"), overlays: [join(root, "reading.overlay.yaml")] }), reference: { split: "operations" }, routes: { "GET /cheeses": "list" } },
+      ] } }, root);
+      const site = await buildSourceySite({ config: resolved, generateOgImages: false });
+      expect(site.extraFiles.get("api/list/index.md")!.toString()).toContain("[Cheese guide](https://example.com/cheese)");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("closes a page's EOF-terminated code fence before another page is concatenated", () => {
     expect(
       closeMarkdownFence("# Example\n\n````md\n### Literal\n\nPath: `example.html`\n```\n"),
@@ -38,8 +68,9 @@ describe("static documentation exports", () => {
   it("publishes the same operations, contracts and discovery across a mounted site", async () => {
     const site = await buildSourceySite({ config: await config(), generateOgImages: false });
     const index = JSON.parse(String(site.extraFiles.get("documents.json"))) as DocumentationIndex;
-    const operation = index.documents.find((doc) => doc.title === "GET /cheeses/{cheeseId}")!;
+    const operation = index.documents.find((doc) => doc.documentId === "GET /cheeses/{cheeseId}")!;
     expect(operation.kind).toBe("operation");
+    expect(operation.title).toBe("Get cheese by ID");
     expect(operation.markdown).toMatch(/^https:\/\/docs.example.com\/reference\/api\/operations\//);
     const markdown = String(site.extraFiles.get(operation.file));
     expect(markdown).toContain("cheeseId");
@@ -125,7 +156,7 @@ describe("static documentation exports", () => {
     });
     expect(site.llmsTxt).toBe("");
     expect(site.llmsFullTxt).toBe("");
-    expect(site.extraFiles.size).toBe(0);
+    expect([...site.extraFiles.keys()].filter((path) => !path.startsWith("_sourcey/try-it/") && !path.startsWith("_search/"))).toEqual([]);
     expect(site.pages[0].alternateLinks).toEqual([]);
   });
 
@@ -277,7 +308,7 @@ describe("static documentation exports", () => {
       const docs = await openDocumentation(join(dir, "dist"));
       const guide = docs.search("raw body")[0];
       expect(guide.title).toBe("Webhooks");
-      expect(docs.search("maximum limit")[0].title).toBe("GET /cheeses");
+      expect(docs.search("maximum limit")[0].title).toBe("List all cheeses");
       expect((await docs.read(guide.id)).text).toContain("before parsing JSON");
       // Index search still works before a body file is requested; content reads remain confined and lazy.
       await rm(join(dir, "dist", guide.file));

@@ -1,6 +1,10 @@
+import { useContext } from "preact/hooks";
+import { OptionsContext } from "../../renderer/context.js";
+import { english } from "../../core/messages.js";
 export function SearchDialog() {
+  const messages = useContext(OptionsContext).messages ?? english;
   return (
-    <div id="search-dialog" role="dialog" aria-label="Search">
+    <dialog id="search-dialog" role="dialog" aria-label={messages.search} data-loading={messages.loading} data-error={messages.searchFailed} data-retry={messages.tryAgain} data-empty={messages.noResults}>
       <div class="search-dialog-inner">
         <div class="search-input-row">
           <svg
@@ -17,26 +21,26 @@ export function SearchDialog() {
           </svg>
           <input
             id="search-input"
-            aria-label="Search documentation"
+            aria-label={messages.search}
             type="text"
-            placeholder="Search docs..."
+            placeholder={messages.searchPlaceholder}
             autocomplete="off"
             spellcheck={false}
           />
         </div>
-        <div id="search-results" />
+        <div id="search-results" aria-live="polite" />
         <div class="search-footer">
           <span class="search-footer-hint">
-            <kbd>↑↓</kbd> navigate
+            <kbd>↑↓</kbd> {messages.navigate}
           </span>
           <span class="search-footer-hint">
-            <kbd>↵</kbd> select
+            <kbd>↵</kbd> {messages.select}
           </span>
           <span class="search-footer-hint">
-            <kbd>esc</kbd> close
+            <kbd>esc</kbd> {messages.close}
           </span>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

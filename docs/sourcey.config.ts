@@ -20,7 +20,11 @@ export default defineConfig({
           groups: [
             {
               group: "Start Here",
-              pages: ["introduction", "install", "configuration", "machine-readable"],
+              pages: ["introduction", "install", "configuration", "versions", "languages", "components", "try-it", "machine-readable"],
+            },
+            {
+              group: "Migrating",
+              pages: ["migrating", "migrating/astro", "migrating/mkdocs", "migrating/docusaurus", "migrating/mintlify"],
             },
             {
               group: "Project",

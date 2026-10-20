@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildSourceySite, writeSourceySite } from "../../src/site.js";
 import { resolveConfigFromRaw } from "../../src/config.js";
+import { engineAsset } from "../built-site.js";
 
 it("serves current Markdown, context, contracts and discovery over the real CLI dev server", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sourcey-dev-exports-"));
@@ -93,7 +94,7 @@ it("adds no client JavaScript and removes exports when disabled in a subsequent 
       generateOgImages: false,
     });
     await writeSourceySite(withExports);
-    const client = await readFile(join(dir, "sourcey.js"));
+    const client = await readFile(await engineAsset(dir, "sourcey.js"));
     expect(await readFile(join(dir, "introduction.md"), "utf8")).toContain("Welcome to Mixed Docs");
     const withoutExports = await buildSourceySite({
       config: await resolveConfigFromRaw({ ...raw, exports: false }, configDir),
@@ -101,7 +102,7 @@ it("adds no client JavaScript and removes exports when disabled in a subsequent 
       generateOgImages: false,
     });
     await writeSourceySite(withoutExports);
-    expect(await readFile(join(dir, "sourcey.js"))).toEqual(client);
+    expect(await readFile(await engineAsset(dir, "sourcey.js"))).toEqual(client);
     await expect(readFile(join(dir, "introduction.md"))).rejects.toThrow();
     await expect(readFile(join(dir, "documents.json"))).rejects.toThrow();
     await expect(readFile(join(dir, "llms-full.txt"))).rejects.toThrow();

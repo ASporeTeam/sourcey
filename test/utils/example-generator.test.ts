@@ -31,6 +31,21 @@ describe("generateExample", () => {
     expect(result).toHaveProperty("age", 0);
   });
 
+  it("leaves read-only properties out of a request and write-only ones out of a response, at any depth", () => {
+    const schema: NormalizedSchema = {
+      type: "object",
+      properties: {
+        id: { type: "integer", readOnly: true },
+        title: { type: "string" },
+        password: { type: "string", writeOnly: true },
+        owner: { type: "object", properties: { id: { type: "integer", readOnly: true }, name: { type: "string" } } },
+      },
+    };
+    expect(generateExample(schema, "request")).toEqual({ title: "string", password: "string", owner: { name: "string" } });
+    expect(generateExample(schema, "response")).toEqual({ id: 0, title: "string", owner: { id: 0, name: "string" } });
+    expect(Object.keys(generateExample(schema) as object)).toEqual(["id", "title", "password", "owner"]);
+  });
+
   it("generates array example from items", () => {
     const schema: NormalizedSchema = {
       type: "array",

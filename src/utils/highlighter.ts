@@ -1,3 +1,4 @@
+import type { CodeFenceMetadata } from "./markdown.js";
 import {
   createHighlighterCoreSync,
   createJavaScriptRegexEngine,
@@ -45,7 +46,11 @@ const highlighter = (globalThis as Record<string, unknown>)[CACHE_KEY] as Return
  * The HTML uses `--shiki-dark` CSS custom properties so dark mode
  * works via CSS (no JS theme switching needed at runtime).
  */
-export function highlightCode(code: string, lang?: string): string {
+export function highlightCode(code: string, lang?: string, metadata?: CodeFenceMetadata): string {
+  function lineClasses(line: number): string[] {
+    if (!metadata) return [];
+    return [metadata.highlight.includes(line) && "highlighted", metadata.focus.length && (metadata.focus.includes(line) ? "focused" : "unfocused"), metadata.add.includes(line) && "diff-added", metadata.remove.includes(line) && "diff-removed"].filter((value): value is string => typeof value === "string");
+  }
   const resolved = lang && highlighter.getLoadedLanguages().includes(lang) ? lang : "text";
 
   if (resolved === "text") {
@@ -53,7 +58,7 @@ export function highlightCode(code: string, lang?: string): string {
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
-    const lines = escaped.split("\n").map(l => `<span class="line"><span>${l}</span></span>`).join("\n");
+    const lines = escaped.split("\n").map((l, index) => `<span class="line ${lineClasses(index + 1).join(" ")}"><span>${l}</span></span>`).join("\n");
     return `<pre class="shiki" tabindex="0"><code>${lines}</code></pre>`;
   }
 
@@ -64,5 +69,6 @@ export function highlightCode(code: string, lang?: string): string {
       dark: "dark-plus",
     },
     defaultColor: false,
+    transformers: [{ line(node, line) { this.addClassToHast(node, lineClasses(line).join(" ")); } }],
   });
 }

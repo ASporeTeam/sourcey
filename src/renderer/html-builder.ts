@@ -1,36 +1,70 @@
-import { copyFile, mkdir, writeFile, readFile, rm } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { build as viteBuild } from "vite";
-import tailwindcss from "@tailwindcss/vite";
-import preact from "@preact/preset-vite";
+import { createHash } from "node:crypto";
+import { buildAssets } from "./assets.js";
+import { writeArtifacts } from "./writer.js";
+import { safeOutputPath, type RouteTable } from "../core/site-model.js";
+import { english } from "../core/messages.js";
+import { resolve } from "node:path";
 import { renderPage } from "./static-renderer.js";
 import type { NormalizedSpec } from "../core/types.js";
-import type { AlternateLink, RenderOptions, CurrentPage, SiteConfig } from "./context.js";
+import type { RenderAssetPaths, RenderOptions, SiteConfig } from "./context.js";
 import type { SiteNavigation } from "../core/navigation.js";
-import { withActivePage } from "../core/navigation.js";
+import { projectNavigation } from "../core/navigation.js";
 import { isAbsoluteHttpUrl, toAbsoluteUrl, toPublicPath } from "../site-url.js";
 import { escapeHtml as escapeXml } from "../utils/html.js";
-import { resolveThemeAssets } from "../themes/assets.js";
-import type { ThemeName } from "../config.js";
+import type { SitePage } from "../core/site-model.js";
+import { referenceOperation } from "../core/reference-identity.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = resolve(__dirname, "../..");
+/** Snapshot-local artifacts: unchanged HTML is shared across immutable compilations. */
+export type PageRenderCache = Map<string, { key: string; html: Buffer }>;
+const referenceIds = new WeakMap<NormalizedSpec, number>();
+const referenceMetadata = new WeakMap<NormalizedSpec, string>();
+const sharedDigests = new WeakMap<object, string>();
+function sharedDigest(value: object | undefined): string | undefined {
+  if (!value) return undefined;
+  let digest = sharedDigests.get(value);
+  if (!digest) { digest = createHash("sha256").update(JSON.stringify(value)).digest("hex"); sharedDigests.set(value, digest); }
+  return digest;
+}
+let referenceSequence = 0;
+function renderCached(page: SitePage, options: RenderOptions, navigation: SiteNavigation, site: SiteConfig, siteDigest: string, cache: PageRenderCache, outputPath = page.outputPath): Buffer {
+  const current = page.currentPage;
+  let content: unknown;
+  if (current.kind === "spec") {
+    const { spec, view } = current;
+    let reference: number | string | undefined, document: string | undefined;
+    if (view?.kind === "operation" || view?.kind === "schema") {
+      reference = referenceMetadata.get(spec);
+      if (!reference) {
+        reference = sharedDigest({ info: spec.info, servers: spec.servers, securitySchemes: spec.securitySchemes, sourceUrl: spec.sourceUrl })!;
+        referenceMetadata.set(spec, reference);
+      }
+      document = sharedDigest(view.kind === "operation" ? referenceOperation(spec, view.id) : spec.schemas[view.name]);
+    } else {
+      reference = referenceIds.get(spec);
+      if (reference === undefined) { reference = ++referenceSequence; referenceIds.set(spec, reference); }
+    }
+    content = { kind: "spec", reference, document, view, tryIt: current.tryIt, specKey: current.specKey };
+  } else if (current.kind === "markdown") {
+    const document = { ...current.markdown };
+    delete document.assets;
+    content = { kind: "markdown", document };
+  } else content = current;
+  // Reference destinations and locale messages are immutable shared inputs.
+  // Hash their full value once, rather than serialize all routes per page.
+  const optionKey = { ...options, referenceTargets: sharedDigest(options.referenceTargets), messages: sharedDigest(options.messages) };
+  const key = createHash("sha256").update(siteDigest).update(JSON.stringify([content, optionKey, navigation])).digest("hex");
+  const cached = cache.get(outputPath);
+  if (cached?.key === key) return cached.html;
+  // Keep finished UTF-8 bytes, not Preact's tree of concatenated JS strings.
+  // The same bytes feed the writer, HTTP hosts and unchanged-page cache.
+  const html = Buffer.from(renderPage(current.kind === "spec" ? current.spec : undefined, options, navigation, current, site));
+  cache.set(outputPath, { key, html });
+  return html;
+}
 
 export interface BuildOutput {
   htmlPath: string;
   outputDir: string;
-}
-
-export interface SitePage {
-  outputPath: string;
-  currentPage: CurrentPage;
-  spec: NormalizedSpec;
-  tabSlug: string;
-  pageSlug: string;
-  /** Relative path to the generated OG image (set during build) */
-  ogImagePath?: string;
-  alternateLinks?: AlternateLink[];
 }
 
 export function createRenderOptions(
@@ -38,16 +72,39 @@ export function createRenderOptions(
   site: SiteConfig,
   options?: {
     embeddable?: boolean;
-    assetBase?: string;
+    assets?: RenderAssetPaths;
   },
 ): RenderOptions {
-  const assetBase = options?.assetBase ?? "";
-  const pagePublicPath = toPublicPath(page.outputPath, site.baseUrl, site.prettyUrls);
+  // A page names its assets from the site's base, so it renders whole at any
+  // address it answers at: with or without a trailing slash, or as a copy at
+  // another address.
+  const assetBase = site.baseUrl || "/";
+  const pagePublicPath = page.publicPath ?? toPublicPath(page.outputPath, site.baseUrl, site.prettyUrls);
 
   return {
+    anchorAliases: page.anchorAliases,
     embeddable: options?.embeddable ?? false,
+    locale: page.context?.localeConfig.lang ?? page.context?.locale,
+    referenceTargets: page.referenceTargets,
+    sourceRevision: page.context?.version.revision,
+    componentStyles: [...(page.currentPage.kind === "markdown" ? page.currentPage.markdown.componentStyles ?? [] : []), ...page.stylesheets ?? []],
+    contentLocale: page.contentLocale,
+    equivalents: page.equivalents?.map(link => ({ ...link, href: site.siteUrl ? toAbsoluteUrl(link.href, site.siteUrl) : link.href })),
+    searchIndexes: page.searchIndexes?.map(path => `${assetBase}${path}`),
+    dir: page.context?.localeConfig.dir,
+    messages: page.context?.localeConfig.messages ?? english,
+    noindex: page.status === 404 || page.context?.version.index === false || page.contentLocale !== page.context?.locale,
+    notice: page.contentLocale !== page.context?.locale ? (page.context?.localeConfig.messages?.fallback ?? english.fallback) : page.context?.version.notice || undefined,
     assetBase,
-    pageUrl: site.siteUrl ? toAbsoluteUrl(pagePublicPath, site.siteUrl) : undefined,
+    assets: options?.assets && {
+      ...options.assets,
+      styles: options.assets.styles.map(path => assetBase + path),
+      client: assetBase + options.assets.client,
+      theme: assetBase + options.assets.theme,
+      search: assetBase + options.assets.search,
+      tryIt: options.assets.tryIt && assetBase + options.assets.tryIt,
+    },
+    pageUrl: site.siteUrl ? toAbsoluteUrl(page.canonical ?? pagePublicPath, site.siteUrl) : page.canonical ?? pagePublicPath,
     ogImageUrl: page.ogImagePath ? resolveRenderHref(page.ogImagePath, assetBase, site) : undefined,
     alternateLinks: page.alternateLinks?.map((link) => ({
       ...link,
@@ -56,112 +113,65 @@ export function createRenderOptions(
   };
 }
 
-/**
- * Build a documentation site.
- */
+/** Low-level renderer; SourceySite owns compilation and its artifact inventory. */
 export async function buildSite(
-  pages: SitePage[],
-  navigation: SiteNavigation,
-  outputDir: string,
-  site: SiteConfig,
-  options?: {
-    embeddable?: boolean;
-    landingPage?: boolean;
-    searchIndex?: string;
-    ogImages?: Map<string, Buffer>;
-    extraFiles?: Map<string, string | Buffer>;
-  },
+  pages: SitePage[], navigation: SiteNavigation, outputDir: string, site: SiteConfig,
+  options?: { routes?: RouteTable; cache?: PageRenderCache; embeddable?: boolean; landingPage?: boolean; ogImages?: Map<string, Buffer>; extraFiles?: Map<string, string | Buffer> },
 ): Promise<BuildOutput> {
-  const landingPage = options?.landingPage !== false;
-  if (!landingPage && pages[0]?.outputPath === "index.html") {
-    throw new Error(
-      "landingPage: false leaves the root to the host, but this site's first page is the root.",
-    );
-  }
-  const resolvedDir = resolve(outputDir);
-  await rm(resolvedDir, { recursive: true, force: true });
-  await mkdir(resolvedDir, { recursive: true });
+  const files = await renderSiteArtifacts(pages, navigation, site, options);
+  await writeArtifacts(outputDir, files);
+  return { htmlPath: resolve(outputDir, "index.html"), outputDir: resolve(outputDir) };
+}
 
+export async function renderSiteArtifacts(
+  pages: SitePage[], navigation: SiteNavigation, site: SiteConfig,
+  options?: { routes?: RouteTable; cache?: PageRenderCache; embeddable?: boolean; landingPage?: boolean; ogImages?: Map<string, Buffer>; extraFiles?: Map<string, string | Buffer> },
+): Promise<Map<string, string | Buffer>> {
+  const cache = options?.cache ?? new Map();
+  const assets = await buildAssets(site.theme.name, pages.some(page =>
+    page.currentPage.kind === "spec" && page.currentPage.tryIt !== false && page.currentPage.spec.operations.some(op => !op.hidden && !op.mcpExtras)));
+  const siteDigest = createHash("sha256").update(JSON.stringify(site)).digest("hex");
+  const files = new Map<string, string | Buffer>();
+  const folded = new Set<string>();
+  const put = (path: string, body: string | Buffer) => {
+    safeOutputPath(path);
+    const key = path.normalize("NFC").toLowerCase();
+    if (folded.has(key)) throw new Error(`Output collision: ${path}`);
+    folded.add(key); files.set(path, body);
+  };
   for (const page of pages) {
-    const pageDir = dirname(resolve(resolvedDir, page.outputPath));
-    await mkdir(pageDir, { recursive: true });
-
-    const depth = page.outputPath.split("/").length - 1;
-    const assetBase = depth > 0 ? "../".repeat(depth) : "";
-    const renderOptions = createRenderOptions(page, site, {
-      embeddable: options?.embeddable,
-      assetBase,
-    });
-
-    const activeNav = withActivePage(navigation, page.tabSlug, page.pageSlug);
-    const html = renderPage(page.spec, renderOptions, activeNav, page.currentPage, site);
-    await writeFile(resolve(resolvedDir, page.outputPath), html, "utf-8");
+    const optionsForPage = createRenderOptions(page, site, { embeddable: options?.embeddable, assets: assets.paths });
+    const activeNav = projectNavigation(page.navigation ?? navigation, page.tabSlug, page.pageSlug);
+    put(page.outputPath, renderCached(page, optionsForPage, activeNav, site, siteDigest, cache));
   }
-
-  if (landingPage && pages.length > 0 && pages[0].outputPath !== "index.html") {
-    const first = pages[0];
-    const activeNav = withActivePage(navigation, first.tabSlug, first.pageSlug);
-    const renderOptions = createRenderOptions(first, site, {
-      embeddable: options?.embeddable,
-      assetBase: "",
-    });
-    const html = renderPage(first.spec, renderOptions, activeNav, first.currentPage, site);
-    await writeFile(resolve(resolvedDir, "index.html"), html, "utf-8");
+  for (const alias of options?.landingPage === false ? [] : options?.routes?.aliases ?? []) {
+    const page = alias.page;
+    put(alias.outputPath, renderCached(page, createRenderOptions(page, site, { embeddable: options?.embeddable, assets: assets.paths }),
+      projectNavigation(page.navigation ?? navigation, page.tabSlug, page.pageSlug), site, siteDigest, cache, alias.outputPath));
   }
-
-  await buildAssets(resolvedDir, site.theme.name);
-
-  if (options?.searchIndex) {
-    await writeFile(resolve(resolvedDir, "search-index.json"), options.searchIndex, "utf-8");
+  const redirects = [...options?.routes?.redirects.values() ?? []].filter(route => route.outputPath);
+  for (const route of redirects) {
+    const target = escapeXml(route.to);
+    const literal = JSON.stringify(route.to).replace(/</g, "\\u003c");
+    put(route.outputPath!, `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><meta http-equiv="refresh" content="0;url=${target}"><link rel="canonical" href="${escapeXml(toAbsoluteUrl(route.to, site.siteUrl))}"><title>Page moved</title></head><body><p>This page has moved. <a href="${target}">Continue to the page</a>.</p><script>const target=${literal},url=new URL(target,location.href);if(!target.includes('?'))url.search=location.search;if(!target.includes('#'))url.hash=location.hash;location.replace(url.href)</script></body></html>`);
   }
-
-  const urls = pages.map((page) => {
-    const publicPath = toPublicPath(page.outputPath, site.baseUrl, site.prettyUrls);
-    const loc = site.siteUrl ? toAbsoluteUrl(publicPath, site.siteUrl) : publicPath;
-    return `  <url><loc>${escapeXml(loc)}</loc></url>`;
+  if (redirects.length) put("_redirects", redirects.map(route => `${route.publicPath} ${route.to} ${route.status}`).join("\n") + "\n");
+  for (const [path, body] of assets.files) put(path, body);
+  const urls = pages.filter(p => options?.routes ? options.routes.byOutputPath.get(p.outputPath)?.index : p.status !== 404 && p.context.version.index !== false && p.contentLocale === p.context.locale).map(page => {
+    const publicPath = page.publicPath ?? toPublicPath(page.outputPath, site.baseUrl, site.prettyUrls);
+    return `  <url><loc>${escapeXml(site.siteUrl ? toAbsoluteUrl(publicPath, site.siteUrl) : publicPath)}</loc></url>`;
   });
-  const sitemap = [
-    `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<!-- Generated by Sourcey https://sourcey.com -->`,
-    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`,
-    ...urls,
-    `</urlset>`,
-  ].join("\n");
-  await writeFile(resolve(resolvedDir, "sitemap.xml"), sitemap, "utf-8");
-
-  // Write generated OG images
-  if (options?.ogImages) {
-    for (const [path, data] of options.ogImages) {
-      const fullPath = resolve(resolvedDir, path);
-      await mkdir(dirname(fullPath), { recursive: true });
-      await writeFile(fullPath, data);
-    }
-  }
-
-  if (options?.extraFiles) {
-    const files = [...options.extraFiles];
-    const directories = new Map<string, Promise<unknown>>();
-    for (let start = 0; start < files.length; start += 32) {
-      await Promise.all(files.slice(start, start + 32).map(async ([path, data]) => {
-        const fullPath = resolve(resolvedDir, path);
-        const directory = dirname(fullPath);
-        let ready = directories.get(directory);
-        if (!ready) {
-          ready = mkdir(directory, { recursive: true });
-          directories.set(directory, ready);
-        }
-        await ready;
-        await writeFile(fullPath, data);
-      }));
-    }
-  }
-
-  return { htmlPath: resolve(resolvedDir, "index.html"), outputDir: resolvedDir };
+  put("sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>`);
+  for (const [path, body] of options?.ogImages ?? []) put(path, body);
+  for (const [path, body] of options?.extraFiles ?? []) put(path, body);
+  for (const path of cache.keys()) if (!files.has(path)) cache.delete(path);
+  return files;
 }
 
 function resolveRenderHref(pathOrUrl: string, assetBase: string, site: SiteConfig): string {
   if (
     !pathOrUrl ||
+    pathOrUrl.startsWith("/") ||
     pathOrUrl.startsWith("#") ||
     pathOrUrl.startsWith("mailto:") ||
     pathOrUrl.startsWith("data:") ||
@@ -179,44 +189,4 @@ function resolveRenderHref(pathOrUrl: string, assetBase: string, site: SiteConfi
   }
 
   return `${assetBase}${pathOrUrl}`;
-}
-
-/**
- * Build client JS + Tailwind CSS via Vite.
- * Same plugins as the dev server — preact() + tailwindcss().
- */
-async function buildAssets(outputDir: string, theme: ThemeName): Promise<void> {
-  const { clientEntry, sourceyCssPaths, themeInit } = resolveThemeAssets(theme);
-
-  await viteBuild({
-    root: projectRoot,
-    logLevel: "silent",
-    plugins: [preact(), tailwindcss()],
-    build: {
-      outDir: outputDir,
-      emptyOutDir: false,
-      cssMinify: true,
-      minify: true,
-      lib: {
-        entry: clientEntry,
-        formats: ["iife"],
-        name: "Sourcey",
-        fileName: () => "sourcey.js",
-      },
-      rollupOptions: {
-        output: {
-          entryFileNames: "sourcey.js",
-          assetFileNames: "sourcey.[ext]",
-        },
-      },
-    },
-  });
-
-  // Append component CSS
-  const componentCSS = (
-    await Promise.all(sourceyCssPaths.map((path) => readFile(path, "utf-8")))
-  ).join("\n");
-  const builtCSS = await readFile(resolve(outputDir, "sourcey.css"), "utf-8").catch(() => "");
-  await writeFile(resolve(outputDir, "sourcey.css"), builtCSS + "\n" + componentCSS, "utf-8");
-  await copyFile(themeInit, resolve(outputDir, "sourcey-theme.js"));
 }

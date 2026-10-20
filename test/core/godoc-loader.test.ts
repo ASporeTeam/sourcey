@@ -8,6 +8,7 @@ import { GodocIntrospectorError } from "../../src/core/godoc-introspector.js";
 import type { ResolvedGodocConfig } from "../../src/config.js";
 import type { GodocSnapshot } from "../../src/core/godoc-types.js";
 import { GODOC_SCHEMA_VERSION } from "../../src/core/godoc-types.js";
+import { messagesFor } from "../../src/core/messages.js";
 
 const FIXTURE_MODULE = resolve(import.meta.dirname, "../fixtures/godoc/basic");
 
@@ -144,6 +145,41 @@ describe("loadGodocTab – snapshot mode", () => {
       expect(pkgPage!.html).toContain("Hello");
       expect(pkgPage!.html).toContain("<p>Tiny snapshot fixture.</p>");
       expect(pkgPage!.html).toContain("<p>Second paragraph with <strong>emphasis</strong>.</p>");
+    });
+  });
+
+  it("renders doc comment alerts as the site's callouts, keyed by its icon set and language", async () => {
+    await withTempDir(async (dir) => {
+      const snapshot: GodocSnapshot = {
+        schema_version: GODOC_SCHEMA_VERSION,
+        source: "sourcey-godoc",
+        module_path: "example.com/alerts",
+        packages: [
+          {
+            importPath: "example.com/alerts",
+            name: "alerts",
+            synopsis: "Client settings.",
+            doc: "Client settings.",
+            docMarkdown: "Client settings.\n\n> [!WARNING]\n> Rotate the key first.\n",
+            dir: ".",
+            files: ["alerts.go"],
+            consts: [],
+            vars: [],
+            funcs: [],
+            types: [],
+            examples: [],
+          },
+        ],
+      };
+      const snapshotPath = join(dir, "godoc.json");
+      await writeFile(snapshotPath, JSON.stringify(snapshot), "utf8");
+      const config: ResolvedGodocConfig = { module: dir, packages: ["./..."], mode: "snapshot", snapshot: snapshotPath, includeTests: false, includeUnexported: false, hideUndocumented: false, exclude: [], sourceBasePath: "" };
+
+      const english = (await loadGodocTab(config, "go-api", "Go API")).pages.get("package-root")!.html;
+      const french = (await loadGodocTab(config, "go-api", "Go API", {}, undefined, { icons: "heroicons", messages: messagesFor("fr") })).pages.get("package-root")!.html;
+      expect(english).toContain('<aside class="callout callout-warning not-prose">');
+      expect(english).toContain('<div class="callout-title">Warning</div><div class="callout-content"><p>Rotate the key first.</p>');
+      expect(french).toContain('<div class="callout-title">Avertissement</div>');
     });
   });
 

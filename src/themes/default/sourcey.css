@@ -43,16 +43,34 @@
   background: none;
 }
 
-/* ── Scroll Offset (clears fixed navbar on anchor clicks) ──────────── */
+/* ── Content gap ──────────────────────────────────────────────────── */
 
-[data-traverse-target],
-h1[id],
-h2[id],
-h3[id],
-h4[id],
-h5[id],
-h6[id] {
-  scroll-margin-top: var(--header-height, 7rem);
+/* A documentation page's content starts this far below the header, and a
+   link to a place on it lands there too: the root's scroll padding clears the
+   header and each destination keeps the gap. A theme sets the gap; on a phone
+   the page also clears the fixed header itself. A page drawn by its author
+   sets its own spacing. */
+#sourcey {
+  --sourcey-content-gap: 1rem;
+}
+#sourcey #docs {
+  padding-top: calc(var(--header-height) + var(--sourcey-content-gap));
+}
+#sourcey #docs :is([id], .sourcey-endpoint) {
+  scroll-margin-top: var(--sourcey-content-gap);
+}
+@media (min-width: 1024px) {
+  #sourcey {
+    --sourcey-content-gap: 2.5rem;
+  }
+  #sourcey #docs {
+    padding-top: var(--sourcey-content-gap);
+  }
+}
+
+.reference-anchor-alias {
+  display: block;
+  height: 0;
 }
 
 /* ── Focus ─────────────────────────────────────────────────────────── */
@@ -101,6 +119,10 @@ h6[id] {
 #sourcey .prose :where(thead th):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
   padding-top: 0.571429em;
 }
+/* A cell that is one code value (a flag, a default, an identifier) keeps it whole; the table scrolls if it must. */
+#sourcey .prose td > code:only-child {
+  white-space: nowrap;
+}
 
 /* ── Prose Video (::video directive) ──────────────────────────────── */
 
@@ -140,14 +162,34 @@ h6[id] {
 }
 
 /* ── Prose Images ─────────────────────────────────────────────────── */
-/* An image inside a paragraph is inline content, as Markdown means it, so a
-   row of badges stays on one line. The base styles make every image a block
-   with prose margins, which stacked each badge on its own line. */
-#sourcey .prose :where(p) img:not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+/* An image inside a paragraph or a table cell is inline content, as Markdown
+   means it, so a row of badges or a logo beside its name stays on one line.
+   The base styles make every image a block with prose margins, which stacked
+   each badge on its own line. */
+#sourcey .prose :where(p, th, td) img:not(:where([class~="not-prose"], [class~="not-prose"] *)) {
   display: inline-block;
   margin-top: 0;
   margin-bottom: 0;
   vertical-align: middle;
+}
+
+/* A heading that is a link keeps the heading's weight; a light underline says it is a link. */
+#sourcey .prose :where(h1, h2, h3, h4, h5, h6) a:not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  font-weight: inherit;
+  text-decoration-color: rgb(var(--color-gray-300));
+  text-underline-offset: 0.2em;
+}
+.dark #sourcey .prose :where(h1, h2, h3, h4, h5, h6) a:not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  text-decoration-color: rgb(var(--color-gray-600));
+}
+#sourcey .prose :where(h1, h2, h3, h4, h5, h6) a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* The site's footer line (`footer.text`) keeps the footer's muted colour; its links are underlined. */
+.sourcey-footer-text a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* ── Inline Code ──────────────────────────────────────────────────── */
@@ -159,7 +201,7 @@ h6[id] {
   content: none;
 }
 #sourcey .prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *)),
-#sourcey .not-prose :not(pre) > code {
+#sourcey .not-prose :not(pre) > code:not(.param-name) {
   font-size: 0.875em;
   font-weight: 500;
   color: var(--tw-prose-code);
@@ -170,8 +212,16 @@ h6[id] {
   -webkit-box-decoration-break: clone;
 }
 .dark #sourcey .prose :where(:not(pre) > code):not(:where([class~="not-prose"], [class~="not-prose"] *)),
-.dark #sourcey .not-prose :not(pre) > code {
+.dark #sourcey .not-prose :not(pre) > code:not(.param-name) {
   background: rgb(var(--color-surface-dark-tint) / 0.07);
+}
+/* Code that is a link reads as one: the link's colour, on a chip tinted by it. */
+#sourcey .prose a > code:not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  color: var(--tw-prose-links);
+  background: rgb(var(--color-primary) / 0.08);
+}
+.dark #sourcey .prose a > code:not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  background: rgb(var(--color-primary-light) / 0.12);
 }
 
 /* ── Code reference metadata (Doxygen and other generated references) ─ */
@@ -181,6 +231,35 @@ h6[id] {
   font-size: 0.8125rem;
   line-height: 1.25rem;
   color: rgb(var(--color-gray-500));
+}
+/* A path parameter in an endpoint is drawn as one, the part each request
+   fills in, and leads to its entry. */
+#sourcey .sourcey-endpoint-param {
+  color: rgb(var(--color-primary-ink));
+  text-decoration: none;
+}
+.dark #sourcey .sourcey-endpoint-param {
+  color: rgb(var(--color-primary-light));
+}
+#sourcey a.sourcey-endpoint-param:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+#sourcey .reference-external-docs {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+#sourcey .reference-external-docs a {
+  color: rgb(var(--color-primary-ink));
+  font-weight: 500;
+  text-decoration: none;
+}
+.dark #sourcey .reference-external-docs a {
+  color: rgb(var(--color-primary-light));
+}
+#sourcey .reference-external-docs a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 #sourcey .api-defined-in a {
   color: inherit;
@@ -259,11 +338,18 @@ h6[id] {
   color: rgb(var(--color-stone-50));
 }
 
+/* The button sits on the code's own surface, reaching the block's edge with a short fade, so
+   a long line passes beneath it rather than through it. */
 #sourcey .prose-code-copy {
   position: absolute;
   top: 0.75rem;
-  right: 1rem;
+  right: 0;
   z-index: 10;
+  padding: 0 1rem 0 1.25rem;
+  background: linear-gradient(to right, rgb(var(--color-code-block-light) / 0), rgb(var(--color-code-block-light)) 1rem);
+}
+.dark #sourcey .prose-code-copy {
+  background: linear-gradient(to right, rgb(var(--color-code-block-dark) / 0), rgb(var(--color-code-block-dark)) 1rem);
 }
 
 #sourcey .prose-code-copy .copy-btn {
@@ -311,6 +397,11 @@ h6[id] {
   font-size: 0.875rem;
   line-height: 1.5rem;
   white-space: pre;
+  /* Scrolled to its end, a long line stops clear of the copy button. */
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  padding-right: 2.5rem;
 }
 
 /* ── Nav Links ────────────────────────────────────────────────────── */
@@ -367,8 +458,8 @@ h6[id] {
   gap: 0.75rem;
   cursor: pointer;
   text-align: left;
+  /* Long identifiers wrap; words stay whole. */
   overflow-wrap: break-word;
-  hyphens: auto;
   border-radius: 0.75rem;
   width: 100%;
   color: rgb(var(--color-gray-700));
@@ -583,6 +674,63 @@ h6[id] {
   letter-spacing: 0.05em;
   color: rgb(var(--color-gray-400));
   margin-bottom: 0.25rem;
+}
+
+#sourcey .schema-variant-control:not([hidden]) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+#sourcey .schema-variant-control .schema-variant-label {
+  margin: 0;
+  letter-spacing: normal;
+  color: var(--sourcey-form-muted);
+}
+#sourcey .schema-variant-control .sourcey-select-wrap {
+  flex: 1;
+  min-width: min(12rem, 100%);
+  max-width: 100%;
+}
+#sourcey [data-schema-enhanced] > .schema-variant-option {
+  border-left: 0;
+  padding-left: 0;
+}
+
+/* Repeated field states share their styling rather than repeat utility lists
+   thousands of times on large schema pages. Theme overrides stay on the badge. */
+#sourcey :is(.required-badge, .deprecated-badge, .read-only-badge) {
+  white-space: nowrap;
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.333333;
+  font-weight: 500;
+}
+#sourcey .required-badge {
+  background: color-mix(in oklab, var(--color-red-100) 50%, transparent);
+  color: var(--color-red-600);
+}
+.dark #sourcey .required-badge {
+  background: color-mix(in oklab, var(--color-red-400) 10%, transparent);
+  color: var(--color-red-300);
+}
+#sourcey .deprecated-badge {
+  background: color-mix(in oklab, var(--color-amber-100) 50%, transparent);
+  color: var(--color-amber-600);
+}
+.dark #sourcey .deprecated-badge {
+  background: color-mix(in oklab, var(--color-amber-400) 10%, transparent);
+  color: var(--color-amber-300);
+}
+#sourcey .read-only-badge {
+  background: rgb(var(--color-gray-100) / 0.5);
+  color: rgb(var(--color-gray-600));
+}
+.dark #sourcey .read-only-badge {
+  background: rgb(var(--color-surface-dark-tint) / 0.05);
+  color: rgb(var(--color-gray-200));
 }
 
 /* ── Type Display (used by SchemaDatatype.tsx) ─────────────────────── */
@@ -830,48 +978,54 @@ h6[id] {
   background: rgb(255 255 255 / 0.025);
 }
 
-#sourcey a.card-item:hover {
+#sourcey :is(a.card-item, .card-item:has(.card-item-link)):hover {
   border-color: rgb(var(--color-primary) / 0.55);
   background: rgb(var(--color-primary) / 0.035);
 }
-.dark #sourcey a.card-item:hover {
+.dark #sourcey :is(a.card-item, .card-item:has(.card-item-link)):hover {
   border-color: rgb(var(--color-primary-light) / 0.55);
   background: rgb(var(--color-primary-light) / 0.05);
 }
 
-#sourcey a.card-item:focus-visible {
+#sourcey :is(a.card-item:focus-visible, .card-item:has(.card-item-link:focus-visible)) {
   outline: 2px solid rgb(var(--color-primary));
   outline-offset: 3px;
 }
 
-.dark #sourcey a.card-item:focus-visible {
+.dark #sourcey :is(a.card-item:focus-visible, .card-item:has(.card-item-link:focus-visible)) {
   outline-color: rgb(var(--color-primary-light));
 }
 
+#sourcey .card-item-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+#sourcey .card-item-link:focus-visible { outline: none; }
+#sourcey .card-item-content a { position: relative; z-index: 1; }
 #sourcey .card-item-inner {
   min-width: 0;
 }
 
-#sourcey a.card-item .card-item-title {
-  position: relative;
+#sourcey :is(a.card-item, .card-item:has(.card-item-link)) .card-item-title {
   padding-right: 1.5rem;
 }
 
-#sourcey a.card-item .card-item-title::after {
+#sourcey :is(a.card-item, .card-item:has(.card-item-link)) .card-item-title::after {
   content: "→";
   position: absolute;
-  right: 0;
+  right: 1.5rem;
   color: rgb(var(--color-gray-400));
   font-weight: 400;
   transition: color 0.15s, transform 0.15s;
 }
 
-#sourcey a.card-item:hover .card-item-title::after {
+#sourcey :is(a.card-item, .card-item:has(.card-item-link)):hover .card-item-title::after {
   color: rgb(var(--color-primary));
   transform: translateX(2px);
 }
 
-.dark #sourcey a.card-item:hover .card-item-title::after {
+.dark #sourcey :is(a.card-item, .card-item:has(.card-item-link)):hover .card-item-title::after {
   color: rgb(var(--color-primary-light));
 }
 
@@ -884,6 +1038,19 @@ h6[id] {
 }
 .dark #sourcey .card-icon {
   color: rgb(var(--color-primary-light));
+}
+/* An image icon keeps its own colours and the glyph's box. */
+#sourcey img.card-icon {
+  margin: 0 0 0.75rem;
+  object-fit: contain;
+}
+
+#sourcey .sourcey-inline-icon {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0;
+  vertical-align: -0.2em;
 }
 
 #sourcey .card-item-title {
@@ -911,6 +1078,40 @@ h6[id] {
 }
 
 /* ── Accordion (expandable details) ────────────────────────────────── */
+
+/* Native Markdown disclosures stay light; code blocks retain their own surface. */
+#sourcey :is(.prose, .reader-prose) > details:not([class]) {
+  margin: 1.25rem 0;
+  border-block: 1px solid rgb(var(--color-gray-200) / 0.7);
+}
+.dark #sourcey :is(.prose, .reader-prose) > details:not([class]) {
+  border-color: rgb(var(--color-gray-800));
+}
+#sourcey :is(.prose, .reader-prose) > details:not([class]) > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding-block: 0.65rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+#sourcey :is(.prose, .reader-prose) > details:not([class]) > summary::-webkit-details-marker { display: none; }
+#sourcey :is(.prose, .reader-prose) > details:not([class]) > summary::before {
+  content: "";
+  width: 0.35rem;
+  height: 0.35rem;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+#sourcey :is(.prose, .reader-prose) > details:not([class])[open] > summary::before { transform: rotate(45deg); }
+#sourcey :is(.prose, .reader-prose) > details:not([class]) > summary:hover { color: rgb(var(--color-primary-ink)); }
+.dark #sourcey :is(.prose, .reader-prose) > details:not([class]) > summary:hover { color: rgb(var(--color-primary-light)); }
 
 #sourcey .accordion-group {
   margin-top: 0;
@@ -994,75 +1195,61 @@ h6[id] {
   margin: 0.25rem 0;
 }
 
-/* ── Callouts (:::note, :::warning, :::tip, :::info) ───────────────── */
+/* ── Callouts ──────────────────────────────────────────────────────── */
 
 #sourcey .callout {
-  margin: 1.25rem 0;
-  border: none;
-  border-left: 2px solid;
-  border-radius: 0;
-  padding: 0.875rem 1rem;
+  --callout-accent: 59 130 246;
+  --callout-ink: 30 64 175;
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.75rem;
+  margin: 1.5rem 0;
+  padding: 1rem 1.125rem;
+  border: 1px solid rgb(var(--callout-accent) / 0.22);
+  border-radius: 0.5rem;
+  background: rgb(var(--callout-accent) / 0.045);
   font-size: 0.875rem;
   line-height: 1.6;
   color: rgb(var(--color-gray-700));
-  border-left-color: rgb(var(--color-gray-300));
 }
 .dark #sourcey .callout {
-  border-left-color: rgb(var(--color-gray-700));
-  color: rgb(var(--color-gray-400));
+  --callout-accent: 96 165 250;
+  --callout-ink: 147 197 253;
+  border-color: rgb(var(--callout-accent) / 0.26);
+  background: rgb(var(--callout-accent) / 0.075);
+  color: rgb(var(--color-gray-300));
 }
-
+#sourcey .callout-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 1px;
+  color: rgb(var(--callout-ink));
+}
+#sourcey .callout-body { min-width: 0; }
 #sourcey .callout-title {
+  color: rgb(var(--callout-ink));
   font-weight: 600;
-  font-size: 0.8125rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
-
-/* Remove bottom margin when no content follows */
-#sourcey .callout-title:last-child {
-  margin-bottom: 0;
+#sourcey .callout-content { margin-top: 0.25rem; }
+#sourcey .callout-content p { margin: 0.25rem 0; }
+#sourcey .callout-content p:first-child { margin-top: 0; }
+#sourcey .callout-content p:last-child { margin-bottom: 0; }
+#sourcey .callout-content a {
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+  text-decoration-color: rgb(var(--callout-accent) / 0.4);
 }
-
-#sourcey .callout-content {
-  margin-top: 0.375rem;
-}
-
-#sourcey .callout-content p {
-  margin: 0.25rem 0;
-}
-
-#sourcey .callout-content p:last-child {
-  margin-bottom: 0;
-}
-
-/* Note — blue */
-#sourcey .callout-note {
-  border-left-color: #3b82f6;
-}
-.dark #sourcey .callout-note {
-  border-left-color: #60a5fa;
-}
-#sourcey .callout-note .callout-title {
-  color: #3b82f6;
-}
-.dark #sourcey .callout-note .callout-title {
-  color: #60a5fa;
-}
-
-/* Warning — amber */
-#sourcey .callout-warning {
-  border-left-color: #f59e0b;
-}
-.dark #sourcey .callout-warning {
-  border-left-color: #fbbf24;
-}
-#sourcey .callout-warning .callout-title {
-  color: #f59e0b;
-}
-.dark #sourcey .callout-warning .callout-title {
-  color: #fbbf24;
-}
+#sourcey .callout-tip { --callout-accent: 16 185 129; --callout-ink: 6 95 70; }
+.dark #sourcey .callout-tip { --callout-accent: 52 211 153; --callout-ink: 110 231 183; }
+#sourcey .callout-info { --callout-accent: 139 92 246; --callout-ink: 109 40 217; }
+.dark #sourcey .callout-info { --callout-accent: 167 139 250; --callout-ink: 196 181 253; }
+#sourcey .callout-warning, #sourcey .callout-caution { --callout-accent: 217 119 6; --callout-ink: 146 64 14; }
+.dark #sourcey .callout-warning, .dark #sourcey .callout-caution { --callout-accent: 251 191 36; --callout-ink: 253 230 138; }
+#sourcey .callout-danger { --callout-accent: 239 68 68; --callout-ink: 185 28 28; }
+.dark #sourcey .callout-danger { --callout-accent: 248 113 113; --callout-ink: 252 165 165; }
 
 /* ── Changelog ───────────────────────────────────────────────────── */
 
@@ -1223,7 +1410,6 @@ h6[id] {
 #sourcey .sourcey-changelog-version {
   padding: 1.75rem 0;
   border-top: 1px solid rgb(var(--color-gray-200) / 0.8);
-  scroll-margin-top: calc(var(--header-height, 7rem) + 1.5rem);
 }
 
 .dark #sourcey .sourcey-changelog-version {
@@ -1445,34 +1631,6 @@ h6[id] {
 .dark #sourcey .sourcey-changelog-badge-other {
   background: rgb(255 255 255 / 0.08);
   color: rgb(var(--color-gray-300));
-}
-
-/* Tip — green */
-#sourcey .callout-tip {
-  border-left-color: #22c55e;
-}
-.dark #sourcey .callout-tip {
-  border-left-color: #4ade80;
-}
-#sourcey .callout-tip .callout-title {
-  color: #22c55e;
-}
-.dark #sourcey .callout-tip .callout-title {
-  color: #4ade80;
-}
-
-/* Info — violet */
-#sourcey .callout-info {
-  border-left-color: #8b5cf6;
-}
-.dark #sourcey .callout-info {
-  border-left-color: #a78bfa;
-}
-#sourcey .callout-info .callout-title {
-  color: #8b5cf6;
-}
-.dark #sourcey .callout-info .callout-title {
-  color: #a78bfa;
 }
 
 /* ── Directive Tabs (:::tabs, :::code-group) ───────────────────────── */
@@ -1716,16 +1874,11 @@ h6[id] {
 }
 
 /* Drawer nav items — larger touch targets */
-#sourcey .mobile-nav-dialog .nav-link,
-#sourcey .mobile-nav-dialog .nav-link:hover,
-#sourcey .mobile-nav-dialog .nav-link.active {
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
-}
-.mobile-nav-dialog ul {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+@media (max-width: 1023px) {
+  #sourcey .mobile-nav-dialog .nav-link {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
 }
 
 @keyframes drawer-slide-in {
@@ -2012,7 +2165,7 @@ h6[id] {
 }
 
 #sourcey .search-footer kbd,
-#sourcey #search-open kbd {
+#sourcey .sourcey-search-control kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2028,7 +2181,7 @@ h6[id] {
   color: rgb(var(--color-gray-500));
 }
 .dark #sourcey .search-footer kbd,
-.dark #sourcey #search-open kbd {
+.dark #sourcey .sourcey-search-control kbd {
   border-color: rgb(var(--color-gray-700));
   background: rgb(var(--color-gray-800));
   color: rgb(var(--color-gray-400));
@@ -2132,10 +2285,28 @@ h6[id] {
   flex-shrink: 0;
 }
 
-#sourcey .search-loading {
-  padding: 1rem;
-  color: rgb(var(--color-gray-500));
+/* Loading, nothing found, or a failure with its way out, in place of results. */
+#sourcey .search-status {
+  margin: 0;
+  padding: 1.75rem 1rem;
+  text-align: center;
   font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: rgb(var(--color-gray-500));
+}
+.dark #sourcey .search-status {
+  color: rgb(var(--color-gray-400));
+}
+#sourcey .search-status-action {
+  margin-inline-start: 0.25rem;
+  font-weight: 500;
+  color: rgb(var(--color-primary-ink));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.dark #sourcey .search-status-action {
+  color: rgb(var(--color-primary-light));
 }
 
 /* ── Godoc rendering ─────────────────────────────────────────────── */
@@ -2222,7 +2393,6 @@ h6[id] {
   font-weight: 600;
   margin: 1.75rem 0 0.5rem;
   color: rgb(var(--color-gray-900));
-  scroll-margin-top: 5rem;
 }
 
 #sourcey .godoc-doc {
@@ -2244,7 +2414,6 @@ h6[id] {
 #sourcey .godoc-func,
 #sourcey .godoc-type {
   margin: 1rem 0 1.5rem;
-  scroll-margin-top: 5rem;
 }
 
 #sourcey .godoc-type {
@@ -2256,7 +2425,6 @@ h6[id] {
 #sourcey .godoc-anchor {
   display: block;
   height: 0;
-  scroll-margin-top: 5rem;
 }
 
 #sourcey .godoc-fields {
@@ -2728,3 +2896,70 @@ h6[id] {
 .dark #sourcey .rust-doctests-index .rust-doctest > h3 {
   border-left-color: rgb(var(--color-emerald-400));
 }
+
+/* The same navigation tree serves the desktop rail and native mobile dialog. */
+.sourcey-nav-host { display:contents; }
+@media (min-width:1024px) {
+  .sourcey-nav-host { display:block; position:fixed; top:var(--header-height); bottom:0; width:18rem; z-index:20; }
+  .sourcey-nav-host.sourcey-nav-wide { left:0; width:var(--sidebar-width); border-inline-end:1px solid rgb(var(--color-gray-200)); }
+  .sourcey-nav-host.sourcey-nav-mobile-only { display:none; }
+  .dark .sourcey-nav-host.sourcey-nav-wide { border-color:rgb(var(--color-gray-800)); }
+  .sourcey-responsive-nav { display:flex; flex-direction:column; position:static; max-width:none; width:100%; height:100%; max-height:none; margin:0; overflow:hidden; animation:none; }
+  /* The sidebar starts on the page's first line: a heading's text on it, and the text of a link or
+     of a section that opens in place, whose rows are padded above their text, too. */
+  .sourcey-responsive-nav .sourcey-nav-scroll { padding:var(--sourcey-content-gap) 2rem 2.5rem 0; }
+  #nav > :first-child > .nav-link:first-child,
+  #nav > :first-child > ul:first-child > li:first-child > .nav-link,
+  #nav > :first-child > details:first-child > summary { margin-top: -.375rem; }
+  .sourcey-nav-wide .sourcey-responsive-nav .sourcey-nav-scroll { padding-inline: .75rem 1rem; }
+}
+
+@media (max-width:1023px) {
+  html:not(.sourcey-js) .sourcey-responsive-nav { display:block; position:static; width:100%; max-width:none; height:auto; margin-top:8rem; }
+}
+
+#sourcey dialog#search-dialog { padding:0; border:0; margin:0; width:100%; height:100%; max-width:none; max-height:none; }
+#sourcey dialog#search-dialog::backdrop { background:rgb(0 0 0 / .08); }
+
+/* Native recursive navigation and source-shaped content. */
+#sourcey .sourcey-nav-group > summary { cursor: pointer; display: flex; align-items: center; gap: .5rem; list-style: none; }
+#sourcey .sourcey-nav-group > summary::-webkit-details-marker { display: none; }
+#sourcey .sourcey-nav-group > summary::before { content: ""; width: .35rem; height: .35rem; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); flex: none; opacity: .55; }
+#sourcey .sourcey-nav-group[open] > summary::before { transform: rotate(45deg); }
+#sourcey .sourcey-nav-group > summary .nav-group-label { margin-bottom: 0; }
+#sourcey .sourcey-nav-group > summary { margin-bottom: .5rem; }
+/* The sidebar draws a section that opens in place as a row of its list: the label on its siblings' edge, the chevron at the end. */
+#sourcey #nav .sourcey-nav-group > summary { gap: 0; margin-bottom: 0; padding-inline-end: .75rem; border-radius: .75rem; }
+#sourcey #nav .sourcey-nav-group > summary::before { content: none; }
+#sourcey #nav .sourcey-nav-group > summary::after { content: ""; width: .35rem; height: .35rem; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); flex: none; opacity: .55; margin-inline-start: auto; }
+#sourcey #nav .sourcey-nav-group[open] > summary::after { transform: rotate(45deg); }
+#sourcey #nav .sourcey-nav-group > summary .nav-group-label { flex: 1; min-width: 0; padding-block: .375rem; }
+#sourcey #nav .sourcey-nav-group > summary:hover { background: rgb(var(--color-gray-100) / .6); }
+.dark #sourcey #nav .sourcey-nav-group > summary:hover { background: rgb(var(--color-gray-800) / .4); }
+#sourcey .reader-nested-group { padding-inline-start: .75rem; }
+#sourcey .sourcey-badge { display: inline-flex; align-items: center; border: 1px solid rgb(var(--color-gray-300) / .7); border-radius: .35rem; padding: .1em .5em; font-size: .75em; line-height: 1.5; vertical-align: middle; }
+#sourcey .sourcey-file-tree { font-family: var(--font-mono); font-size: .875em; border: 1px solid rgb(var(--color-gray-300) / .5); border-radius: .75rem; padding: 1rem 1.25rem; overflow-x: auto; }
+#sourcey .sourcey-file-tree ul { margin-block: .25rem; padding-inline-start: 1.25rem; }
+#sourcey .sourcey-file-tree > ul { margin: 0; }
+
+#sourcey .prose-code-title { padding: .75rem 3.5rem .75rem 1rem; font: .8rem/1.4 var(--font-mono); border-bottom: 1px solid rgb(var(--color-gray-300) / .4); }
+#sourcey .prose-code-content .line.highlighted { background: rgb(var(--color-primary) / .1); }
+#sourcey .prose-code-content .line.diff-added { background: rgb(34 197 94 / .12); }
+#sourcey .prose-code-content .line.diff-removed { background: rgb(239 68 68 / .12); }
+#sourcey .prose-code-content .line.unfocused { opacity: .65; }
+#sourcey .prose-code-content:hover .line.unfocused { opacity: 1; }
+
+/* A page drawn by its author keeps the header's gutter, so its body starts where the logo does. */
+#sourcey .sourcey-page { max-width: 92rem; margin-inline: auto; padding: 8.5rem 1rem 0; }
+#sourcey [data-sourcey-theme="api-first"] .sourcey-page { max-width: none; }
+@media (min-width: 1024px) { #sourcey .sourcey-page { padding: 2.5rem var(--sourcey-header-gutter, 3rem) 0; } }
+#sourcey .sourcey-not-found { max-width: 40rem; margin-inline: auto; padding: clamp(5rem, 15vh, 10rem) 1.5rem; }
+#sourcey .sourcey-status-code { font: .8rem/1.5 var(--font-mono); letter-spacing: .15em; color: rgb(var(--color-gray-500)); }
+#sourcey .sourcey-not-found h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 650; line-height: 1.1; letter-spacing: -.04em; color: rgb(var(--color-gray-900)); margin-block: 1rem 1.5rem; }
+.dark #sourcey .sourcey-not-found h1 { color: rgb(var(--color-gray-100)); }
+#sourcey .sourcey-not-found > p:not(.sourcey-status-code) { line-height: 1.7; color: rgb(var(--color-gray-500)); }
+#sourcey .sourcey-not-found-home { display: inline-flex; gap: 1rem; margin-top: 2rem; color: rgb(var(--color-primary-ink)); }
+#sourcey .schema-example { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .75rem; align-items: center; margin-block: .75rem; padding: .5rem .75rem; border: 1px solid rgb(var(--color-stone-200) / .75); border-radius: .5rem; background: rgb(var(--color-stone-50) / .65); }
+#sourcey .schema-example-label { font-size: .6875rem; color: rgb(var(--color-stone-500)); }
+#sourcey .schema-example pre { margin: 0; padding: 0; max-height: 16rem; overflow: auto; background: transparent; font-size: .75rem; line-height: 1.5; }
+.dark #sourcey .schema-example { border-color: rgb(var(--color-stone-700) / .65); background: rgb(var(--color-stone-800) / .4); }

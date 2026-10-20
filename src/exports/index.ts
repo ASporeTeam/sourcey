@@ -1,14 +1,16 @@
 import type { ResolvedConfig } from "../config.js";
 import type { SiteAssembly } from "../site-assembly.js";
 import type { SiteNavigation } from "../core/navigation.js";
-import type { SiteConfig, AlternateLink } from "../renderer/context.js";
-import type { SitePage } from "../renderer/html-builder.js";
+import type { SiteConfig } from "../renderer/context.js";
+import type { AlternateLink } from "../core/site-model.js";
+import type { SitePage } from "../core/site-model.js";
 import { toPublicPath, toPublicUrl } from "../site-url.js";
 import { generateLlmsTxt, generateLlmsFullTxt } from "../renderer/llms.js";
-import { collectReadableDocuments, markdownPath, type DocumentationIndex } from "./documents.js";
+import { collectReadableDocuments, markdownPath } from "./documents.js";
 import type { DiscoveryResource } from "./config.js";
+import { parseDocumentationIndex } from "./document-index.js";
 import { createHash } from "node:crypto";
-import { compactDescription, searchTerms } from "./markdown.js";
+import { compactDescription } from "./markdown.js";
 
 export interface GeneratedExports {
   files: Map<string, string | Buffer>;
@@ -27,10 +29,11 @@ export function generateExports(
   site: SiteConfig,
   config: ResolvedConfig,
 ): GeneratedExports {
+  const claimed = new Set(pages.map(page => page.outputPath));
   const files = new Map<string, string | Buffer>();
   const mediaTypes = new Map<string, string>();
   const put = (path: string, body: string, type: string) => {
-    if (files.has(path) || assembled.extraFiles.has(path) || assembled.pageMap.has(path))
+    if (files.has(path) || assembled.extraFiles.has(path) || claimed.has(path))
       throw new Error(`Generated output collision: ${path}`);
     files.set(path, body);
     mediaTypes.set(path, type);
@@ -43,33 +46,44 @@ export function generateExports(
     enabled.markdown || enabled.llms.index || enabled.llms.full
       ? collectReadableDocuments(pages, site)
       : [];
-  if (enabled.markdown) {
-    for (const document of documents)
-      put(document.entry.file, document.content, "text/markdown; charset=utf-8");
-    const index: DocumentationIndex = {
-      version: 1,
-      name: site.name || documents[0]?.entry.title || "Documentation",
-      documents: documents.map((document) => ({
-        ...document.entry,
-        searchText: searchTerms(document.content),
-      })),
-    };
-    put("documents.json", json(index), "application/json; charset=utf-8");
+  if (enabled.markdown) for (const document of documents)
+    put(document.entry.file, document.content, "text/markdown; charset=utf-8");
+  const name = site.name && site.name !== "API Reference" ? site.name : documents[0]?.entry.title || site.name;
+  const pageByTab = new Map(pages.map(page => [page.tabSlug, page]));
+  const rootDocuments = documents.filter(document => { const owner = pageByTab.get(document.entry.tab); return owner?.context.isDefaultVersion && owner.context.locale === owner.context.defaultLocale; });
+  const projections = new Map<string, typeof documents>();
+  projections.set("", rootDocuments);
+  for (const context of config.contexts) {
+    let prefix: string;
+    if (context.isDefaultVersion) prefix = context.localeConfig.path ?? (context.locale === context.defaultLocale ? "" : context.locale);
+    else prefix = context.scope.startsWith("tab:") ? context.tabs[0].slug : context.prefix;
+    const members = documents.filter(document => {
+      const owner = pageByTab.get(document.entry.tab);
+      return owner && (context.isDefaultVersion ? owner.context.locale === context.locale && owner.context.isDefaultVersion : owner.context.key === context.key);
+    });
+    if (prefix || context.locale === context.defaultLocale && context.isDefaultVersion) projections.set(prefix, members);
   }
-  const name =
-    site.name && site.name !== "API Reference" ? site.name : documents[0]?.entry.title || site.name;
-  const llmsTxt = enabled.llms.index
-    ? generateLlmsTxt(documents, navigation, name, enabled.markdown)
-    : "";
-  const llmsFullTxt = enabled.llms.full ? generateLlmsFullTxt(documents, name) : "";
-  if (enabled.llms.index) put("llms.txt", llmsTxt, "text/plain; charset=utf-8");
-  if (enabled.llms.full) put("llms-full.txt", llmsFullTxt, "text/plain; charset=utf-8");
+  for (const [prefix, selected] of projections) {
+    const within = (path: string) => prefix ? `${prefix}/${path}` : path;
+    if (enabled.markdown) {
+      const index = parseDocumentationIndex({ version: 1, name: name || "Documentation", documents: selected.map(document => {
+        const file = prefix ? document.entry.file.slice(prefix.length + 1) : document.entry.file;
+        if (prefix && !document.entry.file.startsWith(`${prefix}/`)) throw new Error(`Document outside index root: ${document.entry.file}`);
+        return { ...document.entry, file, searchText: document.entry.searchText ?? document.content };
+      }) });
+      put(within("documents.json"), json(index), "application/json; charset=utf-8");
+    }
+    if (enabled.llms.index) put(within("llms.txt"), generateLlmsTxt(selected, navigation, name, enabled.markdown), "text/plain; charset=utf-8");
+    if (enabled.llms.full) put(within("llms-full.txt"), generateLlmsFullTxt(selected, name), "text/plain; charset=utf-8");
+  }
+  const llmsTxt = enabled.llms.index ? generateLlmsTxt(rootDocuments, navigation, name, enabled.markdown) : "";
+  const llmsFullTxt = enabled.llms.full ? generateLlmsFullTxt(rootDocuments, name) : "";
 
   const resources: DiscoveryResource[] = [];
   if (
     config.discovery.apiCatalog &&
     !enabled.openapi &&
-    config.tabs.some((tab) => tab.source.kind === "openapi")
+    config.contexts.flatMap(c => c.tabs).some((tab) => tab.source.kind === "openapi")
   )
     throw new Error(
       "discovery.apiCatalog requires exports.openapi so its contract links refer to published definitions.",
@@ -119,8 +133,9 @@ export function generateExports(
     for (const [slug, contract] of assembled.publicSpecs) {
       const path = [slug, "openapi.json"].filter(Boolean).join("/");
       put(path, json(contract), "application/json; charset=utf-8");
-      const spec = assembled.specsBySlug.get(slug)!;
-      resource(
+      const spec = assembled.references.get(slug)!;
+      const owner = pageByTab.get(slug);
+      if (owner?.context.isDefaultVersion && owner.context.locale === owner.context.defaultLocale) resource(
         `api:${slug || "root"}`,
         spec.info.title,
         path,

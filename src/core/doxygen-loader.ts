@@ -1,10 +1,14 @@
 import { generate } from "moxygen";
 import type { DoxygenIndexStyle, ResolvedDoxygenConfig } from "../config.js";
 import {
+  DEFAULT_CALLOUTS,
   renderMarkdown,
+  siteMarkdownOptions,
   extractHeadings,
   extractFirstParagraph,
   stripMarkdownLinks,
+  type CalloutRenderOptions,
+  type MarkdownRenderOptions,
 } from "../utils/markdown.js";
 import type { MarkdownPage } from "./markdown-loader.js";
 import type { SiteTab, SiteNavGroup, SiteNavItem } from "./navigation.js";
@@ -186,7 +190,9 @@ export async function loadDoxygenTab(
   tabSlug: string,
   tabLabel: string,
   titleSeparator: string,
+  callouts: CalloutRenderOptions = DEFAULT_CALLOUTS,
 ): Promise<DoxygenResult> {
+  const markdownOptions = siteMarkdownOptions(callouts.icons, callouts.messages);
   let generated: Awaited<ReturnType<typeof generate>>;
   try {
     generated = await generate({
@@ -210,7 +216,7 @@ export async function loadDoxygenTab(
     const markdown = rewriteGeneratedDoxygenMarkdown(page.markdown);
     const description = normalizeDoxygenDescription(page.description, markdown);
     const html = polishGeneratedDoxygenHtml(
-      rewriteGeneratedDoxygenHtmlLinks(renderMarkdown(markdown)),
+      rewriteGeneratedDoxygenHtmlLinks(renderMarkdown(markdown, markdownOptions)),
       { title: page.title, description },
     );
     const headings = extractHeadings(markdown);
@@ -265,7 +271,7 @@ export async function loadDoxygenTab(
 
   if (indexStyle !== "none") {
     const indexSlug = "index";
-    const indexHtml = buildIndexHtml(indexStyle, tabSlug, tabLabel, groupMap, pages);
+    const indexHtml = buildIndexHtml(indexStyle, tabSlug, tabLabel, groupMap, pages, markdownOptions);
     const indexHeadings = indexStyle === "rich" ? [] : extractHeadings(indexHtml);
 
     pages.set(indexSlug, {
@@ -351,10 +357,11 @@ function buildIndexHtml(
   _tabLabel: string,
   groupMap: Map<string, GroupEntry[]>,
   pages: Map<string, MarkdownPage>,
+  markdown: MarkdownRenderOptions,
 ): string {
   if (style === "rich") return buildRichIndex(groupMap, pages);
-  if (style === "structured") return buildStructuredIndex(groupMap, pages);
-  return buildFlatIndex(groupMap);
+  if (style === "structured") return buildStructuredIndex(groupMap, pages, markdown);
+  return buildFlatIndex(groupMap, markdown);
 }
 
 /**
@@ -425,6 +432,7 @@ function buildRichIndex(
 function buildStructuredIndex(
   groupMap: Map<string, GroupEntry[]>,
   pages: Map<string, MarkdownPage>,
+  markdown: MarkdownRenderOptions,
 ): string {
   const sections: string[] = [];
 
@@ -445,13 +453,13 @@ function buildStructuredIndex(
     sections.push(`### ${title}\n\n${links.join("\n")}`);
   }
 
-  return renderMarkdown(sections.join("\n\n"));
+  return renderMarkdown(sections.join("\n\n"), markdown);
 }
 
 /**
  * Flat: alphabetical list categorized by kind.
  */
-function buildFlatIndex(groupMap: Map<string, GroupEntry[]>): string {
+function buildFlatIndex(groupMap: Map<string, GroupEntry[]>, markdown: MarkdownRenderOptions): string {
   const byKind = new Map<string, GroupEntry[]>();
 
   for (const [, items] of groupMap) {
@@ -470,7 +478,7 @@ function buildFlatIndex(groupMap: Map<string, GroupEntry[]>): string {
     sections.push(`### ${label}\n\n${links}`);
   }
 
-  return renderMarkdown(sections.join("\n\n"));
+  return renderMarkdown(sections.join("\n\n"), markdown);
 }
 
 // ---------------------------------------------------------------------------

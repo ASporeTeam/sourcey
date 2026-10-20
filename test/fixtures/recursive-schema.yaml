@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: Recursive tasks
+  version: 1.0.0
+paths:
+  /tasks:
+    post:
+      operationId: createTask
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Task"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+components:
+  schemas:
+    Task:
+      type: object
+      properties:
+        title:
+          type: string
+        owner:
+          $ref: "#/components/schemas/User"
+        subtasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+    User:
+      type: object
+      properties:
+        name:
+          type: string

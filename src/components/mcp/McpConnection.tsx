@@ -5,6 +5,7 @@
  */
 
 import type { McpConnectionInfo } from "../../core/types.js";
+import { Markdown } from "../ui/Markdown.js";
 
 export function McpConnection({ connection }: { connection: McpConnectionInfo }) {
   const transport = connection.transport;
@@ -15,8 +16,10 @@ export function McpConnection({ connection }: { connection: McpConnectionInfo })
   if (transport.type === "stdio") {
     if (transport.command) serverEntry.command = transport.command;
     if (transport.args?.length) serverEntry.args = transport.args;
+    if (transport.env && Object.keys(transport.env).length) serverEntry.env = transport.env;
   } else {
     if (transport.url) serverEntry.url = transport.url;
+    if (transport.headers) serverEntry.headers = transport.headers;
   }
 
   const configJson = JSON.stringify(
@@ -35,21 +38,12 @@ export function McpConnection({ connection }: { connection: McpConnectionInfo })
   }
 
   return (
-    <div class="mb-8 rounded-[var(--radius)] border border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-border-dark-subtle)/0.1)] overflow-hidden">
-      <div class="px-4 py-2.5 text-xs font-semibold text-[rgb(var(--color-gray-600))] dark:text-[rgb(var(--color-gray-300))] border-b border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-border-dark-subtle)/0.1)]">
-        Connect
-      </div>
-      <div class="px-4 py-3">
-        <p class="text-sm text-[rgb(var(--color-gray-500))] mb-3">
+    <section class="sourcey-mcp-connection min-w-0 mb-8">
+        <h2 class="mb-3 text-base font-semibold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))]">Connect your client</h2>
+        <p class="text-sm text-[rgb(var(--color-gray-600))] dark:text-[rgb(var(--color-gray-400))] mb-4">
           Add to your MCP client configuration:
         </p>
-        <div class="code-group not-prose">
-          <div class="relative w-full px-4 py-3.5 text-sm leading-6 bg-[rgb(var(--color-code-block-light))] dark:bg-[rgb(var(--color-code-block-dark))] overflow-x-auto rounded-[var(--radius)]" style="font-variant-ligatures: none">
-            <div class="font-mono whitespace-pre text-xs leading-[1.35rem] text-[rgb(var(--color-gray-800))] dark:text-[rgb(var(--color-gray-200))]">
-              {configJson}
-            </div>
-          </div>
-        </div>
+        <Markdown content={`\`\`\`json\n${configJson}\n\`\`\``} />
         <div class="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-[rgb(var(--color-gray-500))]">
           {connection.mcpVersion && (
             <span>Protocol <span class="font-medium text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))]">MCP {connection.mcpVersion}</span></span>
@@ -59,7 +53,6 @@ export function McpConnection({ connection }: { connection: McpConnectionInfo })
             <span>Capabilities <span class="font-medium text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))]">{caps.join(", ")}</span></span>
           )}
         </div>
-      </div>
-    </div>
+    </section>
   );
 }

@@ -3,25 +3,30 @@ import type {
   GodocSourceOptions,
   MarkdownSourceOptions,
   McpSourceOptions,
-  MkDocsSourceOptions,
   OpenApiSourceOptions,
   RustdocSourceOptions,
   SourceAdapter,
 } from "./types.js";
+import { resolve } from "node:path";
 import { assertLocalPath, resolveMarkdownGroups, toWatchPaths } from "./shared.js";
-import { mkdocs as mkdocsAdapter } from "./mkdocs.js";
 
 export function openapi(specOrOptions: string | OpenApiSourceOptions): SourceAdapter {
-  const spec = typeof specOrOptions === "string" ? specOrOptions : specOrOptions.spec;
+  const options = typeof specOrOptions === "string" ? { spec: specOrOptions } : specOrOptions;
+  const { spec } = options;
   return {
     name: "openapi",
     async resolve(ctx) {
-      if (ctx.isUrl(spec)) {
-        return { kind: "openapi", spec };
+      if (options.overlayUnmatched && !["error", "warn", "ignore"].includes(options.overlayUnmatched)) throw new Error("Invalid OpenAPI overlayUnmatched; expected error, warn or ignore");
+      async function input(path: string, label: string): Promise<string> {
+        if (ctx.isUrl(path)) return path;
+        const absolute = ctx.resolvePath(path);
+        await ctx.assertExists(absolute, `${label} "${path}" in tab "${ctx.tabName}"`);
+        return absolute;
       }
-      const absPath = ctx.resolvePath(spec);
-      await ctx.assertExists(absPath, `OpenAPI spec "${spec}" in tab "${ctx.tabName}"`);
-      return { kind: "openapi", spec: absPath, watchPaths: [absPath] };
+      const resolvedSpec = await input(spec, "OpenAPI spec");
+      const overlays = await Promise.all((options.overlays ?? []).map(path => input(path, "OpenAPI overlay")));
+      return { kind: "openapi", spec: resolvedSpec, overlays, overlayUnmatched: options.overlayUnmatched ?? "error",
+        watchPaths: [resolvedSpec, ...overlays].filter(path => !ctx.isUrl(path)) };
     },
   };
 }
@@ -45,19 +50,22 @@ export function markdown(options: MarkdownSourceOptions): SourceAdapter {
   return {
     name: "markdown",
     async resolve(ctx) {
+      if (options.slugs !== undefined && options.slugs !== "normalized" && options.slugs !== "file") throw new Error("Markdown slugs must be normalized or file");
       return {
         kind: "markdown",
+        slugs: options.slugs ?? "normalized",
         adapter: "markdown",
-        groups: await resolveMarkdownGroups(options.groups, ctx.tabName, ctx.configDir),
+        groups: await resolveMarkdownGroups(
+          options.groups,
+          ctx.tabName,
+          resolve(ctx.configDir, options.root ?? "."),
+          undefined,
+          ctx.locale,
+        ),
+        watchPaths: [resolve(ctx.configDir, options.root ?? ".")],
       };
     },
   };
-}
-
-export function mkdocs(configOrOptions: string | MkDocsSourceOptions): SourceAdapter {
-  const options =
-    typeof configOrOptions === "string" ? { config: configOrOptions } : configOrOptions;
-  return mkdocsAdapter(options);
 }
 
 export function doxygen(options: DoxygenSourceOptions): SourceAdapter {
@@ -162,7 +170,6 @@ export type {
   GodocSourceOptions,
   MarkdownSourceOptions,
   McpSourceOptions,
-  MkDocsSourceOptions,
   OpenApiSourceOptions,
   PageMarkdownOptions,
   ResolvedTabSource,

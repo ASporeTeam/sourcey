@@ -1,7 +1,9 @@
 import { useContext } from "preact/hooks";
 import type { NormalizedOperation, NormalizedRequestBody } from "../../core/types.js";
-import { operationAnchor } from "../../utils/html-id.js";
-import { SiteContext } from "../../renderer/context.js";
+import { operationAnchor, operationFieldRoot, referenceFieldPath, operationSectionAnchor, operationSections, type OperationSection } from "../../core/reference-identity.js";
+import { SECTION_LABELS } from "./outline.js";
+import { PageContext, SiteContext, SpecContext } from "../../renderer/context.js";
+import { AnchorAliases } from "../ui/AnchorAliases.js";
 import { Markdown } from "../ui/Markdown.js";
 import { DeprecatedBadge } from "../ui/Badge.js";
 import { SectionLabel } from "../ui/SectionLabel.js";
@@ -11,13 +13,14 @@ import { ResponsesCopy, ResponsesExamples } from "./Responses.js";
 import { SecurityCopy } from "./Security.js";
 import { CodeSamplesExamples } from "./CodeSamples.js";
 import { EndpointBar } from "./EndpointBar.js";
+import { ExternalDocsLink } from "./ExternalDocs.js";
 import { McpEndpointBar } from "../mcp/McpEndpointBar.js";
 import { AnnotationBadges } from "../mcp/AnnotationBadges.js";
 import { McpReturnsCopy, McpReturnsExample } from "../mcp/McpReturns.js";
+import { ConsoleExamples, ConsoleIdentity } from "../try-it/Activation.js";
 
 interface OperationProps {
   operation: NormalizedOperation;
-  serverUrl: string;
 }
 
 /**
@@ -27,107 +30,79 @@ interface OperationProps {
  *
  * The full-width theme renders the split layout instead.
  */
-export function Operation({ operation: op, serverUrl }: OperationProps) {
+export function Operation({ operation: op }: OperationProps) {
   const site = useContext(SiteContext);
-  if (site.theme.name === "api-first") return <SplitOperation operation={op} serverUrl={serverUrl} />;
-  const id = operationAnchor(op);
-  const hasParams = op.parameters.length > 0;
-  const hasBody = !!op.requestBody;
-  const mcp = op.mcpExtras;
-
+  const spec = useContext(SpecContext);
+  const page = useContext(PageContext);
+  const id = operationAnchor(op, spec);
+  const standalone = page.kind === "spec" && page.view?.kind === "operation";
   return (
-    <div
-      id={id}
-      class="py-8 border-t border-[rgb(var(--color-gray-100))] dark:border-[rgb(var(--color-gray-800))]"
-      data-traverse-target={id}
-    >
-      {/* Operation title */}
-      <header class="mb-6">
-        {op.summary && (
-          <div class="flex items-baseline gap-2 flex-wrap">
-            <h2 class="text-2xl sm:text-3xl text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] tracking-tight font-bold mb-2">
-              <Markdown content={op.summary} inline />
-            </h2>
-            {op.deprecated && <DeprecatedBadge />}
-            {mcp?.annotations && <AnnotationBadges annotations={mcp.annotations} />}
-          </div>
-        )}
-      </header>
+    // One console per operation on a page, named by the operation.
+    <ConsoleIdentity.Provider value={`tryit-${id}`}>
+      {site.theme.name === "api-first" ? (
+        <section id={id} class="operation-split" data-traverse-target={id} data-sourcey-operation data-mcp={op.mcpExtras ? "" : undefined}>
+          <AnchorAliases target={id} />
+          <SplitOperationIdentity operation={op} />
+          <SplitOperationDetail operation={op} />
+        </section>
+      ) : (
+        <div
+          id={id}
+          class={standalone ? "pb-8" : "py-8 border-t border-[rgb(var(--color-gray-100))] dark:border-[rgb(var(--color-gray-800))]"}
+          data-traverse-target={id}
+          data-sourcey-operation
+        >
+          <AnchorAliases target={id} />
+          {/* An MCP tool's title heads its content column. */}
+          {!op.mcpExtras && <OperationIdentity operation={op} />}
+          <DefaultOperationDetail operation={op} />
+        </div>
+      )}
+    </ConsoleIdentity.Provider>
+  );
+}
 
-      {/* Endpoint bar */}
+function OperationIdentity({ operation: op }: OperationProps) {
+  const page = useContext(PageContext);
+  const standalone = page.kind === "spec" && page.view?.kind === "operation";
+  const Heading = standalone ? "h1" : "h2";
+  const mcp = op.mcpExtras;
+  return (
+    <>
+      <header class="mb-6">
+        <div class="flex items-baseline gap-2 flex-wrap">
+          <Heading class={`${standalone ? "reference-page-title " : ""}text-2xl sm:text-3xl text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] tracking-tight font-bold mb-2`}>
+            {op.summary ? <Markdown content={op.summary} inline /> : op.path}
+          </Heading>
+          {op.deprecated && <DeprecatedBadge />}
+          {mcp?.annotations && <AnnotationBadges annotations={mcp.annotations} />}
+        </div>
+      </header>
       {mcp ? (
         <McpEndpointBar method={op.method} path={op.path} />
       ) : (
-        <EndpointBar method={op.method} path={op.path} serverUrl={serverUrl} />
+        <EndpointBar operation={op} />
       )}
+    </>
+  );
+}
 
-      {/* Content + sticky code panel */}
-      <div class="flex flex-col xl:flex-row gap-8">
-        {/* Left: content column */}
-        <div class="flex-1 min-w-0">
+/**
+ * The description, the examples and the fields, in that order: the examples
+ * move beside the copy where the column has room for both.
+ */
+function DefaultOperationDetail({ operation: op }: OperationProps) {
+  return (
+    <div class="operation-layout">
+      {(op.mcpExtras || op.description || op.externalDocs) && (
+        <div class="operation-intro">
+          {op.mcpExtras && <OperationIdentity operation={op} />}
           {op.description && <Markdown content={op.description} class="mb-6 max-w-none" />}
-
-          {hasBody && (
-            <div class="mt-6">
-              <SectionLabel meta={bodyMediaType(op.requestBody!)}>Body</SectionLabel>
-              <RequestBody body={op.requestBody!} />
-            </div>
-          )}
-
-          {hasParams && (
-            <div class="mt-6">
-              <SectionLabel>Parameters</SectionLabel>
-              <Parameters parameters={op.parameters} />
-            </div>
-          )}
-
-          {mcp ? (
-            <McpReturnsCopy schema={mcp.outputSchema} />
-          ) : (
-            op.responses.length > 0 && (
-              <div class="mt-6">
-                <SectionLabel>Response</SectionLabel>
-                <ResponsesCopy responses={op.responses} />
-              </div>
-            )
-          )}
-
-          {!mcp && <SecurityCopy security={op.security} />}
+          <ExternalDocsLink docs={op.externalDocs} />
         </div>
-
-        {/* Right: sticky code panel */}
-        <aside
-          class="hidden xl:block w-[28rem] shrink-0 sticky self-start overflow-y-auto space-y-4"
-          style="top: calc(var(--header-height) + 2.5rem); max-height: calc(100vh - var(--header-height) - 5rem)"
-        >
-          <CodeSamplesExamples
-            operation={op}
-            serverUrl={serverUrl}
-            codeSampleLangs={site.codeSamples}
-          />
-          {hasBody && <RequestBodyExample body={op.requestBody!} />}
-          {mcp ? (
-            <McpReturnsExample schema={mcp.outputSchema} />
-          ) : (
-            <ResponsesExamples responses={op.responses} />
-          )}
-        </aside>
-      </div>
-
-      {/* Mobile: code examples shown inline below content */}
-      <div class="xl:hidden mt-8 space-y-4">
-        <CodeSamplesExamples
-          operation={op}
-          serverUrl={serverUrl}
-          codeSampleLangs={site.codeSamples}
-        />
-        {hasBody && <RequestBodyExample body={op.requestBody!} />}
-        {mcp ? (
-          <McpReturnsExample schema={mcp.outputSchema} />
-        ) : (
-          <ResponsesExamples responses={op.responses} />
-        )}
-      </div>
+      )}
+      <aside class="sourcey-operation-examples"><OperationExamples operation={op} /></aside>
+      {operationSections(op).length > 0 && <div class="operation-details"><OperationSections operation={op} sectionClass="mt-6" /></div>}
     </div>
   );
 }
@@ -137,79 +112,114 @@ export function Operation({ operation: op, serverUrl }: OperationProps) {
  * the title and a one-line method and path, then the description, body,
  * parameters and responses. The right holds the request and response examples
  * level with the title and stays on screen through the operation. Below the
- * large breakpoint the examples follow the content.
+ * large breakpoint the examples follow the description.
  */
-function SplitOperation({ operation: op, serverUrl }: OperationProps) {
-  const site = useContext(SiteContext);
-  const id = operationAnchor(op);
-  const hasParams = op.parameters.length > 0;
-  const hasBody = !!op.requestBody;
+function SplitOperationIdentity({ operation: op }: OperationProps) {
+  const page = useContext(PageContext);
+  const standalone = page.kind === "spec" && page.view?.kind === "operation";
+  const Heading = standalone ? "h1" : "h2";
   const mcp = op.mcpExtras;
-
-  const examples = (
-    <>
-      <CodeSamplesExamples operation={op} serverUrl={serverUrl} codeSampleLangs={site.codeSamples} />
-      {hasBody && <RequestBodyExample body={op.requestBody!} />}
-      {mcp ? <McpReturnsExample schema={mcp.outputSchema} /> : <ResponsesExamples responses={op.responses} />}
-    </>
-  );
-
   return (
-    <section id={id} class="operation-split" data-traverse-target={id}>
-      <div class="operation-split-content">
-        <header class="operation-split-header">
-          <div class="flex items-baseline gap-2 flex-wrap">
-            <h2 class="operation-split-title">
-              {op.summary ? <Markdown content={op.summary} inline /> : op.path}
-            </h2>
-            {op.deprecated && <DeprecatedBadge />}
-            {mcp?.annotations && <AnnotationBadges annotations={mcp.annotations} />}
-          </div>
+    <>
+      <header class="operation-split-header">
+        <div class="flex items-baseline gap-2 flex-wrap">
+          <Heading class={`${standalone ? "reference-page-title " : ""}operation-split-title`}>
+            {op.summary ? <Markdown content={op.summary} inline /> : op.path}
+          </Heading>
+          {op.deprecated && <DeprecatedBadge />}
+          {mcp?.annotations && <AnnotationBadges annotations={mcp.annotations} />}
+        </div>
+        {mcp && (
           <div class="operation-line" data-method={op.method.toLowerCase()}>
             <span class="operation-line-method">{op.method.toUpperCase()}</span>
             {/* An MCP tool's path is its name, already the title. */}
-            {(op.summary ?? op.path) !== op.path && <span class="operation-line-path">{op.path}</span>}
-          </div>
-        </header>
-
-        {op.description && <Markdown content={op.description} class="operation-split-description max-w-none" />}
-
-        {hasBody && (
-          <div class="operation-split-section">
-            <SectionLabel meta={bodyMediaType(op.requestBody!)}>Body</SectionLabel>
-            <RequestBody body={op.requestBody!} />
+            {(op.summary ?? op.path) !== op.path && (
+              <span class="operation-line-path">{op.path}</span>
+            )}
           </div>
         )}
-
-        {hasParams && (
-          <div class="operation-split-section">
-            <SectionLabel>Parameters</SectionLabel>
-            <Parameters parameters={op.parameters} />
-          </div>
-        )}
-
-        {mcp ? (
-          <McpReturnsCopy schema={mcp.outputSchema} />
-        ) : (
-          op.responses.length > 0 && (
-            <div class="operation-split-section">
-              <SectionLabel>Response</SectionLabel>
-              <ResponsesCopy responses={op.responses} />
-            </div>
-          )
-        )}
-
-        {!mcp && <SecurityCopy security={op.security} />}
-
-        <div class="operation-split-examples-inline">{examples}</div>
-      </div>
-
-      <aside class="operation-split-examples">{examples}</aside>
-    </section>
+      </header>
+      {!mcp && (
+        <EndpointBar operation={op} />
+      )}
+    </>
   );
 }
 
+function SplitOperationDetail({ operation: op }: OperationProps) {
+  return (
+    <>
+      {(op.description || op.externalDocs) && (
+        <div class="operation-split-intro">
+          {op.description && <Markdown content={op.description} class="operation-split-description max-w-none" />}
+          <ExternalDocsLink docs={op.externalDocs} />
+        </div>
+      )}
+      <aside class="operation-split-examples"><OperationExamples operation={op} /></aside>
+      {operationSections(op).length > 0 && <div class="operation-split-content"><OperationSections operation={op} sectionClass="operation-split-section" /></div>}
+    </>
+  );
+}
+
+/** An operation's body, parameters, responses and authentication, each section under its anchor. */
+function OperationSections({ operation: op, sectionClass }: { operation: NormalizedOperation; sectionClass: string }) {
+  const sectionId = useSectionId(op);
+  const mcp = op.mcpExtras;
+  return (
+    <>
+      {op.requestBody && (
+        <div class={sectionClass} id={sectionId("request-body")}>
+          <AnchorAliases target={sectionId("request-body")} />
+          <SectionLabel meta={bodyMediaType(op.requestBody)}>{SECTION_LABELS["request-body"]}</SectionLabel>
+          <RequestBody body={op.requestBody} anchorRoot={referenceFieldPath(operationFieldRoot(op), "request-body")} />
+        </div>
+      )}
+
+      {op.parameters.length > 0 && (
+        <div class={sectionClass} id={sectionId("parameters")}>
+          <AnchorAliases target={sectionId("parameters")} />
+          <SectionLabel>{SECTION_LABELS.parameters}</SectionLabel>
+          <Parameters parameters={op.parameters} anchorRoot={referenceFieldPath(operationFieldRoot(op), "parameters")} />
+        </div>
+      )}
+
+      {mcp ? (
+        <McpReturnsCopy schema={mcp.outputSchema} id={sectionId("returns")} anchorRoot={referenceFieldPath(operationFieldRoot(op), "returns")} />
+      ) : (
+        op.responses.length > 0 && (
+          <div class={sectionClass} id={sectionId("responses")}>
+            <AnchorAliases target={sectionId("responses")} />
+            <SectionLabel>{SECTION_LABELS.responses}</SectionLabel>
+            <ResponsesCopy responses={op.responses} operation={op} />
+          </div>
+        )
+      )}
+
+      {!mcp && <SecurityCopy security={op.security} id={sectionId("authentication")} />}
+    </>
+  );
+}
+
+/** The request samples, body example and response examples, with the console that opens over them. */
+function OperationExamples({ operation: op }: { operation: NormalizedOperation }) {
+  const site = useContext(SiteContext);
+  return (
+    <ConsoleExamples operation={op}>
+      <CodeSamplesExamples operation={op} codeSampleLangs={site.codeSamples} />
+      {op.requestBody && <RequestBodyExample body={op.requestBody} />}
+      {op.mcpExtras ? <McpReturnsExample schema={op.mcpExtras.outputSchema} /> : <ResponsesExamples responses={op.responses} />}
+    </ConsoleExamples>
+  );
+}
+
+function useSectionId(operation: NormalizedOperation) {
+  const spec = useContext(SpecContext);
+  const page = useContext(PageContext);
+  return (section: OperationSection) => operationSectionAnchor(operation, spec, section, page?.kind === "spec" && page.view?.kind === "operation");
+}
+
+/** The body's one media type; several are labelled on their field lists instead. */
 function bodyMediaType(body: NormalizedRequestBody): string | undefined {
   const types = Object.keys(body.content);
-  return types.length ? types[0] : undefined;
+  return types.length === 1 ? types[0] : undefined;
 }

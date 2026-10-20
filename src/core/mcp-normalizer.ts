@@ -36,7 +36,9 @@ export function normalizeMcpSpec(spec: McpSpec): NormalizedSpec {
           type: spec.transport.type,
           command: spec.transport.command,
           args: spec.transport.args,
+          env: spec.transport.env,
           url: spec.transport.url,
+          headers: transportHeaders(spec.transport),
         }
       : undefined,
     serverName: spec.server.name,
@@ -297,6 +299,18 @@ function convertSchema(schema: JsonSchema, name?: string): NormalizedSchema {
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
+/**
+ * The header placeholders an HTTP transport expects (mcp-schema's
+ * `transport.headers`, which its schema accepts ahead of the published
+ * type), with only string values kept.
+ */
+function transportHeaders(transport: NonNullable<McpSpec["transport"]>): Record<string, string> | undefined {
+  const headers = (transport as { headers?: unknown }).headers;
+  if (!headers || typeof headers !== "object") return undefined;
+  const entries = Object.entries(headers).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 function flattenInputSchema(schema: JsonSchema & { type: "object" }): NormalizedParameter[] {
   if (!schema.properties) return [];
   const required = new Set(schema.required ?? []);
@@ -347,7 +361,7 @@ function slugify(name: string): string {
 // ── Code sample generation ────────────────────────────────────────────
 
 function generateToolSamples(tool: McpTool, inputSchema: NormalizedSchema): CodeSample[] {
-  const example = inputSchema.properties ? generateExample(inputSchema) : {};
+  const example = inputSchema.properties ? generateExample(inputSchema, "request") : {};
   const exampleJson = JSON.stringify(example, null, 2);
   const indented = exampleJson
     .split("\n")
@@ -360,6 +374,7 @@ function generateToolSamples(tool: McpTool, inputSchema: NormalizedSchema): Code
       label: "JSON-RPC",
       source: `{
   "jsonrpc": "2.0",
+  "id": 1,
   "method": "tools/call",
   "params": {
     "name": "${tool.name}",
@@ -370,7 +385,7 @@ function generateToolSamples(tool: McpTool, inputSchema: NormalizedSchema): Code
     {
       lang: "typescript",
       label: "TypeScript",
-      source: `const result = await client.callTool("${tool.name}", ${exampleJson});`,
+      source: `const result = await client.callTool(${JSON.stringify({ name: tool.name, arguments: example }, null, 2)});`,
     },
     {
       lang: "python",
@@ -387,6 +402,7 @@ function generateResourceSamples(resource: { uri: string; name: string }): CodeS
       label: "JSON-RPC",
       source: `{
   "jsonrpc": "2.0",
+  "id": 1,
   "method": "resources/read",
   "params": {
     "uri": "${resource.uri}"
@@ -396,7 +412,7 @@ function generateResourceSamples(resource: { uri: string; name: string }): CodeS
     {
       lang: "typescript",
       label: "TypeScript",
-      source: `const result = await client.readResource("${resource.uri}");`,
+      source: `const result = await client.readResource(${JSON.stringify({ uri: resource.uri }, null, 2)});`,
     },
     {
       lang: "python",
@@ -417,7 +433,6 @@ function generatePromptSamples(prompt: McpPrompt): CodeSample[] {
     .map((line, i) => (i === 0 ? line : "      " + line))
     .join("\n");
 
-  const tsArgs = args.map((a: { name: string }) => `  ${a.name}: "<${a.name}>",`).join("\n");
   const pyArgs = args.map((a: { name: string }) => `    "${a.name}": "<${a.name}>",`).join("\n");
 
   return [
@@ -426,6 +441,7 @@ function generatePromptSamples(prompt: McpPrompt): CodeSample[] {
       label: "JSON-RPC",
       source: `{
   "jsonrpc": "2.0",
+  "id": 1,
   "method": "prompts/get",
   "params": {
     "name": "${prompt.name}",
@@ -436,9 +452,7 @@ function generatePromptSamples(prompt: McpPrompt): CodeSample[] {
     {
       lang: "typescript",
       label: "TypeScript",
-      source: args.length
-        ? `const result = await client.getPrompt("${prompt.name}", {\n${tsArgs}\n});`
-        : `const result = await client.getPrompt("${prompt.name}");`,
+      source: `const result = await client.getPrompt(${JSON.stringify({ name: prompt.name, ...(args.length ? { arguments: exampleArgs } : {}) }, null, 2)});`,
     },
     {
       lang: "python",

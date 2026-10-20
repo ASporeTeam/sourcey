@@ -23,11 +23,3 @@ export function tagLineage(
   return lineage;
 }
 
-export function tagNavigationLabel(
-  tag: NormalizedTag,
-  tagsByName: Map<string, NormalizedTag>,
-): string {
-  return [...tagLineage(tag, tagsByName), tag]
-    .map(tagDisplayName)
-    .join(" / ");
-}

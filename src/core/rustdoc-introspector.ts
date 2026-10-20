@@ -1,8 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { InputReader } from "./loader.js";
 
 import type { ResolvedRustdocConfig } from "../config.js";
 import { RUSTDOC_DIAGNOSTIC_CODES, SPEC_VERSION } from "./rustdoc-types.js";
@@ -31,7 +32,9 @@ export interface IntrospectOptions {
   cargoBinary?: string;
   /** Override rustup binary; defaults to "rustup" on PATH. */
   rustupBinary?: string;
+  input?: InputReader;
 }
+const snapshots = new WeakMap<Buffer, RustdocSpec>();
 
 export interface IntrospectResult {
   spec: RustdocSpec;
@@ -49,7 +52,7 @@ export async function runIntrospector(opts: IntrospectOptions): Promise<Introspe
   const cfg = opts.config;
   const mode = await resolveMode(cfg, opts);
   if (mode === "snapshot") {
-    const result = await loadSnapshot(cfg);
+    const result = await loadSnapshot(cfg, opts.input ?? new InputReader());
     if (cfg.mode === "auto") {
       result.diagnostics.unshift({
         severity: "info",
@@ -100,7 +103,7 @@ async function probeNightly(rustupBinary: string, toolchain: string): Promise<bo
   }
 }
 
-async function loadSnapshot(cfg: ResolvedRustdocConfig): Promise<IntrospectResult> {
+async function loadSnapshot(cfg: ResolvedRustdocConfig, input: InputReader): Promise<IntrospectResult> {
   const snapshotPath = cfg.snapshot;
   if (!snapshotPath) {
     throw new RustdocIntrospectorError(
@@ -109,12 +112,15 @@ async function loadSnapshot(cfg: ResolvedRustdocConfig): Promise<IntrospectResul
     );
   }
   let raw: string;
+  let bytes: Buffer;
   try {
+    bytes = (await input.read(snapshotPath, snapshotPath)).body;
+    const cached = snapshots.get(bytes);
+    if (cached) return { spec: cached, modeUsed: "snapshot", diagnostics: collectDiagnostics(cached) };
     if (/\.gz$/i.test(snapshotPath)) {
-      const buf = await readFile(snapshotPath);
-      raw = gunzipSync(buf).toString("utf8");
+      raw = gunzipSync(bytes).toString("utf8");
     } else {
-      raw = await readFile(snapshotPath, "utf8");
+      raw = bytes.toString("utf8");
     }
   } catch (err) {
     throw new RustdocIntrospectorError(
@@ -134,6 +140,7 @@ async function loadSnapshot(cfg: ResolvedRustdocConfig): Promise<IntrospectResul
     );
   }
   validateSpec(spec, snapshotPath);
+  snapshots.set(bytes, spec);
   return {
     spec,
     diagnostics: collectDiagnostics(spec),

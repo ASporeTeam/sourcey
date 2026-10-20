@@ -24,8 +24,19 @@ function createOperation(overrides?: Partial<NormalizedOperation>): NormalizedOp
 }
 
 describe("generateCodeSamples", () => {
+  it("fills a templated server from its variables' defaults, and leaves an origin without one to the reader", () => {
+    const operation = createOperation({ method: "get" });
+    const variables = { scheme: { default: "https", enum: ["https", "http"] } };
+    const filled = generateCodeSamples(operation, [{ url: "{scheme}://{host}/api", variables: { ...variables, host: { default: "s.test" } } }], ["curl"], {}, "https://docs.example.com");
+    expect(filled[0].source).toBe("curl -X GET 'https://s.test/api/search'");
+
+    // A self-hosted instance's host is not the documentation site's.
+    const unfilled = generateCodeSamples(operation, [{ url: "{scheme}://{host}/api", variables: { ...variables, host: { default: "" } } }], ["curl"], {}, "https://docs.example.com");
+    expect(unfilled[0].source).toBe("BASE_URL='YOUR_API_ORIGIN'\ncurl -X GET \"${BASE_URL}\"'/api/search'");
+  });
+
   it("falls back to generic request APIs for non-standard HTTP methods", () => {
-    const samples = generateCodeSamples(createOperation(), "https://api.example.com", [
+    const samples = generateCodeSamples(createOperation(), [{ url: "https://api.example.com" }], [
       "python",
       "ruby",
       "rust",
@@ -59,7 +70,7 @@ describe("generateCodeSamples", () => {
           },
         },
       }),
-      "https://api.example.com",
+      [{ url: "https://api.example.com" }],
       ["curl", "ruby", "php"],
     );
 
@@ -77,11 +88,15 @@ describe("generateCodeSamples", () => {
 
     expect(operation).toBeDefined();
 
-    const [sample] = generateCodeSamples(operation!, spec.servers[0].url, ["javascript"]);
+    const [sample] = generateCodeSamples(operation!, spec.servers, ["javascript"]);
 
-    expect(sample.source).toContain("method: 'POST'");
-    expect(sample.source).toContain("body: JSON.stringify");
-    expect(sample.source).toContain('"name": "string"');
-    expect(() => new Function(`async function run() {\n${sample.source}\n}`)).not.toThrow();
+    let sent: RequestInit | undefined;
+    const fetcher = async (_url: string, options: RequestInit) => {
+      sent = options;
+      return new Response("OK");
+    };
+    await new Function("fetch", `return (async () => { ${sample.source} })();`)(fetcher);
+    expect(sent?.method).toBe("POST");
+    expect(JSON.parse(sent?.body as string)).toMatchObject({ name: "string" });
   });
 });

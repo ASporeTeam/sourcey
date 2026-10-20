@@ -14,6 +14,12 @@ export default tseslint.config(
     languageOptions: {
       globals: {
         clearTimeout: "readonly",
+        console: "readonly",
+        CustomEvent: "readonly",
+        DOMParser: "readonly",
+        Element: "readonly",
+        getComputedStyle: "readonly",
+        location: "readonly",
         document: "readonly",
         fetch: "readonly",
         history: "readonly",

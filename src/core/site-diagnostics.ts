@@ -1,0 +1,113 @@
+import { Parser } from "htmlparser2";
+import { pageMetadata } from "./page-metadata.js";
+import { operationKey } from "./reference-identity.js";
+import { identityKey, type RouteTable, type SitePage } from "./site-model.js";
+import type { ResolvedConfig } from "../config.js";
+import { rewriteMarkdownDestinations } from "../utils/markdown-links.js";
+
+export interface SiteDiagnostic {
+  severity: "warning";
+  code: "missing-site-origin" | "missing-description" | "short-description" | "broken-fragment" | "canonical-target" | "hreflang-target";
+  page?: string;
+  message: string;
+}
+
+const documentLinks = new WeakMap<object, string[]>();
+
+/** Inspect completed routes and source prose; never infer another site's content graph. */
+export function collectSiteDiagnostics(
+  pages: readonly SitePage[],
+  routes: RouteTable,
+  config: Pick<ResolvedConfig, "name" | "titleSeparator" | "siteUrl">,
+): SiteDiagnostic[] {
+  const diagnostics: SiteDiagnostic[] = [];
+  const origin = config.siteUrl ?? "https://sourcey.invalid";
+  if (!config.siteUrl && pages.some(page => routes.byKey.get(identityKey(page))?.index)) diagnostics.push({
+    severity: "warning", code: "missing-site-origin",
+    message: "Set siteUrl to the public origin before publishing; canonical, hreflang and sitemap URLs are currently relative.",
+  });
+  for (const page of pages) {
+    const route = routes.byKey.get(identityKey(page));
+    if (!route || page.status === 404) continue;
+    const warn = (code: SiteDiagnostic["code"], message: string) => diagnostics.push({ severity: "warning", code, page: route.publicPath, message });
+    if (route.index) {
+      const metadata = pageMetadata(page.currentPage, config);
+      if (metadata.description === metadata.title) warn("missing-description", "No source summary is available; metadata uses the page title.");
+      else if (metadata.summary && metadata.summary.split(/\s+/).length === 1) warn("short-description", `The source summary is only one word: ${JSON.stringify(metadata.summary)}.`);
+    }
+    const canonical = new URL(route.canonical, origin);
+    if (canonical.origin === origin && !routes.match(canonical.pathname)) warn("canonical-target", `Canonical URL has no published page: ${route.canonical}.`);
+    const languages = new Map<string, string>();
+    for (const equivalent of page.equivalents ?? []) {
+      if (equivalent.kind !== "locale" || !equivalent.lang) continue;
+      const destination = new URL(equivalent.href, origin);
+      const target = destination.origin === origin && routes.match(destination.pathname);
+      const previous = languages.get(equivalent.lang.toLowerCase());
+      languages.set(equivalent.lang.toLowerCase(), destination.href);
+      if (!target || target.page.contentLocale !== target.page.context.locale ||
+        target.page.identity.tab !== page.identity.tab || target.page.identity.kind !== page.identity.kind || target.page.identity.document !== page.identity.document ||
+        target.page.context.version.id !== page.context.version.id ||
+        equivalent.lang.toLowerCase() !== (target.page.context.localeConfig.lang ?? target.page.context.locale).toLowerCase() ||
+        previous !== undefined && previous !== destination.href) {
+        warn("hreflang-target", `Language alternate ${equivalent.lang} does not identify one translated equivalent: ${equivalent.href}.`);
+      }
+    }
+    for (const href of sourceLinks(page)) {
+      let destination: URL;
+      try { destination = new URL(href, new URL(route.publicPath, origin)); } catch { continue; }
+      if (destination.origin !== origin || !destination.hash) continue;
+      const target = routes.match(destination.pathname);
+      if (!target) continue; // Host-owned pages and ordinary files are not Sourcey routes.
+      let anchor: string;
+      try { anchor = decodeURIComponent(destination.hash.slice(1)); } catch { continue; }
+      if (anchor && !target.anchors.has(anchor)) warn("broken-fragment", `Link ${JSON.stringify(href)} points to a missing fragment on ${target.publicPath}.`);
+    }
+  }
+  return diagnostics;
+}
+
+function sourceLinks(page: SitePage): string[] {
+  const current = page.currentPage;
+  const view = current.kind === "spec" ? current.view : undefined;
+  const source = current.kind === "markdown" ? current.markdown : current.kind === "changelog" ? current.changelog
+    : current.kind === "spec" ? view?.kind === "operation"
+      ? current.spec.operations.find(operation => operationKey(operation) === view.id) ?? current.spec
+      : view?.kind === "schema" ? current.spec.schemas[view.name] : current.spec
+    : undefined;
+  if (!source) return [];
+  const cached = documentLinks.get(source);
+  if (cached) return cached;
+  const links = new Set<string>();
+  if (current.kind === "markdown") {
+    const parser = new Parser({ onopentag(name, attributes) { if (name === "a" && attributes.href) links.add(attributes.href); } });
+    parser.end(current.markdown.html);
+  } else {
+    const seen = new Set<object>();
+    function visit(value: unknown): void {
+      if (!value || typeof value !== "object" || seen.has(value)) return;
+      seen.add(value);
+      for (const [key, item] of Object.entries(value)) {
+        if ((key === "description" || key === "summary" || key === "text") && typeof item === "string") {
+          rewriteMarkdownDestinations(item, href => { links.add(href); return href; });
+        } else if (typeof item === "object" && !["example", "examples", "enum", "default", "const"].includes(key)) visit(item);
+      }
+    }
+    visit(source);
+  }
+  const result = [...links];
+  documentLinks.set(source, result);
+  return result;
+}
+
+/** Keep large imported references useful to inspect without printing thousands of lines. */
+export function formatSiteDiagnostics(diagnostics: readonly SiteDiagnostic[]): string[] {
+  const groups = new Map<SiteDiagnostic["code"], SiteDiagnostic[]>();
+  for (const diagnostic of diagnostics) {
+    const group = groups.get(diagnostic.code) ?? [];
+    group.push(diagnostic); groups.set(diagnostic.code, group);
+  }
+  return [...groups].map(([code, entries]) => {
+    const pages = [...new Set(entries.flatMap(entry => entry.page ? [entry.page] : []))];
+    return `WARNING ${code}: ${entries[0].message}${pages.length ? ` (${pages.length} page${pages.length === 1 ? "" : "s"}: ${pages.slice(0, 5).join(", ")}${pages.length > 5 ? ", …" : ""})` : ""}`;
+  });
+}

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { generateExports } from "../dist/exports/index.js";
 import { configFromSpec } from "../dist/config.js";
-import { buildSiteConfig, createMinimalSpec } from "../dist/site-assembly.js";
+import { buildSiteConfig } from "../dist/site-assembly.js";
 
 const count = Number(process.argv[2]);
 if (!count) {
@@ -15,19 +15,19 @@ if (!count) {
   });
   console.log(JSON.stringify({ phase: "export projection only; excludes parsing, HTML rendering and disk writes", reports }, null, 2));
 } else {
-  const config = configFromSpec(resolve("test/fixtures/cheese.yml"));
+  const config = await configFromSpec(resolve("test/fixtures/cheese.yml"));
   config.name = "Benchmark";
   config.siteUrl = "https://docs.example.com";
   config.discovery.ard = true;
-  config.tabs = [];
+  config.contexts[0].tabs = [];
   const site = await buildSiteConfig(config);
-  const spec = createMinimalSpec();
+  const context = config.contexts[0];
   const prose = "The cursor comes from the previous response. Keep its value unchanged and stop when the next cursor is absent. ".repeat(10);
   const pages = Array.from({ length: count }, (_, i) => ({
-    outputPath: `guides/page-${i}.html`, tabSlug: "guides", pageSlug: `page-${i}`, spec,
+    outputPath: `guides/page-${i}.html`, tabSlug: "guides", pageSlug: `page-${i}`, context, contentLocale: context.locale, identity: { tab: "guides", kind: "markdown", document: `page-${i}` },
     currentPage: { kind: "markdown", markdown: { kind: "markdown", title: `Guide ${i}`, description: "Read a page of results.", slug: `page-${i}`, html: "", markdown: `# Guide ${i}\n\n${prose}\n\n\`\`\`sh\ncurl \"$API/items?cursor=$CURSOR\"\n\`\`\`\n`, headings: [], sourcePath: `guides/page-${i}.md` } },
   }));
-  const assembled = { pageMap: new Map(pages.map((page) => [page.outputPath, page])), extraFiles: new Map(), publicSpecs: new Map(), specsBySlug: new Map() };
+  const assembled = { pageMap: new Map(pages.map((page) => [page.outputPath, page])), extraFiles: new Map(), publicSpecs: new Map(), references: new Map() };
   const navigation = { tabs: [{ slug: "guides", label: "Guides", groups: [] }] };
   global.gc?.();
   const before = process.memoryUsage();

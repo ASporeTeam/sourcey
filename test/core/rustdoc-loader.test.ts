@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 import type { ResolvedRustdocConfig } from "../../src/config.js";
 import { loadRustdocTab } from "../../src/core/rustdoc-loader.js";
+import { InputReader } from "../../src/core/loader.js";
+import { DEFAULT_CALLOUTS } from "../../src/utils/markdown.js";
+import { messagesFor } from "../../src/core/messages.js";
 
 const FIXTURE_MANIFEST = resolve(import.meta.dirname, "../fixtures/rustdoc/basic/Cargo.toml");
 const FIXTURE_SNAPSHOT = resolve(
@@ -27,6 +32,31 @@ function snapshotConfig(overrides: Partial<ResolvedRustdocConfig> = {}): Resolve
 }
 
 describe("loadRustdocTab snapshot mode", () => {
+  it("renders selected callouts and locale labels from separate cache entries", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "sourcey-rust-callouts-"));
+    try {
+      const snapshot = JSON.parse(await readFile(FIXTURE_SNAPSHOT, "utf8"));
+      const crate = snapshot.crates[0], module = crate.modules[0];
+      const note = "> [!WARNING]\n> Keep this Rust reference detail.\n\n";
+      module.docs_markdown = note + (module.docs_markdown ?? "");
+      const items = Array.isArray(crate.items) ? crate.items : Object.values(crate.items);
+      const item = items.find((value: { id: string }) => value.id === module.id);
+      if (item) item.docs_markdown = note + (item.docs_markdown ?? "");
+      const path = resolve(root, "rustdoc.json");
+      await writeFile(path, JSON.stringify(snapshot));
+      const input = new InputReader(), config = snapshotConfig({ snapshot: path });
+      const original = await loadRustdocTab(config, "rust-api", "Rust API", {}, false, input, DEFAULT_CALLOUTS);
+      const translated = await loadRustdocTab(config, "rust-api", "Rust API", {}, false, input, { icons: "lucide", messages: messagesFor("fr") });
+      const first = [...original.pages.values()].find(page => page.html.includes("Keep this Rust reference detail."))!;
+      const second = translated.pages.get(first.slug)!;
+      expect(first.html).toContain("Warning");
+      expect(second.html).toContain("Avertissement");
+      expect(second.html).toContain('stroke-width="2"');
+      expect(second.markdown).toContain("Keep this Rust reference detail.");
+      expect(first.html).not.toContain("Avertissement");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("returns a navTab, pages, and no error diagnostics", async () => {
     const result = await loadRustdocTab(snapshotConfig(), "rust-api", "Rust API");
     expect(result.navTab.label).toBe("Rust API");

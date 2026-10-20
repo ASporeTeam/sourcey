@@ -11,12 +11,10 @@ import type { GodocSnapshot } from "./core/godoc-types.js";
 import { init } from "./init.js";
 import {
   formatChangelogDiagnostic,
-  formatGodocDiagnostic,
-  formatRustdocDiagnostic,
+  formatBuildDiagnostics,
 } from "./site-assembly.js";
-import type { GodocLoaderDiagnostic } from "./core/godoc-loader.js";
-import type { RustdocLoaderDiagnostic } from "./core/rustdoc-loader.js";
 import { findPlaceholderServerUrls } from "./utils/server-warnings.js";
+import { formatSiteDiagnostics } from "./core/site-diagnostics.js";
 import pkg from "../package.json" with { type: "json" };
 
 const build = defineCommand({
@@ -95,9 +93,7 @@ const build = defineCommand({
         });
 
         if (!args.quiet) {
-          logChangelogDiagnostics(result.changelogDiagnostics);
-          logGodocDiagnostics(result.godocDiagnostics);
-          logRustdocDiagnostics(result.rustdocDiagnostics);
+          for (const diagnostic of [...formatBuildDiagnostics(result), ...formatSiteDiagnostics(result.siteDiagnostics)]) console.warn(`  ${diagnostic}`);
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           console.log(`  Pages:  ${result.pageCount}`);
           console.log(`  Output: ${result.outputDir}`);
@@ -180,6 +176,23 @@ const validate = defineCommand({
       const message = error instanceof Error ? error.message : String(error);
       console.error(`\n  ✗ Invalid: ${message}\n`);
       process.exit(1);
+    }
+  },
+});
+
+const check = defineCommand({
+  meta: { name: "check", description: "Check documentation inputs, routes, reference fragments and output collisions without writing a site" },
+  args: { config: { type: "string", alias: ["c"], description: "Path to sourcey.config.ts or its directory" } },
+  async run({ args }) {
+    try {
+      const { buildSourceySite, sourceyArtifacts } = await import("./site.js");
+      const site = await buildSourceySite({ config: await loadConfig(args.config), generateOgImages: false });
+      const files = await sourceyArtifacts(site);
+      for (const diagnostic of [...formatBuildDiagnostics(site), ...formatSiteDiagnostics(site.siteDiagnostics)]) console.warn(diagnostic);
+      console.log(`Checked ${site.pageCount} pages, ${site.assembly.routes.redirects.size} redirects and ${files.size} output files.`);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
     }
   },
 });
@@ -296,6 +309,36 @@ const godoc = defineCommand({
   },
 });
 
+const migrate = defineCommand({
+  meta: { name: "migrate", description: "Convert a documentation project to native Sourcey files" },
+  args: {
+    framework: { type: "positional", required: true, description: "astro, mkdocs, docusaurus, or mintlify" },
+    root: { type: "positional", required: false, description: "Project root", default: "." },
+    "dry-run": { type: "boolean", default: false, description: "Verify and show changes without applying them" },
+    mapping: { type: "string", required: false, description: "One-time mapping for custom source components or collections" },
+  },
+  async run({ args }) {
+    try {
+      const frameworks = ["astro", "mkdocs", "docusaurus", "mintlify"] as const;
+      const framework = frameworks.find(value => value === args.framework);
+      if (!framework) throw new Error(`Unknown migration source: ${args.framework}`);
+      const { migrateProject, formatDiagnostic } = await import("./migration/index.js");
+      const report = await migrateProject({ framework, root: resolve(args.root), dryRun: args["dry-run"], mapping: args.mapping ? resolve(args.mapping) : undefined });
+      console.log(`${report.applied ? "Applied" : "Prepared"} ${report.changed.length} file changes; ${report.unchanged.length} unchanged.`);
+      for (const change of report.changes) console.log(`  ${change.path}: ${change.reason}`);
+      if (report.dryRun) {
+        const { formatMigrationDiff } = await import("./cli/migration-diff.js");
+        console.log(await formatMigrationDiff(report));
+      }
+      for (const diagnostic of report.diagnostics) console.log(formatDiagnostic(diagnostic));
+      for (const dependency of report.dependencies) console.log(`  ${dependency.name}: ${dependency.detail}`);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  },
+});
+
 const main = defineCommand({
   meta: {
     name: "sourcey",
@@ -305,9 +348,11 @@ const main = defineCommand({
   },
   subCommands: {
     init,
+    migrate,
     build,
     dev,
     validate,
+    check,
     godoc,
   },
 });
@@ -315,20 +360,6 @@ const main = defineCommand({
 function logChangelogDiagnostics(diagnostics: ChangelogDiagnostic[]): void {
   for (const diagnostic of diagnostics) {
     console.log(`  ${formatChangelogDiagnostic(diagnostic)}`);
-  }
-}
-
-function logGodocDiagnostics(diagnostics: GodocLoaderDiagnostic[]): void {
-  for (const diagnostic of diagnostics) {
-    const writer = diagnostic.severity === "error" ? console.error : console.log;
-    writer(`  ${formatGodocDiagnostic(diagnostic)}`);
-  }
-}
-
-function logRustdocDiagnostics(diagnostics: RustdocLoaderDiagnostic[]): void {
-  for (const diagnostic of diagnostics) {
-    const writer = diagnostic.severity === "error" ? console.error : console.log;
-    writer(`  ${formatRustdocDiagnostic(diagnostic)}`);
   }
 }
 

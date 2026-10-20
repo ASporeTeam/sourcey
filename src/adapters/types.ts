@@ -1,4 +1,5 @@
 import type { MarkdownPreprocessor } from "../core/markdown-loader.js";
+import type { UnmatchedTargetPolicy } from "../core/types.js";
 import type {
   DoxygenConfig,
   GodocConfig,
@@ -10,7 +11,15 @@ import type {
   RustdocConfig,
 } from "../config.js";
 
+export interface SourceLocaleContext {
+  locale: string;
+  defaultLocale: string;
+  content: string;
+  defaultContent: string;
+  fallback: boolean;
+}
 export interface SourceAdapterContext {
+  locale?: SourceLocaleContext;
   configDir: string;
   tabName: string;
   tabSlug: string;
@@ -34,6 +43,8 @@ export interface ResolvedSourceAsset {
 export interface ResolvedOpenApiSource {
   kind: "openapi";
   spec: string;
+  overlays?: string[];
+  overlayUnmatched?: UnmatchedTargetPolicy;
   watchPaths?: string[];
 }
 
@@ -45,6 +56,7 @@ export interface ResolvedMcpSource {
 
 export interface ResolvedMarkdownSource {
   kind: "markdown";
+  slugs: "normalized" | "file";
   adapter?: string;
   configPath?: string;
   groups: ResolvedGroup[];
@@ -79,19 +91,21 @@ export type ResolvedTabSource =
   | ResolvedRustdocSource;
 
 export interface MarkdownSourceOptions {
+  root?: string;
+  slugs?: "normalized" | "file";
   groups: GroupConfig[];
 }
 
 export interface OpenApiSourceOptions {
   spec: string;
+  /** Ordered OpenAPI Overlay 1.0 JSON/YAML inputs, applied before dereferencing. */
+  overlays?: string[];
+  /** Drift check, separate from the standard's valid zero-match no-op. Default: error. */
+  overlayUnmatched?: UnmatchedTargetPolicy;
 }
 
 export interface McpSourceOptions {
   spec: string;
-}
-
-export interface MkDocsSourceOptions {
-  config: string;
 }
 
 export type DoxygenSourceOptions = DoxygenConfig;

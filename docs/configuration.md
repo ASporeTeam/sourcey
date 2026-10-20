@@ -16,10 +16,10 @@ discovery: { ard: true, apiCatalog: true },
 
 Discovery requires `siteUrl`. A build mounted beneath another website emits scoped manifests; `wellKnown: true` is reserved for a build that owns the origin root. [Full configuration and deployment guide](machine-readable.md).
 
-Sourcey reads `sourcey.config.ts` from your project and keeps the structure explicit. Each tab has one `source`, usually created with `markdown()`, `mkdocs()`, `openapi()`, `mcp()`, `doxygen()`, `godoc()`, or `rustdoc()`.
+Sourcey reads `sourcey.config.ts` from your project and keeps the structure explicit. Each tab has one `source`, usually created with `markdown()`, `openapi()`, `mcp()`, `doxygen()`, `godoc()`, or `rustdoc()`.
 
 ```ts
-import { defineConfig, doxygen, godoc, markdown, mcp, mkdocs, openapi, rustdoc } from "sourcey";
+import { defineConfig, doxygen, godoc, markdown, mcp, openapi, rustdoc } from "sourcey";
 
 export default defineConfig({
   name: "My API",
@@ -36,10 +36,6 @@ export default defineConfig({
             },
           ],
         }),
-      },
-      {
-        tab: "MkDocs",
-        source: mkdocs("./mkdocs.yml"),
       },
       {
         tab: "API Reference",
@@ -109,9 +105,41 @@ after the matched prefix, `{fullPath}` expands to the original Doxygen path,
 and `{line}` expands to the source line. A route without `url` suppresses the
 public link while generated pages still show `Defined in path:line`.
 
+## Logo and favicon
+
+```ts
+logo: { light: "./brand/light.svg", dark: "./brand/dark.svg" },
+favicon: "./brand/favicon.svg",
+```
+
+Local images are published once as content-addressed files shared across pages. Browsers can cache them while readers move through the site; the HTML contains their URLs. Editing an image updates its URL and live preview automatically. The same frozen bytes feed generated social images. HTTP URLs and explicitly authored data URLs remain supported.
+
+The logo is taken as a full wordmark, so the site's `name` is not repeated beside it. For a mark without the name, set `logo: { light: "./brand/mark.svg", mark: true }` and the name shows beside it in every theme.
+
+## Footer
+
+```ts
+footer: {
+  text: "© Example Ltd. Licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).",
+  links: [{ type: "github", href: "https://github.com/example/docs" }],
+},
+```
+
+`footer.text` is one line of inline Markdown at the foot of every page, such as a copyright or licence notice; the reader theme shows it in place of the site name unless `reader.footer.text` is set. `footer.links` take the same form as `navbar.links`: a network's icon, or a text link with its `label`.
+
+## Typography
+
+```ts
+markdown: { smartypants: true },
+```
+
+`markdown.smartypants` sets prose with typographer's punctuation: straight quotes become curly (`"quoted"` reads “quoted”, `it's` reads it’s), `--` becomes an em dash and `...` an ellipsis. It applies to guide pages and to the Markdown in references, such as descriptions. Code, preformatted text, page titles and navigation labels keep every character as written, as do the Markdown and agent exports, and heading anchors do not change. It is off by default; `sourcey migrate astro` turns it on, because Astro sets Markdown this way unless its `markdown.smartypants` is false.
+
 ## Themes
 
 Sourcey ships `default`, `minimal`, `api-first`, and `reader` themes. Select the complete renderer with `theme.name`; shared theme settings let you set brand colours, fonts, layout, and extra CSS without giving up a deterministic static build. The deprecated `theme.preset` key remains accepted through the 3.x line for compatibility.
+
+Use `theme.fonts: { sans: "system", mono: "system" }` for the reader's platform fonts with no font download. A named `sans` or `mono` family loads from Google Fonts, one stylesheet each, at the weights the theme uses (a family without one of them shows its nearest); `google: false` lets your own stylesheet supply them.
 
 ### API first
 
@@ -152,7 +180,6 @@ export default defineConfig({
     fonts: { sans: "Your Local Font", google: false },
     css: ["./fonts.css", "./brand.css"],
     reader: {
-      logoMark: true,
       document: {
         label: "Protocol",
         title: "Interaction specification",
@@ -197,15 +224,34 @@ export default defineConfig({
 });
 ```
 
-All `reader` settings are optional. `logoMark` displays the configured site name next to a mark-only logo; leave it off for a full wordmark. `document.updated` is authored publication metadata, never the build date. `sidebar.links`, `sidebar.note`, `aside.links`, and `footer.links` are host-authored arrays; the theme does not supply project content for those areas. `pagination.before` and `pagination.after` provide destinations at the beginning and end of a chapter sequence. Omit `searchHref` to use Sourcey's built-in search. The reader footer includes Sourcey's standard “Docs by Sourcey” attribution. Without JavaScript, ordinary chapter and site links remain available.
+All `reader` settings are optional. A mark-only logo is `logo.mark` (the earlier `reader.logoMark` is accepted through the 3.x line). `document.updated` is authored publication metadata, never the build date. `sidebar.links`, `sidebar.note`, `aside.links`, and `footer.links` are host-authored arrays; the theme does not supply project content for those areas. `pagination.before` and `pagination.after` provide destinations at the beginning and end of a chapter sequence. Omit `searchHref` to use Sourcey's built-in search. The reader footer includes Sourcey's standard “Docs by Sourcey” attribution. Without JavaScript, ordinary chapter and site links remain available.
 
 Set `navTitle` in Markdown frontmatter when the sidebar needs a shorter label than the article title. This works with every theme. Use `index.md` for the landing page and `prettyUrls: "slash"` for directory URLs.
 
-With `fonts.google: false`, define your own `@font-face` in the configured CSS and serve the font files with your host. Reader layout widths use `theme.layout.sidebar`, `toc`, and `content`; brand CSS can adjust `--ink`, `--paper`, `--lime`, `--blue`, `--blue-ink`, and `--font`. Reader brand CSS loads after theme styles. Existing themes retain their styling and cascade.
+With `fonts.google: false`, define your own `@font-face` in the configured CSS. A relative `url()` there (a font file, an image) resolves from the stylesheet's folder; Sourcey publishes the file beside the site's other media and rewrites the reference, and a missing file fails the build. Remote and `data:` URLs stay as written. Reader layout widths use `theme.layout.sidebar`, `toc`, and `content`; brand CSS can adjust `--ink`, `--paper`, `--lime`, `--blue`, `--blue-ink`, and `--font`. Reader brand CSS loads after theme styles. Existing themes retain their styling and cascade.
 
 The CLI, development server and `sourcey/astro` select assets through the same built-in theme registry. Theme layouts share Sourcey's Markdown, navigation, content widgets, search index and URL logic. Reader's own browser entry supplies its navigation and copy controls; it does not load the default theme's dark-mode or drawer behaviour.
 
-For Astro, mount the same config using `sourcey/astro`; no separate docs prebuild or committed `public/docs` directory is needed. Cloudflare adapter builds write the generated documentation into Astro's client assets directory, including the Astro base prefix. The no-slash alias preserves that prefix in its CSS, JavaScript, search and chapter URLs. With `prettyUrls: "strip"`, every page links the landing page by its public path, such as `/docs`, without a trailing slash. Set `landingPage: false` when an Astro page owns the mount root: Sourcey then writes every page beneath it and serves nothing at the root itself.
+For Astro, mount the same config using `sourcey/astro`; no separate docs prebuild or committed `public/docs` directory is needed. Sourcey registers its compiled pages and assets before Astro packages the site, then checks the emitted files. Host pages keep their routes. With `prettyUrls: "strip"`, every page links the landing page by its public path, such as `/docs`, without a trailing slash. Set `landingPage: false` when an Astro page owns the mount root: Sourcey omits the automatic root copy. An authored index is still a real route, so give it a different slug if the host owns that address.
+
+### Icons
+
+Card and inline icons (`<Card icon="...">`, `<Icon icon="..." />`), callouts and the built-in language and contents icons come from one outline set. [Heroicons](https://heroicons.com) is the default. Set `theme.icons: "lucide"` to draw them from [Lucide](https://lucide.dev) instead, and install its `lucide-static` package beside Sourcey:
+
+```ts
+export default defineConfig({
+  theme: { icons: "lucide" },
+  // ...
+});
+```
+
+Icons are named as the set names them (`key` in Heroicons, `key-round` in Lucide) and are written into the page as inline SVG at build time; no icon library or extra request reaches the browser. A name the set lacks stops the build at the component that uses it. A card or inline icon can instead be an image, by path (`./icons/go.svg`) or URL, which keeps its own colours, or a brand mark: `brand:aws` draws [Font Awesome Free](https://fontawesome.com)'s mark in the text colour, from its `@fortawesome/fontawesome-free` package installed beside Sourcey. Font Awesome's icons are licensed CC BY 4.0, so each brand mark carries Font Awesome's attribution notice in its `data-sourcey-attribution` attribute; the marks stay their owners' trademarks. Brand marks on navbar and footer links (`github`, `discord`, `discourse`, ...) are separate and do not change with `theme.icons`.
+
+## Interactive requests
+
+OpenAPI references include an inline request console by default. Set `tryIt: false` to disable it site-wide or on one tab. Use `tryIt: { credentials: "include" }` on a tab that needs browser-managed sessions across origins. The default is `same-origin`; `omit` disables session credentials.
+
+See [Try it](./try-it.md) for authentication, local drafts, browser requirements, and global CSS overrides.
 
 ## Code Samples
 
@@ -241,3 +287,152 @@ sourcey dev
 ```
 
 `build` produces the static site. `dev` runs the Vite-backed preview server with config and content reloads.
+
+The engine's stylesheet and scripts are published under `_assets/<hash>/`, named by their content, so a host can cache them for good: a new release or theme publishes new names. The stylesheet, component and theme styles included, is minified as one file.
+
+`build` and `check` report what publishing needs: a `siteUrl` for canonical, language and sitemap URLs; pages with no summary of their own, or a one-word one (their metadata falls back to the title); canonical or language links to no published page; and links to a fragment the target page does not have. Each kind is reported once, with the pages it affects. With a `siteUrl`, every page carries its place in the navigation as schema.org `BreadcrumbList` data, and its description is plain text drawn from its own summary.
+
+Search loads when a reader first searches. A large index is split: the first search downloads the list of documents and the shards of the index its words can match, and later searches fetch only the shards they need.
+
+Before anything is typed, search shows where each part of the site starts, under each tab's name: the pages `search.featured` names (`featured: ["quickstart"]`), then each tab's sections in turn, their first pages, or a reference's overview and the first operation of each tag, five to a tab.
+
+## Documentation releases and languages
+
+[Versions](versions.md) declares current and historical content roots, independent API releases and their URLs. [Languages](languages.md) covers existing translations, fallback pages, direction and UI messages. These settings use the same native sources and navigation as a single-language site.
+
+## Public files
+
+Set `publicDir: "./public"` to copy an explicitly public directory to the output root with its paths intact. A file at `public/files/manual.pdf` is served at `/files/manual.pdf`, or beneath the configured `baseUrl`. Public files participate in development updates and output collision checks. A public file cannot replace a generated page or asset.
+
+For Markdown-relative images and downloads, Sourcey publishes the referenced bytes automatically. Use `publicDir` for paths that must stay fixed. Keep source code, credentials and private inputs outside that directory. In an Astro project, Astro continues to own its own `public/`; do not configure both tools to publish the same files.
+
+## Site pages
+
+Set `pages: "./pages"` for the site's own pages, outside the documentation: a home page, a product or pricing page, a page of your own design. Each publishes at the address its path names, `pages/index.md` at the site root and `pages/pricing.md` at `/pricing/`. A site page belongs to no tab and no version, so no section is current on it and no sidebar lists it. Names starting with `_` or `.` are partials, not pages.
+
+Site pages are written in the same Markdown, with the same components, as documentation. They take frontmatter `title` and `description`, are searched and exported like any page, and link operations by name. In a translated site each language keeps its own under its content folder (`pages/fr/` beside `pages/`), and with fallback on the default language's page stands in for one a language lacks.
+
+## Page layouts
+
+A page's frontmatter `layout` says how it is drawn:
+
+| `layout` | Drawn with |
+| --- | --- |
+| `doc` | The documentation frame: header, sidebar, contents and footer. The default for documentation. |
+| `page` | The site's header and footer around the page's own body, full width, with no sidebar or contents. The default for site pages. |
+| `blank` | Nothing but the page's body. Sourcey keeps the page's `<head>`: its title, description, social card, theme colours and fonts. |
+| `changelog` | A changelog, as for `CHANGELOG.md`. |
+
+A `page` or `blank` page draws its own heading and opening; Sourcey adds no title above them. Prose keeps the theme's typography; wrap a block in `<div class="not-prose">` to style it yourself. A page can bring its own stylesheets with frontmatter `css: ./home.css` (or a list), resolved from the page's folder: Sourcey publishes each once, with its relative fonts and images, and links it from that page alone.
+
+```md
+---
+title: Pets for everyone
+description: Adopt, foster and care for a pet.
+layout: blank
+css: ./home.css
+---
+
+<section class="hero">
+  <h1>Pets for everyone</h1>
+</section>
+```
+
+## Root and missing pages
+
+A page that publishes at the site root, `pages/index.md` or a documentation page at `/`, is the home page, and the logo leads there. When nothing publishes there, a standalone build redirects the root to the first section's first page.
+
+Sourcey generates `404.html` for standalone output; `pages/404.md` replaces it with a page of your own. A not-found page names its assets and links from the site root, because the host serves it at any address. Configure your static host to use that file with an HTTP 404 status. An HTML file alone cannot set a response status. Use `notFound: false` when the host already owns its missing-page route.
+
+## Redirects
+
+Use absolute public paths, including your `baseUrl`:
+
+```ts
+redirects: {
+  "/docs/old-guide": "/docs/installation/",
+  "/docs/preview": { to: "/docs/installation/", status: 302 },
+}
+```
+
+A string declares permanent 301 intent. Explicit statuses can be 301, 302, 303, 307 or 308. Local destinations must exist; fragment targets, cycles and collisions with content are checked during compilation. Wildcard and query-matching rules are not supported.
+
+Standalone builds emit HTML fallback pages and a `_redirects` file for hosts that support that format. An authored public `_redirects` file cannot also own those rules. Static HTML does not issue an HTTP redirect status. Its replacement script keeps an incoming query and fragment unless the destination supplies its own; without JavaScript, the meta refresh and link use the exact configured destination. Dev issues the declared status and retains the incoming query when the destination has none. Astro registers the same records with its host router; the adapter and hosting platform determine production HTTP handling.
+
+`sourcey check` compiles the same inputs and checks routes, imported reference fragments and output collisions without writing a site. Normal builds perform those checks too.
+
+## Reference pages
+
+An OpenAPI or MCP reference is one page by default. `reference: { split: "operations" }` publishes a page for each operation and model, beside an overview that lists them. Both use the same reference components, examples and schema links. OpenAPI operations keep their request console. On a split reference's overview, each operation and model keeps the anchor its section has on the single page, so a link from before the split lands on its entry. Each theme frames those pages as it frames a guide: the section listing the operation over its title, previous and next in navigation order, and an overview at reading width with "On this page".
+
+Schema alternatives use a native picker, labelled from their titles, reference names or discriminator values. Without JavaScript every alternative remains available. A field link opens the matching alternative and its parent disclosures; readable Markdown retains all alternatives. Typed map values use the same field rows as named properties, including descriptions, constraints and nested values.
+
+Set `reference.operations` to give every operation a permanent address. `{operation}` uses the authored operation ID, or the path when no ID exists. `{operationId}` requires an ID; `{method}` and `{path}` are also available. Values use the native heading slug rules. A split reference publishes each operation's page there; a single page redirects the address to the operation's section, so the reference can split or join without breaking a link. Explicit tab `routes` for operations and models work the same way and win over the pattern. Duplicate physical paths fail the build.
+
+Link an operation from any page by name, as navigation names it: `[List keys](<operation:GET /keys>)`, or `operation:TOOL search` for an MCP tool. The link lands wherever the operation is published, on its page or its section, and follows a split. When two references publish the same operation, name the reference's tab ID: `operation:rest:GET /keys`. A link to an operation no reference publishes fails the build. Cards take the same `href`.
+
+A converter can retain previous fragment spellings with `anchors: { "POST /items": { "old-body": "request-body" } }`. Each alias must target a real section or field on that document. It is placed beside that content, so an old link reaches the field, including inside a disclosure. Field identities follow the owning operation or schema, property path, media type and response status; they stay distinct across repeated names and remain stable between reference layouts. Converters write the original spellings as data, and Sourcey checks their destinations during compilation.
+
+Missing alias destinations fail the build by default. Set `anchorUnmatched: "warn"` on the tab for imported link history that follows a changing spec: Sourcey reports removed documents or fields and omits only their stale aliases. `"ignore"` omits them silently. Invalid alias spellings and collisions remain errors under every policy. The public build result exposes warnings as `anchorDiagnostics`.
+
+Large generated navigation, route and anchor tables can live in JSON files imported by the config. Use a default import (`import anchors from "./api.anchors.json"`); Sourcey loads the file as data and tracks it for live reload. This avoids compiling a large table into thousands of JavaScript exports.
+
+### Choose the reference order
+
+Generated navigation has a group per tag, in the spec's order, labelled by the tag's `summary` or name. A tag with a `parent` (OpenAPI 3.2) sits inside its parent's group, after the parent's own operations; an overlay can add that hierarchy to an older spec. A tag with nothing to list beneath it is left out.
+
+Give a tab its own navigation tree when the generated groups do not match how people use the API:
+
+```ts
+{
+  id: "rest",
+  tab: "API Reference",
+  source: openapi("./openapi.json"),
+  reference: { split: "operations" },
+  routes: { "GET /keys": "keys/list" },
+  navigation: [
+    { group: "Start here", pages: [{ page: "introduction" }] },
+    {
+      group: "Keys",
+      pages: [{ operation: "POST /keys" }, { operation: "GET /keys" }],
+    },
+  ],
+},
+```
+
+Operation entries use `METHOD /path`, exactly as the spec defines it. Their labels come from the effective spec's `summary`; `label` overrides the navigation text. Sourcey resolves each entry to its operation page, or its section on a single page. Missing and unpublished targets fail the build.
+
+Markdown groups can also link to a reference owned by another tab with `{ operation: "GET /keys", reference: "rest" }`. Use a stable tab `id` for `reference`. A page in another source uses `{ page: "installation", tab: "guides" }`; the page can be named by its source reference or stable document ID. Cross-source links select the matching language and content version. Readers follow the canonical document in its owning tab.
+
+The source controls which operations are published. Navigation controls their order and grouping. An operation can appear in several groups while keeping one URL. Large trees get section pages so every entry remains reachable. Navigation data can live in a separate TypeScript file, typed with `GroupConfig[]`, and be imported by the config.
+
+## OpenAPI overlays
+
+Keep editorial titles and explanations in a separate file when your OpenAPI spec is generated from code:
+
+```ts
+source: openapi({
+  spec: "./openapi.json",
+  overlays: ["./reference.overlay.yaml"],
+}),
+```
+
+```yaml
+overlay: 1.0.0
+info:
+  title: Reference copy
+  version: "initial"
+actions:
+  - target: $.paths['/keys'].get
+    update:
+      summary: List your keys
+      description: Returns the keys you can access in this workspace.
+  - target: $.paths['/internal/diagnostics']
+    remove: true
+```
+
+Sourcey applies the files in order before resolving `$ref`s. The resulting spec supplies the reference, search, readable documents, exported OpenAPI and request console. The original input files stay untouched. Local paths are relative to `sourcey.config.ts`; spec and overlay inputs can also be URLs. Relative `$ref`s keep the original spec as their base.
+
+The supported standard is [OpenAPI Overlay 1.0](https://spec.openapis.org/overlay/v1.0.0.html), with [RFC 9535 JSONPath](https://www.rfc-editor.org/rfc/rfc9535.html). Target the containing object to replace a string such as `description`. In this version, an array target appends one entry; an object update can replace an array-valued property. Unsupported Overlay feature sets fail with a version error.
+
+An action that matches nothing fails Sourcey's drift check by default. For an intentionally optional action, set `overlayUnmatched: "warn"` or `"ignore"` on the source. The underlying standard treats an empty match as a successful no-op. Local overlay edits participate in development reloads, including when the spec itself is remote.

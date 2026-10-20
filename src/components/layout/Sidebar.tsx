@@ -1,10 +1,13 @@
 import { useContext } from "preact/hooks";
 import { NavigationContext, OptionsContext, PageContext, SiteContext } from "../../renderer/context.js";
 import { changelogNavigation } from "../changelog/navigation.js";
-import { SocialIcon, socialLabels } from "../ui/SocialIcon.js";
-import { Logo } from "../ui/Logo.js";
-import type { SiteNavGroup } from "../../core/navigation.js";
+import { SocialIcon, linkLabel } from "../ui/SocialIcon.js";
+import { PrimaryAction } from "../ui/PrimaryAction.js";
+import { Logo, logoHref } from "../ui/Logo.js";
+import { isNavGroup, walkNavItems, type SiteNavGroup } from "../../core/navigation.js";
 import { joinHref } from "../../site-url.js";
+import { linkTarget } from "../../utils/html.js";
+import { ContextNotice } from "./ContextControls.js";
 
 /**
  * Colored method indicator for API sidebar items.
@@ -49,48 +52,68 @@ function MethodPill({ method }: { method: string }) {
 
 /**
  * Shared nav group rendering used by both desktop sidebar and mobile drawer.
+ * A group heads its list; one with a link of its own and no pages here (an
+ * API tag whose operations are on another page) is a destination and reads as
+ * a link, with any sections beneath it nested. Rows keep the list's rhythm;
+ * only a headed list is set apart.
  */
 function NavGroups({ groups, activePageSlug, base }: {
   groups: SiteNavGroup[];
   activePageSlug: string | null;
   base: string;
 }) {
-  return (
-    <>
-      {groups.map((group, gi) => (
-        <div key={group.label} class={gi > 0 ? "mt-6 lg:mt-8" : ""}>
-          {group.label && (group.href ? (
-            <a
-              href={joinHref(base, group.href)}
-              class={`nav-group-label nav-group-link${group.id === activePageSlug ? " active" : ""}`}
-            >
-              {group.label}
-            </a>
-          ) : (
-            <h5 class="nav-group-label">{group.label}</h5>
-          ))}
-          <ul class="space-y-px">
-            {group.items.map((item) => {
-              const isActive = item.id === activePageSlug;
-              return (
-                <li key={item.id}>
-                  <a
-                    href={joinHref(base, item.href)}
-                    class={`nav-link${isActive ? " active" : ""}`}
-                    aria-current={isActive ? (item.href.includes("#") ? "location" : "page") : undefined}
-                  >
-                    {item.method && <MethodPill method={item.method} />}
-                    <span class="flex-1 break-words [word-break:break-word]">{item.label}</span>
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
-    </>
-  );
+  const shown = groups.filter(leadsAnywhere);
+  return <>{shown.map((group, index) => (
+    <div key={group.id ?? group.label} class={index === 0 ? undefined : flows(group) && flows(shown[index - 1]) ? "mt-px" : "mt-6 lg:mt-8"}>
+      <NavGroup group={group} activePageSlug={activePageSlug} base={base} />
+    </div>
+  ))}</>;
 }
+
+function NavGroup({ group, activePageSlug, base }: {
+  group: SiteNavGroup;
+  activePageSlug: string | null;
+  base: string;
+}) {
+  const current = group.id === activePageSlug || group.page === activePageSlug;
+  if (isDestination(group)) {
+    const sections = group.items.filter(isNavGroup).filter(leadsAnywhere);
+    return <>
+      <a href={joinHref(base, group.href)} class={`nav-link${current ? " active" : ""}`} aria-current={current ? "location" : undefined}>
+        <span class="flex-1 break-words [word-break:break-word]">{group.label}</span>
+      </a>
+      {sections.length > 0 && <ul class="pl-3 mt-px space-y-px">{sections.map(section => (
+        <li key={section.id ?? section.label}><NavGroup group={section} activePageSlug={activePageSlug} base={base} /></li>
+      ))}</ul>}
+    </>;
+  }
+  const label = group.href
+    ? <a href={joinHref(base, group.href)} class={`nav-group-label nav-group-link${current ? " active" : ""}`}>{group.label}</a>
+    : <span class="nav-group-label">{group.label}</span>;
+  // A row sits on its siblings' edge and what opens beneath it moves one step in; a heading
+  // within a list is set in, above the links it heads.
+  const collapsible = isCollapsible(group);
+  const contents = <ul class={collapsible ? "pl-3 space-y-px" : "space-y-px"}>{group.items.map(item => isNavGroup(item)
+    ? leadsAnywhere(item) && <li key={item.id ?? item.label} class={isRow(item) ? undefined : "pl-3 pt-3"}><NavGroup group={item} activePageSlug={activePageSlug} base={base} /></li>
+    : <li key={item.id}><a href={joinHref(base, item.href)} class={`nav-link${item.id === activePageSlug ? " active" : ""}`}
+        aria-current={item.id === activePageSlug ? (item.href.includes("#") ? "location" : "page") : undefined}>
+        {item.method && <MethodPill method={item.method} />}<span class="flex-1 break-words [word-break:break-word]">{item.label}</span>
+      </a></li>)}</ul>;
+  const active = current || [...walkNavItems([group])].some(item => item.id === activePageSlug);
+  return collapsible
+    ? <details open={active || !group.collapsed} class="sourcey-nav-group"><summary>{label}</summary>{contents}</details>
+    : <>{group.label && label}{contents}</>;
+}
+
+const hasPages = (group: SiteNavGroup) => !walkNavItems([group]).next().done;
+/** A group with a link of its own, or anything beneath it to follow. */
+const leadsAnywhere = (group: SiteNavGroup): boolean => !!group.href || hasPages(group) || group.items.some(item => isNavGroup(item) && leadsAnywhere(item));
+const isDestination = (group: SiteNavGroup): group is SiteNavGroup & { href: string } => !!group.href && !hasPages(group);
+const isCollapsible = (group: SiteNavGroup) => group.collapsed !== undefined && hasPages(group);
+/** A group drawn as one row of the list: a destination, or a section that opens in place. */
+const isRow = (group: SiteNavGroup) => isDestination(group) || isCollapsible(group);
+/** Rows and unheaded links read as one list; only a headed list is set apart. */
+const flows = (group: SiteNavGroup) => isRow(group) || !group.label;
 
 /**
  * Chevron icon for the group dropdown trigger.
@@ -106,13 +129,14 @@ function DropdownChevron() {
 /**
  * Desktop sidebar (hidden on mobile) + mobile drawer (dialog element).
  */
-export function Sidebar() {
+export function Sidebar({ mobileOnly = false }: { mobileOnly?: boolean }) {
   const nav = useContext(NavigationContext);
   const options = useContext(OptionsContext);
   const site = useContext(SiteContext);
   const page = useContext(PageContext);
   const activeTab = nav.tabs.find((t) => t.slug === nav.activeTabSlug);
-  if (!activeTab) return null;
+  // A page outside the documentation has no sidebar; its drawer lists the sections.
+  if (!activeTab && !mobileOnly) return null;
 
   const base = options.assetBase;
   // The full-width theme pins the sidebar to the window's left edge.
@@ -120,48 +144,24 @@ export function Sidebar() {
   const { links } = site.navbar;
   const primaryAction = site.navbar.primary;
   const releases = changelogNavigation(page, nav);
-  const groups = releases?.groups ?? activeTab.groups;
+  const groups = releases?.groups ?? activeTab?.groups ?? [];
   const activePageSlug = releases?.activeId ?? nav.activePageSlug;
-  const logoHref = site.logo?.href ?? joinHref(base, nav.tabs[0]?.href ?? "");
+  const home = logoHref(site, nav, base);
 
   return (
     <>
-      {/* Desktop sidebar — fixed, shows active tab only */}
-      <div
-        id="sidebar"
-        class={`z-20 hidden lg:block fixed bottom-0 right-auto ${
-          wide
-            ? "left-0 w-[var(--sidebar-width)] border-r border-[rgb(var(--color-gray-200))] dark:border-[rgb(var(--color-gray-800))]"
-            : "w-[18rem]"
-        }`}
-        style="top: var(--header-height)"
-      >
-        <div
-          class={`absolute inset-0 z-10 overflow-auto ${wide ? "pl-3 pr-4" : "pr-8"} pb-10`}
-          data-sourcey-sidebar-scroll
-          data-sourcey-sidebar-tab={nav.activeTabSlug || "default"}
-        >
-          <div class="relative text-sm leading-6">
-            <div class="sticky top-0 h-8 z-10 bg-gradient-to-b from-[rgb(var(--color-background-light))] dark:from-[rgb(var(--color-background-dark))]" />
-            <nav id="nav" role="navigation">
-              <NavGroups groups={groups} activePageSlug={activePageSlug} base={base} />
-            </nav>
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile drawer */}
-      <dialog id="mobile-nav" class="mobile-nav-dialog">
+      <div id="sidebar" class={`sourcey-nav-host${wide ? " sourcey-nav-wide" : ""}${mobileOnly ? " sourcey-nav-mobile-only" : ""}`}>
+      <dialog id="mobile-nav" class="mobile-nav-dialog sourcey-responsive-nav">
         {/* Drawer header: logo (hidden when no logo configured) */}
         {site.logo?.light && (
-          <div class="px-4 py-4 border-b border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-800)/0.5)] shrink-0">
-            <Logo href={logoHref} logo={site.logo} height="h-6" />
+          <div class="lg:hidden px-4 py-4 border-b border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-800)/0.5)] shrink-0">
+            <Logo href={home} logo={site.logo} name={site.name} height="h-6" />
           </div>
         )}
 
         {/* Tab dropdown — only when multiple tabs */}
-        {nav.tabs.length > 1 && (
-          <div class="pt-5 px-4 shrink-0">
+        {activeTab && nav.tabs.length > 1 && (
+          <div class="lg:hidden pt-5 px-4 shrink-0">
             <div class="drawer-dropdown">
               <button
                 id="drawer-group-toggle"
@@ -189,37 +189,41 @@ export function Sidebar() {
         )}
 
         {/* Sidebar content for the active tab */}
-        <nav class="pt-5 pb-3 px-4 flex-1 overflow-y-auto">
-          <NavGroups groups={groups} activePageSlug={activePageSlug} base={base} />
-        </nav>
+        <div class="sourcey-nav-context"><ContextNotice /></div>
+        {activeTab ? (
+          <nav id="nav" class="sourcey-nav-scroll pt-5 pb-3 px-4 flex-1 overflow-y-auto" data-sourcey-sidebar-scroll data-sourcey-sidebar-tab={nav.activeTabSlug || "default"}>
+            <NavGroups groups={groups} activePageSlug={activePageSlug} base={base} />
+          </nav>
+        ) : (
+          <nav class="sourcey-nav-scroll pt-5 pb-3 px-4 flex-1 overflow-y-auto" aria-label="Documentation sections">
+            <ul class="space-y-px">{nav.tabs.map(tab => (
+              <li key={tab.slug}><a href={joinHref(base, tab.href)} class="nav-link"><span class="flex-1 break-words [word-break:break-word]">{tab.label}</span></a></li>
+            ))}</ul>
+          </nav>
+        )}
 
         {/* Navbar links + CTA */}
         {(links.length > 0 || primaryAction) && (
-          <div class="px-4 py-3 border-t border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-800)/0.5)] shrink-0">
-            <ul class="space-y-3">
-              {links.map((link) => {
-                const label = link.label ?? socialLabels[link.type] ?? link.href;
-                return (
-                  <li key={link.href}>
-                    <a href={link.href} target="_blank" rel="noopener" class="flex items-center gap-2.5 text-[rgb(var(--color-gray-600))] hover:text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-400))] dark:hover:text-[rgb(var(--color-gray-200))]">
-                      {link.type !== "link" && <SocialIcon type={link.type} />}
-                      <span>{label}</span>
-                    </a>
-                  </li>
-                );
-              })}
-              {primaryAction && (
-                <li>
-                  <a href={primaryAction.href} target="_blank" class="group relative flex items-center justify-center px-4 py-2 text-sm font-medium">
-                    <span class="absolute inset-0 bg-[rgb(var(--color-primary-dark))] rounded-lg group-hover:opacity-90" />
-                    <span class="z-10 text-white">{primaryAction.label}</span>
+          <div class="lg:hidden px-4 py-3 border-t border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-800)/0.5)] shrink-0">
+            <ul>
+              {links.map((link) => (
+                <li key={link.href}>
+                  <a href={link.href} {...linkTarget(link.href, site.siteUrl)} class="flex items-center gap-2.5 min-h-11 text-[rgb(var(--color-gray-600))] hover:text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-400))] dark:hover:text-[rgb(var(--color-gray-200))]">
+                    <SocialIcon type={link.type} />
+                    <span>{linkLabel(link)}</span>
                   </a>
+                </li>
+              ))}
+              {primaryAction && (
+                <li class="pt-2">
+                  <PrimaryAction {...primaryAction} block />
                 </li>
               )}
             </ul>
           </div>
         )}
       </dialog>
+      </div>
     </>
   );
 }

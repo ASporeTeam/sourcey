@@ -1,4 +1,5 @@
 import type { NormalizedSchema } from "../core/types.js";
+import { omittedField, type SchemaUsage } from "../core/schema.js";
 
 /**
  * Generate an example value from a JSON Schema definition.
@@ -8,9 +9,13 @@ import type { NormalizedSchema } from "../core/types.js";
  * - Uses default values and first enum value
  * - Returns "[circular]" instead of raw $ref string on cycles
  * - Cycle detection via Set<string> instead of array linear scan
+ *
+ * A request example leaves out read-only properties and a response example
+ * write-only ones, as OpenAPI defines them; with no usage, both stay.
  */
 export function generateExample(
   schema: NormalizedSchema,
+  usage?: SchemaUsage,
   seen: Set<string> = new Set(),
 ): unknown {
   // Cycle detection using schema name
@@ -22,6 +27,7 @@ export function generateExample(
 
   // Use explicit example first
   if (schema.example !== undefined) return schema.example;
+  if (schema.examples?.length) return schema.examples[0];
 
   // Use default value
   if (schema.default !== undefined) return schema.default;
@@ -34,22 +40,22 @@ export function generateExample(
 
   // Handle composition — pick first option
   if (schema.allOf?.length) {
-    return mergeAllOfExamples(schema.allOf, seen);
+    return mergeAllOfExamples(schema.allOf, usage, seen);
   }
   if (schema.oneOf?.length) {
-    return generateExample(schema.oneOf[0], seen);
+    return generateExample(schema.oneOf[0], usage, seen);
   }
   if (schema.anyOf?.length) {
-    return generateExample(schema.anyOf[0], seen);
+    return generateExample(schema.anyOf[0], usage, seen);
   }
 
   const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
 
   switch (type) {
     case "object":
-      return generateObjectExample(schema, seen);
+      return generateObjectExample(schema, usage, seen);
     case "array":
-      return generateArrayExample(schema, seen);
+      return generateArrayExample(schema, usage, seen);
     case "string":
       return generateStringExample(schema);
     case "integer":
@@ -62,19 +68,21 @@ export function generateExample(
       return null;
     default:
       // If it has properties, treat as object
-      if (schema.properties) return generateObjectExample(schema, seen);
+      if (schema.properties) return generateObjectExample(schema, usage, seen);
       return undefined;
   }
 }
 
 function generateObjectExample(
   schema: NormalizedSchema,
+  usage: SchemaUsage | undefined,
   seen: Set<string>,
 ): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
   if (schema.properties) {
     for (const [key, prop] of Object.entries(schema.properties)) {
-      const val = generateExample(prop, seen);
+      if (omittedField(prop, usage)) continue;
+      const val = generateExample(prop, usage, seen);
       if (val !== undefined) {
         obj[key] = val;
       }
@@ -85,10 +93,11 @@ function generateObjectExample(
 
 function generateArrayExample(
   schema: NormalizedSchema,
+  usage: SchemaUsage | undefined,
   seen: Set<string>,
 ): unknown[] {
   if (schema.items) {
-    const item = generateExample(schema.items, seen);
+    const item = generateExample(schema.items, usage, seen);
     return item !== undefined ? [item] : [];
   }
   return [];
@@ -128,11 +137,12 @@ function generateStringExample(schema: NormalizedSchema): string {
 
 function mergeAllOfExamples(
   schemas: NormalizedSchema[],
+  usage: SchemaUsage | undefined,
   seen: Set<string>,
 ): unknown {
   const merged: Record<string, unknown> = {};
   for (const sub of schemas) {
-    const example = generateExample(sub, seen);
+    const example = generateExample(sub, usage, seen);
     if (example && typeof example === "object" && !Array.isArray(example)) {
       Object.assign(merged, example);
     }

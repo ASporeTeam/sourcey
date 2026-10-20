@@ -3,10 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfigFromRaw } from "../src/config.js";
-import { buildNavFromPages } from "../src/core/navigation.js";
-import { doxygen, godoc, markdown, mkdocs, openapi } from "../src/adapters/index.js";
+import { doxygen, godoc, markdown, openapi } from "../src/adapters/index.js";
 import type { SourceyConfig } from "../src/config.js";
-import type { DocsPage } from "../src/core/markdown-loader.js";
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "sourcey-config-"));
@@ -26,6 +24,32 @@ function baseConfig(extra: Partial<SourceyConfig> = {}): SourceyConfig {
 }
 
 describe("resolveConfigFromRaw – validation", () => {
+  it("resolves complete system font stacks without downloading a named family", async () => {
+    await withTempDir(async dir => {
+      const config = await resolveConfigFromRaw(baseConfig({ theme: { fonts: { sans: "system", mono: "system" } } }), dir);
+      expect(config.theme.fonts.sans).toContain("system-ui");
+      expect(config.theme.fonts.sans).not.toMatch(/'system'|Inter/);
+      expect(config.theme.fonts.mono).toContain("ui-monospace");
+      expect(config.theme.fonts.mono).not.toContain("'system'");
+      expect(config.theme.fonts.google).toEqual([]);
+    });
+  });
+  it("loads named text and code families from Google Fonts unless the site serves them", async () => {
+    await withTempDir(async dir => {
+      const named = await resolveConfigFromRaw(baseConfig({ theme: { fonts: { sans: "Work Sans", mono: "Roboto Mono" } } }), dir);
+      expect(named.theme.fonts.mono).toMatch(/^'Roboto Mono', ui-monospace/);
+      expect(named.theme.fonts.google).toEqual(["Work Sans", "Roboto Mono"]);
+      expect((await resolveConfigFromRaw(baseConfig({ theme: { fonts: { mono: "Roboto Mono" } } }), dir)).theme.fonts.google).toEqual(["Inter", "Roboto Mono"]);
+      expect((await resolveConfigFromRaw(baseConfig({ theme: { fonts: { sans: "Lato", google: false } } }), dir)).theme.fonts.google).toEqual([]);
+    });
+  });
+  it("takes a logo as a wordmark unless it is a mark, which the reader theme's logoMark also says", async () => {
+    await withTempDir(async dir => {
+      expect((await resolveConfigFromRaw(baseConfig({ logo: "./logo.svg" }), dir)).logo).toEqual({ light: `${dir}/logo.svg` });
+      expect((await resolveConfigFromRaw(baseConfig({ logo: { light: "./mark.svg", mark: true } }), dir)).logo?.mark).toBe(true);
+      expect((await resolveConfigFromRaw(baseConfig({ logo: "./mark.svg", theme: { name: "reader", reader: { logoMark: true } } }), dir)).logo?.mark).toBe(true);
+    });
+  });
   it("rejects invalid theme names", async () => {
     await withTempDir(async (dir) => {
       await expect(
@@ -106,11 +130,11 @@ describe("resolveConfigFromRaw – source adapters", () => {
       });
 
       const resolved = await resolveConfigFromRaw(raw, dir);
-      const tab = resolved.tabs[0];
+      const tab = resolved.contexts[0].tabs[0];
 
       expect(tab.source.kind).toBe("markdown");
-      expect(tab.groups?.[0].label).toBe("Start");
-      expect(tab.groups?.[0].pages[0].file).toBe(join(dir, "introduction.md"));
+      expect(tab.source.groups[0].label).toBe("Start");
+      expect(tab.source.groups[0].items[0].file).toBe(join(dir, "introduction.md"));
     });
   });
 
@@ -128,10 +152,10 @@ describe("resolveConfigFromRaw – source adapters", () => {
       });
 
       const resolved = await resolveConfigFromRaw(raw, dir);
-      const tab = resolved.tabs[0];
+      const tab = resolved.contexts[0].tabs[0];
 
       expect(tab.source.kind).toBe("openapi");
-      expect(tab.openapi).toBe(join(dir, "openapi.yaml"));
+      expect(tab.source.spec).toBe(join(dir, "openapi.yaml"));
     });
   });
 
@@ -157,10 +181,10 @@ describe("resolveConfigFromRaw – source adapters", () => {
       });
 
       const resolved = await resolveConfigFromRaw(raw, dir);
-      const tab = resolved.tabs[0];
+      const tab = resolved.contexts[0].tabs[0];
 
       expect(tab.source.kind).toBe("doxygen");
-      expect(tab.doxygen?.sourceUrl).toEqual([
+      expect(tab.source.config.sourceUrl).toEqual([
         { prefix: "src/graft/" },
         { prefix: "", url: "https://github.com/nilstate/icey/blob/main/{fullPath}" },
       ]);
@@ -183,7 +207,7 @@ describe("resolveConfigFromRaw – source adapters", () => {
       });
 
       await mkdir(join(dir, "api"), { recursive: true });
-      await expect(resolveConfigFromRaw(raw, dir)).rejects.toThrow(/matched no files/);
+      await expect(resolveConfigFromRaw(raw, dir)).rejects.toThrow(/matched no Markdown/);
     });
   });
 });
@@ -218,21 +242,21 @@ describe("resolveConfigFromRaw – godoc tabs", () => {
       });
 
       const resolved = await resolveConfigFromRaw(raw, dir);
-      expect(resolved.tabs).toHaveLength(1);
-      const tab = resolved.tabs[0];
+      expect(resolved.contexts[0].tabs).toHaveLength(1);
+      const tab = resolved.contexts[0].tabs[0];
       expect(tab.label).toBe("Go API");
       expect(tab.slug).toBe("go-api");
       expect(tab.source.kind).toBe("godoc");
-      expect(tab.godoc).toBeDefined();
-      expect(tab.godoc!.module).toBe(dir);
-      expect(tab.godoc!.packages).toEqual(["./internal/core/...", "./cmd/..."]);
-      expect(tab.godoc!.snapshot).toBe(join(dir, "snapshot.json"));
-      expect(tab.godoc!.mode).toBe("live");
-      expect(tab.godoc!.includeTests).toBe(false);
-      expect(tab.godoc!.includeUnexported).toBe(true);
-      expect(tab.godoc!.hideUndocumented).toBe(false);
-      expect(tab.godoc!.exclude).toEqual(["./vendor/..."]);
-      expect(tab.godoc!.goEnv).toEqual({ GOOS: "linux", GOARCH: "amd64", tags: ["integration"] });
+      expect(tab.source.config).toBeDefined();
+      expect(tab.source.config.module).toBe(dir);
+      expect(tab.source.config.packages).toEqual(["./internal/core/...", "./cmd/..."]);
+      expect(tab.source.config.snapshot).toBe(join(dir, "snapshot.json"));
+      expect(tab.source.config.mode).toBe("live");
+      expect(tab.source.config.includeTests).toBe(false);
+      expect(tab.source.config.includeUnexported).toBe(true);
+      expect(tab.source.config.hideUndocumented).toBe(false);
+      expect(tab.source.config.exclude).toEqual(["./vendor/..."]);
+      expect(tab.source.config.goEnv).toEqual({ GOOS: "linux", GOARCH: "amd64", tags: ["integration"] });
       // Suppress unused-binding warning.
       void moduleDir;
     });
@@ -247,14 +271,14 @@ describe("resolveConfigFromRaw – godoc tabs", () => {
       });
 
       const resolved = await resolveConfigFromRaw(raw, dir);
-      const tab = resolved.tabs[0];
-      expect(tab.godoc).toBeDefined();
-      expect(tab.godoc!.module).toBe(dir);
-      expect(tab.godoc!.packages).toEqual(["./..."]);
-      expect(tab.godoc!.mode).toBe("auto");
-      expect(tab.godoc!.includeTests).toBe(true);
-      expect(tab.godoc!.includeUnexported).toBe(false);
-      expect(tab.godoc!.snapshot).toBeUndefined();
+      const tab = resolved.contexts[0].tabs[0];
+      expect(tab.source.config).toBeDefined();
+      expect(tab.source.config.module).toBe(dir);
+      expect(tab.source.config.packages).toEqual(["./..."]);
+      expect(tab.source.config.mode).toBe("auto");
+      expect(tab.source.config.includeTests).toBe(true);
+      expect(tab.source.config.includeUnexported).toBe(false);
+      expect(tab.source.config.snapshot).toBeUndefined();
     });
   });
 
@@ -267,9 +291,9 @@ describe("resolveConfigFromRaw – godoc tabs", () => {
       });
 
       const resolved = await resolveConfigFromRaw(raw, dir);
-      expect(resolved.tabs[0].godoc!.module).toBe(dir);
-      expect(resolved.tabs[0].godoc!.packages).toEqual(["./..."]);
-      expect(resolved.tabs[0].godoc!.mode).toBe("auto");
+      expect(resolved.contexts[0].tabs[0].source.config.module).toBe(dir);
+      expect(resolved.contexts[0].tabs[0].source.config.packages).toEqual(["./..."]);
+      expect(resolved.contexts[0].tabs[0].source.config.mode).toBe("auto");
     });
   });
 
@@ -282,11 +306,11 @@ describe("resolveConfigFromRaw – godoc tabs", () => {
       });
 
       const resolved = await resolveConfigFromRaw(raw, dir);
-      const tab = resolved.tabs[0];
+      const tab = resolved.contexts[0].tabs[0];
 
       expect(tab.source.kind).toBe("godoc");
-      expect(tab.godoc!.module).toBe(dir);
-      expect(tab.godoc!.packages).toEqual(["./pkg/..."]);
+      expect(tab.source.config.module).toBe(dir);
+      expect(tab.source.config.packages).toEqual(["./pkg/..."]);
     });
   });
 
@@ -357,136 +381,3 @@ describe("resolveConfigFromRaw – godoc tabs", () => {
   });
 });
 
-describe("resolveConfigFromRaw – mkdocs tabs", () => {
-  it("imports docs_dir and nested MkDocs nav as Sourcey page groups", async () => {
-    await withTempDir(async (dir) => {
-      await mkdir(join(dir, "site", "content", "guides"), { recursive: true });
-      await mkdir(join(dir, "site", "content", "api", "basic_json"), { recursive: true });
-      await writeFile(join(dir, "site", "content", "index.md"), "# JSON for Modern C++\n");
-      await writeFile(join(dir, "site", "content", "guides", "install.md"), "# Install\n");
-      await writeFile(
-        join(dir, "site", "content", "api", "basic_json", "basic_json.md"),
-        "# Constructor\n",
-      );
-      await writeFile(
-        join(dir, "site", "mkdocs.yml"),
-        [
-          "site_name: JSON for Modern C++",
-          "docs_dir: content",
-          "nav:",
-          "  - Home:",
-          "      - Overview: index.md",
-          "      - Guide:",
-          "          - Install: guides/install.md",
-          "  - API Documentation:",
-          "      - basic_json:",
-          "          - Constructor: api/basic_json/basic_json.md",
-          "markdown_extensions:",
-          "  - pymdownx.emoji:",
-          "      emoji_index: !!python/name:material.extensions.emoji.twemoji",
-          "plugins:",
-          "  - htmlproofer:",
-          "      enabled: !ENV [ENABLED_HTMLPROOFER, False]",
-        ].join("\n"),
-      );
-
-      const raw = baseConfig({
-        navigation: {
-          tabs: [{ tab: "Manual", mkdocs: "site/mkdocs.yml" }],
-        },
-      });
-
-      const resolved = await resolveConfigFromRaw(raw, dir);
-      const tab = resolved.tabs[0];
-
-      expect(tab.mkdocs).toBe(join(dir, "site", "mkdocs.yml"));
-      expect(tab.source.kind).toBe("markdown");
-      expect(tab.source.adapter).toBe("mkdocs");
-      expect(tab.groups?.map((group) => group.label)).toEqual(["Home", "API Documentation"]);
-      expect(tab.groups?.[0].pages.map((page) => [page.slug, page.label])).toEqual([
-        ["index", "Overview"],
-        ["guides/install", "Guide / Install"],
-      ]);
-      expect(tab.groups?.[0].pages.map((page) => page.sourceRoot)).toEqual([
-        join(dir, "site", "content"),
-        join(dir, "site", "content"),
-      ]);
-      expect(tab.groups?.[1].pages.map((page) => [page.slug, page.label])).toEqual([
-        ["api/basic_json/basic_json", "basic_json / Constructor"],
-      ]);
-      // A page's title is its own nav label, without the section path.
-      expect(tab.groups?.flatMap((group) => group.pages.map((page) => page.title))).toEqual([
-        "Overview",
-        "Install",
-        "Constructor",
-      ]);
-
-      const pagesByPath = new Map<string, DocsPage>();
-      for (const group of tab.groups!) {
-        for (const page of group.pages) {
-          pagesByPath.set(page.slug, {
-            kind: "markdown",
-            title: "Markdown heading",
-            description: "",
-            slug: page.slug,
-            html: "",
-            headings: [],
-            sourcePath: page.file,
-            editPath: page.file,
-          });
-        }
-      }
-      const nav = buildNavFromPages(tab, pagesByPath);
-      expect(nav.groups[0].items.map((item) => item.label)).toEqual([
-        "Overview",
-        "Guide / Install",
-      ]);
-    });
-  });
-
-  it("imports MkDocs from the source adapter form", async () => {
-    await withTempDir(async (dir) => {
-      await mkdir(join(dir, "docs"), { recursive: true });
-      await writeFile(join(dir, "docs", "index.md"), "# Home\n");
-      await writeFile(
-        join(dir, "mkdocs.yml"),
-        ["site_name: Docs", "nav:", "  - Home: index.md"].join("\n"),
-      );
-
-      const raw = baseConfig({
-        navigation: {
-          tabs: [{ tab: "Manual", source: mkdocs({ config: "mkdocs.yml" }) }],
-        },
-      });
-
-      const resolved = await resolveConfigFromRaw(raw, dir);
-      const tab = resolved.tabs[0];
-
-      expect(tab.source.kind).toBe("markdown");
-      expect(tab.source.adapter).toBe("mkdocs");
-      expect(tab.mkdocs).toBe(join(dir, "mkdocs.yml"));
-      expect(tab.groups?.[0].pages[0].slug).toBe("index");
-      expect(tab.groups?.[0].pages[0].preprocess).toHaveLength(1);
-    });
-  });
-
-  it("rejects MkDocs nav pages outside docs_dir", async () => {
-    await withTempDir(async (dir) => {
-      await mkdir(join(dir, "docs"), { recursive: true });
-      await writeFile(join(dir, "docs", "index.md"), "# Home\n");
-      await writeFile(join(dir, "outside.md"), "# Outside\n");
-      await writeFile(
-        join(dir, "mkdocs.yml"),
-        ["site_name: Docs", "nav:", "  - Home: index.md", "  - Outside: ../outside.md"].join("\n"),
-      );
-
-      const raw = baseConfig({
-        navigation: {
-          tabs: [{ tab: "Manual", source: mkdocs("mkdocs.yml") }],
-        },
-      });
-
-      await expect(resolveConfigFromRaw(raw, dir)).rejects.toThrow(/escapes docs_dir/);
-    });
-  });
-});

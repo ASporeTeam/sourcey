@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveConfigFromRaw } from "../../src/config.js";
 import { buildSiteDocs } from "../../src/index.js";
+import { publishedSearchRows } from "../built-site.js";
 
 const FIXTURE_MODULE = resolve(import.meta.dirname, "../fixtures/godoc/basic");
 const OUTPUT_DIR = resolve(import.meta.dirname, "../../.test-output-godoc-build");
@@ -104,9 +105,7 @@ skipWithoutGo("buildSiteDocs (integration) – godoc tab", () => {
     expect(llmsFull).toContain("Widget");
 
     // Search index includes the package symbols
-    const searchIndex = JSON.parse(
-      await readFile(resolve(OUTPUT_DIR, "search-index.json"), "utf-8"),
-    ) as Array<{ title: string; content: string; category: string }>;
+    const searchIndex = (await publishedSearchRows(OUTPUT_DIR)) as Array<{ title: string; content: string; category: string }>;
     const titles = searchIndex.map((entry) => entry.title);
     expect(titles.some((t) => t.includes("example.com/basic"))).toBe(true);
     expect(titles).toContain("func New(name string) *Widget");
@@ -161,12 +160,12 @@ skipWithoutGo("buildSiteDocs (integration) – godoc tab", () => {
     });
 
     const packagePage = await readFile(resolve(OUTPUT_DIR, "go-api/package-root.html"), "utf-8");
-    expect(packagePage).toContain('href="../go-api"');
-    expect(packagePage).toContain('href="../go-api/package-root"');
+    expect(packagePage).toContain('href="/go-api"');
+    expect(packagePage).toContain('href="/go-api/package-root"');
     expect(packagePage).not.toMatch(/href="[^"]*\.html/);
 
     const indexPage = await readFile(resolve(OUTPUT_DIR, "go-api.html"), "utf-8");
-    expect(indexPage).toContain('href="go-api/package-root"');
+    expect(indexPage).toContain('href="/go-api/package-root"');
     expect(indexPage).not.toMatch(/href="[^"]*\.html/);
 
     const sitemap = await readFile(resolve(OUTPUT_DIR, "sitemap.xml"), "utf-8");

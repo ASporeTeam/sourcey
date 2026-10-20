@@ -16,6 +16,19 @@ async function loadAndNormalize(fixture: string): Promise<NormalizedSpec> {
 }
 
 describe("normalizeSpec", () => {
+  it("expands a recursive component wherever it is used and links it where it would repeat", async () => {
+    const spec = await loadAndNormalize("recursive-schema.yaml");
+    const body = spec.operations[0].requestBody!.content["application/json"].schema!;
+    expect(body.refName).toBe("Task");
+    expect(Object.keys(body.properties!)).toEqual(["title", "owner", "subtasks"]);
+    expect(body.properties!.owner.properties!.name.type).toBe("string");
+    // The subtask is the same component again: a named link, not another level.
+    expect(body.properties!.subtasks.items).toMatchObject({ refName: "Task" });
+    expect(body.properties!.subtasks.items!.properties).toBeUndefined();
+    expect(spec.operations[0].responses[0].content!["application/json"].schema!.properties!.title).toBeDefined();
+    expect(spec.schemas.Task.properties!.subtasks.items!.properties).toBeUndefined();
+  });
+
   describe("cheese.yml (Swagger 2.0 with external refs)", () => {
     let spec: NormalizedSpec;
 

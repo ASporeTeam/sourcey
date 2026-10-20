@@ -1,9 +1,14 @@
+import { walkNavItems } from "../../core/navigation.js";
 import { useContext } from "preact/hooks";
-import { NavigationContext, OptionsContext, SiteContext } from "../../renderer/context.js";
-import { SocialIcon, socialLabels } from "../ui/SocialIcon.js";
-import { Logo } from "../ui/Logo.js";
+import { NavigationContext, OptionsContext, PageContext, SiteContext } from "../../renderer/context.js";
+import { SocialIcon, linkLabel } from "../ui/SocialIcon.js";
+import { PrimaryAction } from "../ui/PrimaryAction.js";
+import { Logo, logoHref } from "../ui/Logo.js";
 import type { SiteNavigation } from "../../core/navigation.js";
 import { joinHref } from "../../site-url.js";
+import { linkTarget } from "../../utils/html.js";
+import { english } from "../../core/messages.js";
+import { ContextControls, hasContextChoices } from "./ContextControls.js";
 
 function SearchIcon() {
   return (
@@ -40,35 +45,22 @@ function MoonIcon() {
   );
 }
 
-function BreadcrumbChevron() {
-  return (
-    <svg width="3" height="24" viewBox="0 -9 3 24" class="h-5 overflow-visible shrink-0">
-      <path d="M0 0L3 3L0 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 /**
- * Mobile breadcrumb bar below the logo row — shows group > page.
+ * Current page in the mobile navigation row.
  */
 function MobileBreadcrumbs({ nav }: { nav: SiteNavigation }) {
+  const page = useContext(PageContext);
   const activeTab = nav.tabs.find((t) => t.slug === nav.activeTabSlug);
-  const activePage = activeTab?.groups
-    .flatMap((g) => g.items)
-    .find((item) => item.id === nav.activePageSlug);
+  const activePage = (activeTab ? [...walkNavItems(activeTab.groups)] : []).find((item) => item.id === nav.activePageSlug);
+  // A page the navigation does not list names itself; a reference's overview, its tab.
+  const label = activePage?.label ?? (page.kind === "markdown" ? page.markdown.title : page.kind === "not-found" ? page.title : activeTab?.label);
 
   return (
-    <div class="flex lg:hidden items-center h-14 px-5 text-sm overflow-hidden">
+    <div class="sourcey-mobile-trail">
       <div class="flex items-center min-w-0 space-x-3 leading-6 whitespace-nowrap">
-        {nav.tabs.length > 1 && activeTab && activePage?.label !== activeTab.label && (
-          <div class="flex items-center space-x-3 shrink-0 text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
-            <span>{activeTab.label}</span>
-            <BreadcrumbChevron />
-          </div>
-        )}
-        {activePage && (
+        {label && (
           <span class="font-semibold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] truncate min-w-0">
-            {activePage.label}
+            {label}
           </span>
         )}
       </div>
@@ -79,17 +71,17 @@ function MobileBreadcrumbs({ nav }: { nav: SiteNavigation }) {
 /**
  * Site header.
  * Row 1 (h-16): logo, search (desktop), navbar links (desktop), theme toggle (desktop), search + hamburger (mobile)
- * Row 2 mobile (h-14): breadcrumbs (group > page)
- * Row 2 desktop (h-12): navigation tabs (when multiple tabs)
+ * Row 2: active page on mobile, section navigation on desktop, locale/version menus.
  */
 export function Header() {
   const nav = useContext(NavigationContext);
   const options = useContext(OptionsContext);
   const site = useContext(SiteContext);
+  const messages = options.messages ?? english;
 
   const base = options.assetBase;
-  const logoHref = site.logo?.href ?? joinHref(base, nav.tabs[0]?.href ?? "");
-  // The full-width theme runs the header edge to edge on a tinted band.
+  const home = logoHref(site, nav, base);
+  // The full-width theme keeps site controls and section navigation in its frame.
   const wide = site.theme.name === "api-first";
 
   return (
@@ -98,103 +90,91 @@ export function Header() {
 
       <div class={wide ? "relative w-full" : "max-w-[92rem] mx-auto relative"}>
         {/* Row 1: Logo + Search + Actions */}
-        <div class="relative">
-          <div class={`flex items-center ${wide ? "lg:px-6" : "lg:px-12"} h-16 min-w-0 mx-4 lg:mx-0`}>
+        <div class="sourcey-header-top relative">
+          <div class="sourcey-header-frame flex items-center h-16 min-w-0 mx-4 lg:mx-0">
             <div
-              class={`h-full relative flex-1 flex items-center gap-x-4 min-w-0${
-                wide ? "" : " border-b border-[rgb(var(--color-gray-500)/0.08)] dark:border-[rgb(var(--color-gray-300)/0.08)]"
-              }`}
+              class="sourcey-header-top-inner h-full relative flex-1 flex items-center gap-x-4 min-w-0"
             >
               {/* Logo */}
-              <div class="flex-1 flex items-center gap-x-4">
-                <Logo href={logoHref} logo={site.logo} name={site.name} />
+              <div class="sourcey-header-brand flex-1 flex items-center gap-x-4">
+                <Logo href={home} logo={site.logo} name={site.name} />
               </div>
 
               {/* Search bar (desktop) */}
-              <div class="relative hidden lg:flex items-center flex-1 z-20 gap-2">
+              <div class="sourcey-header-search relative hidden lg:flex items-center flex-1 z-20 gap-2">
                 <button
                   id="search-open"
                   type="button"
-                  class="group flex pointer-events-auto rounded-lg w-full items-center text-sm leading-6 h-9 pl-3.5 pr-3 text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] ring-1 ring-[rgb(var(--color-gray-400)/0.3)] hover:ring-[rgb(var(--color-gray-600)/0.3)] dark:ring-[rgb(var(--color-gray-600)/0.3)] dark:hover:ring-[rgb(var(--color-gray-500)/0.3)] justify-between truncate gap-2 min-w-[43px] cursor-pointer bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))] dark:brightness-110 dark:hover:brightness-125"
+                  aria-label={messages.search}
+                  class="sourcey-search-control group flex pointer-events-auto rounded-[var(--sourcey-control-radius)] w-full items-center text-sm leading-6 h-[var(--sourcey-control-height)] pl-3.5 pr-3 text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] ring-1 ring-[rgb(var(--color-gray-400)/0.3)] hover:ring-[rgb(var(--color-gray-600)/0.3)] dark:ring-[rgb(var(--color-gray-600)/0.3)] dark:hover:ring-[rgb(var(--color-gray-500)/0.3)] justify-between truncate gap-2 min-w-[43px] cursor-pointer bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))] dark:brightness-110 dark:hover:brightness-125"
                 >
                   <div class="flex items-center gap-2 min-w-[42px]">
                     <SearchIcon />
-                    <div class="truncate min-w-0">Type <kbd>/</kbd> to search</div>
+                    <div class="truncate min-w-0">{messages.searchPlaceholder}</div>
                   </div>
+                  <kbd>/</kbd>
                 </button>
               </div>
 
-              {/* Right actions (desktop): navbar links + CTA + theme toggle */}
-              <div class="flex-1 relative hidden lg:flex items-center ml-auto justify-end space-x-4">
-                <nav class="text-sm">
-                  <ul class="flex space-x-6 items-center">
-                    {site.navbar.links.map((link) => (
-                      <li key={link.href}>
-                        <a
-                          href={link.href}
-                          target="_blank"
-                          rel="noopener"
-                          aria-label={link.label ?? socialLabels[link.type] ?? link.href}
-                          class="text-[rgb(var(--color-gray-500))] hover:text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-400))] dark:hover:text-[rgb(var(--color-gray-300))]"
-                        >
-                          {link.type === "link"
-                            ? (link.label ?? link.href)
-                            : (<><SocialIcon type={link.type} />{link.label && <span class="ml-1">{link.label}</span>}</>)}
-                        </a>
-                      </li>
-                    ))}
-                    {site.navbar.primary && (
-                      <li>
-                        <a
-                          href={site.navbar.primary.href}
-                          target="_blank"
-                          class="group px-4 py-1.5 relative inline-flex items-center text-sm font-medium"
-                        >
-                          <span class="absolute inset-0 bg-[rgb(var(--color-primary-dark))] rounded-lg group-hover:opacity-90" />
-                          <div class="mr-0.5 space-x-2.5 flex items-center text-white">
-                            <span class="z-10">{site.navbar.primary.label}</span>
-                            <svg width="3" height="6" viewBox="0 0 3 6" class="overflow-visible opacity-90">
-                              <path d="M0 0L3 3L0 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-                            </svg>
-                          </div>
-                        </a>
-                      </li>
-                    )}
-                  </ul>
-                </nav>
-                <button
-                  id="theme-toggle"
-                  type="button"
-                  aria-label="Toggle theme"
-                  class="p-2 flex items-center justify-center cursor-pointer text-[rgb(var(--color-gray-400))] hover:text-[rgb(var(--color-gray-600))] dark:text-[rgb(var(--color-gray-500))] dark:hover:text-[rgb(var(--color-gray-300))]"
-                >
-                  <SunIcon />
-                  <MoonIcon />
-                </button>
-              </div>
+              {/* The header's end: its links and actions, then appearance and mobile controls. A theme
+                  can hold them in one column; otherwise they lay out as children of the row. */}
+              <div class="sourcey-header-end contents">
+                {/* Right actions (desktop): navbar links + CTA. Network links are icons in control-sized targets. */}
+                <div class="sourcey-header-actions flex-1 relative hidden lg:flex items-center ml-auto justify-end">
+                  <nav class="text-sm">
+                    <ul class="flex gap-x-1 items-center">
+                      {site.navbar.links.map((link) => (
+                        <li key={link.href}>
+                          <a
+                            href={link.href}
+                            {...linkTarget(link.href, site.siteUrl)}
+                            aria-label={link.type === "link" ? undefined : linkLabel(link)}
+                            class={`sourcey-header-link flex items-center justify-center h-8 whitespace-nowrap ${link.type === "link" ? "px-2" : "w-8"} text-[rgb(var(--color-gray-500))] hover:text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-400))] dark:hover:text-[rgb(var(--color-gray-300))]`}
+                          >
+                            {link.type === "link" ? linkLabel(link) : <SocialIcon type={link.type} />}
+                          </a>
+                        </li>
+                      ))}
+                      {site.navbar.primary && (
+                        <li class="pl-2">
+                          <PrimaryAction {...site.navbar.primary} />
+                        </li>
+                      )}
+                    </ul>
+                  </nav>
 
-              {/* Mobile actions: search + hamburger */}
-              <div class="flex lg:hidden items-center gap-3">
-                <button id="search-open-mobile" type="button" aria-label="Search" class="text-[rgb(var(--color-gray-500))] w-8 h-8 flex items-center justify-center">
-                  <SearchIcon />
-                </button>
-                <button type="button" data-drawer-slide="right" aria-label="Open menu" class="text-[rgb(var(--color-gray-500))] w-8 h-8 flex items-center justify-center hover:text-[rgb(var(--color-gray-600))]">
-                  <svg class="h-4" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512">
-                    <path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z" />
-                  </svg>
-                </button>
+                </div>
+
+                {/* Shared appearance control and mobile navigation */}
+                <div class="flex items-center gap-1 lg:gap-0">
+                  <button id="search-open-mobile" type="button" aria-label={messages.search} class="text-[rgb(var(--color-gray-500))] w-11 h-11 lg:hidden flex items-center justify-center">
+                    <SearchIcon />
+                  </button>
+                  <button
+                    id="theme-toggle"
+                    type="button"
+                    aria-label={messages.dark}
+                    data-light-label={messages.light}
+                    data-dark-label={messages.dark}
+                    class="w-11 h-11 lg:w-8 lg:h-8 p-2 flex items-center justify-center cursor-pointer text-[rgb(var(--color-gray-400))] hover:text-[rgb(var(--color-gray-600))] dark:text-[rgb(var(--color-gray-500))] dark:hover:text-[rgb(var(--color-gray-300))]"
+                  >
+                    <SunIcon />
+                    <MoonIcon />
+                  </button>
+                  <button type="button" data-drawer-slide="right" aria-label={messages.openMenu} class="text-[rgb(var(--color-gray-500))] w-11 h-11 lg:hidden flex items-center justify-center hover:text-[rgb(var(--color-gray-600))]">
+                    <svg class="h-4" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512">
+                      <path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Mobile breadcrumb bar: group > page */}
-        <MobileBreadcrumbs nav={nav} />
-
-        {/* Desktop: Navigation tabs (hidden when single tab) */}
-        {nav.tabs.length > 1 && (
-        <div class={`hidden lg:flex ${wide ? "px-6" : "px-12"} h-12`}>
-          <div class="h-full flex text-sm gap-x-6">
+        <div class="sourcey-header-navigation" data-desktop={nav.tabs.length > 1 || hasContextChoices(options.equivalents)}>
+          <MobileBreadcrumbs nav={nav} />
+          {nav.tabs.length > 1 && <nav class="sourcey-section-tabs" aria-label="Documentation sections">
             {nav.tabs.map((tab) => {
               const isActive = tab.slug === nav.activeTabSlug;
               return (
@@ -216,9 +196,9 @@ export function Header() {
                 </a>
               );
             })}
-          </div>
+          </nav>}
+          <ContextControls />
         </div>
-        )}
       </div>
     </div>
   );

@@ -1,3 +1,5 @@
+import { activeSection } from "../../core/navigation.js";
+import type { NormalizedSpec } from "../../core/types.js";
 import { ReaderPage } from "./Reader.js";
 import { SearchDialog } from "./SearchDialog.js";
 import { useContext } from "preact/hooks";
@@ -14,40 +16,64 @@ import type {
 } from "../../core/markdown-loader.js";
 import { Markdown } from "../ui/Markdown.js";
 import { joinHref } from "../../site-url.js";
+import { linkTarget } from "../../utils/html.js";
 import { Header } from "./Header.js";
 import { Sidebar } from "./Sidebar.js";
 import { TableOfContents } from "./TableOfContents.js";
 import { Introduction } from "../openapi/Introduction.js";
 import { SecurityDefinitions } from "../openapi/Security.js";
 import { Tags } from "../openapi/Tags.js";
+import { Operation } from "../openapi/Operation.js";
 import { Definition } from "../openapi/Definition.js";
-import { SocialIcon, socialLabels } from "../ui/SocialIcon.js";
+import { useReferenceOutline } from "../openapi/outline.js";
+import { SocialIcon, linkLabel } from "../ui/SocialIcon.js";
 import { McpConnection } from "../mcp/McpConnection.js";
 import { ChangelogPage } from "../changelog/ChangelogPage.js";
 import { changelogNavigation } from "../changelog/navigation.js";
+import { AnchorAliases } from "../ui/AnchorAliases.js";
+import { definitionAnchor, referenceOperation } from "../../core/reference-identity.js";
+
+/**
+ * Where the page sits, over its title: the section listing it, or in the
+ * full-width theme a trail from its tab, naming a section once when it shares
+ * the tab's label. `spacing` sets it apart from a title it does not share a
+ * header with.
+ */
+function PagePlace({ spacing }: { spacing?: string }) {
+  const nav = useContext(NavigationContext);
+  const site = useContext(SiteContext);
+  const { tab, group } = activeSection(nav);
+  const eyebrow = group?.label;
+  const trail =
+    site.theme.name === "api-first"
+      ? [nav.tabs.length > 1 ? tab?.label : undefined, eyebrow].filter(
+          (label, i, labels): label is string => !!label && labels.indexOf(label) === i,
+        )
+      : [];
+  if (trail.length > 0) {
+    return (
+      <nav class={spacing ? `page-trail ${spacing}` : "page-trail"} aria-label="Breadcrumb">
+        {trail.map((label, i) => (
+          <span key={label} class="page-trail-item">
+            {i > 0 && <span class="page-trail-separator" aria-hidden="true">/</span>}
+            {label}
+          </span>
+        ))}
+      </nav>
+    );
+  }
+  if (!eyebrow) return null;
+  return (
+    <div class={`h-5 text-[rgb(var(--color-primary-ink))] dark:text-[rgb(var(--color-primary-light))] text-sm font-semibold${spacing ? ` ${spacing}` : ""}`}>
+      {eyebrow}
+    </div>
+  );
+}
 
 /**
  * Markdown page content with prose typography.
  */
 function MarkdownPageContent({ page, className = "" }: { page: MarkdownPage; className?: string }) {
-  const nav = useContext(NavigationContext);
-  const site = useContext(SiteContext);
-
-  // Find the group label for the current page (eyebrow)
-  const activeTab = nav.tabs.find((t) => t.slug === nav.activeTabSlug);
-  const activeGroup = activeTab?.groups.find((g) =>
-    g.items.some((item) => item.id === nav.activePageSlug),
-  );
-  const eyebrow = activeGroup?.label;
-  // The full-width theme names the page's place as a trail: tab, then group,
-  // naming a group once when it shares the tab's label.
-  const trail =
-    site.theme.name === "api-first"
-      ? [nav.tabs.length > 1 ? activeTab?.label : undefined, eyebrow].filter(
-          (label, i, labels): label is string => !!label && labels.indexOf(label) === i,
-        )
-      : [];
-
   return (
     <div
       class={`relative grow box-border flex-col w-full mx-auto px-1 min-w-0 ${className}`}
@@ -55,22 +81,7 @@ function MarkdownPageContent({ page, className = "" }: { page: MarkdownPage; cla
     >
       <header class="relative leading-none">
         <div class="mt-0.5 space-y-2.5">
-          {trail.length > 0 ? (
-            <nav class="page-trail" aria-label="Breadcrumb">
-              {trail.map((label, i) => (
-                <span key={label} class="page-trail-item">
-                  {i > 0 && <span class="page-trail-separator" aria-hidden="true">/</span>}
-                  {label}
-                </span>
-              ))}
-            </nav>
-          ) : (
-            eyebrow && (
-              <div class="h-5 text-[rgb(var(--color-primary-ink))] dark:text-[rgb(var(--color-primary-light))] text-sm font-semibold">
-                {eyebrow}
-              </div>
-            )
-          )}
+          <PagePlace />
           <div class="flex flex-col sm:flex-row items-start sm:items-center relative gap-2 min-w-0">
             <h1
               class="text-2xl sm:text-3xl text-[rgb(var(--color-gray-900))] tracking-tight dark:text-[rgb(var(--color-gray-200))] font-bold"
@@ -118,27 +129,46 @@ function ChangelogPageContent({
   );
 }
 
+/** The MCP server a reference documents, when it documents one. */
+function mcpConnection(spec: NormalizedSpec) {
+  return spec.operations.find(operation => operation.mcpExtras?.connection)?.mcpExtras?.connection;
+}
+
 /**
- * OpenAPI spec page content.
+ * OpenAPI spec page content. `bare` leaves out the page's place, previous and
+ * next, and footer, for a frame that draws its own.
  */
-function SpecPageContent({ className = "" }: { className?: string }) {
+function SpecPageContent({ className = "", bare = false }: { className?: string; bare?: boolean }) {
   const spec = useContext(SpecContext);
-  const serverUrl = spec.servers[0]?.url ?? "/";
+  const current = useContext(PageContext);
+  const options = useContext(OptionsContext);
+  const navigation = useContext(NavigationContext);
+  const connection = mcpConnection(spec);
+  const view = current.kind === "spec" ? current.view : undefined;
+  const mcpOverview = connection && view?.kind === "overview";
+  const place = !bare && <PagePlace spacing="mt-0.5 mb-2.5" />;
+  // A split reference's pages read in order, as guides do.
+  const end = !bare && <>{view && <PageNavigation />}<ContentFooter /></>;
+  // Every page of a reference shares a guide's column, and so its edges.
+  const area = `relative grow box-border flex-col w-full mx-auto px-1 min-w-0 ${className}`;
+  if (view?.kind === "operation") {
+    const operation = referenceOperation(spec, view.id);
+    return <div id="content-area" class={area}>{place}{operation && <Operation operation={operation} />}{end}</div>;
+  }
+  if (view?.kind === "schema") return <div id="content-area" class={area}>{place}<Definition name={view.name} schema={spec.schemas[view.name]} />{end}</div>;
 
   return (
-    <div
-      class={`relative grow box-border flex-col w-full mx-auto px-1 min-w-0 ${className}`}
-      id="content-area"
-    >
+    <div class={area} id="content-area">
       <article>
+        {place}
         <header class="mb-8">
           <div class="flex items-baseline gap-3">
-            <h1 class="text-2xl sm:text-3xl font-bold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] tracking-tight">
-              {spec.info.title}
+            <h1 class="reference-page-title text-2xl sm:text-3xl font-bold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] tracking-tight">
+              {connection ? navigation.tabs.find(tab => tab.slug === navigation.activeTabSlug)?.label ?? spec.info.title : spec.info.title}
             </h1>
-            <span class="text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
-              v{spec.info.version}
-            </span>
+            {!connection && <span class="text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
+              {/^v\d/i.test(spec.info.version) ? spec.info.version : `v${spec.info.version}`}
+            </span>}
           </div>
           {spec.info.summary && (
             <p class="mt-2 max-w-2xl text-sm text-[rgb(var(--color-gray-600))] dark:text-[rgb(var(--color-gray-400))]">
@@ -147,19 +177,18 @@ function SpecPageContent({ className = "" }: { className?: string }) {
           )}
         </header>
 
-        <Introduction />
-        {spec.operations[0]?.mcpExtras?.connection && (
-          <McpConnection connection={spec.operations[0].mcpExtras.connection} />
-        )}
+        {/* The server's connection follows its introduction, or stands beside it where the theme has room. */}
+        {mcpOverview ? <div class="sourcey-mcp-overview"><Introduction /><McpConnection connection={connection} /><div class="sourcey-mcp-tools"><Tags tags={spec.tags} showOperations={false} /></div></div> : <><Introduction />{connection && <McpConnection connection={connection} />}</>}
         <SecurityDefinitions />
-        <Tags tags={spec.tags} serverUrl={serverUrl} />
+        {!mcpOverview && <Tags tags={spec.tags} showOperations={view?.kind !== "overview"} />}
 
-        {Object.keys(spec.schemas).length > 0 && (
+        {view?.kind === "overview" && Object.keys(spec.schemas).length > 0 && <section class="mt-12"><h2 id="models"><AnchorAliases target="models" />{options.messages?.models ?? "Models"}</h2><ul class="reference-operation-links">{Object.entries(spec.schemas).map(([name, schema]) => <li id={definitionAnchor(name, spec)}><a href={options.referenceTargets?.schemas[name]?.href}><strong>{name}</strong>{schema.description && <span>{schema.description}</span>}</a></li>)}</ul></section>}
+        {view?.kind !== "overview" && Object.keys(spec.schemas).length > 0 && (
           <div class="mt-12">
             <div class="mb-6">
-              <h1 class="text-xl font-bold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))]">
+              <h2 class="text-xl font-bold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))]">
                 Models
-              </h1>
+              </h2>
             </div>
             {Object.entries(spec.schemas).map(([name, schema]) => (
               <Definition key={name} name={name} schema={schema} />
@@ -167,7 +196,7 @@ function SpecPageContent({ className = "" }: { className?: string }) {
           </div>
         )}
       </article>
-      <ContentFooter />
+      {end}
     </div>
   );
 }
@@ -178,13 +207,8 @@ function PageNavigation() {
   const activeTab = nav.tabs.find((t) => t.slug === nav.activeTabSlug);
   if (!activeTab) return null;
 
-  // Flatten all nav items in the active tab
-  const allItems = activeTab.groups.flatMap((g) => g.items);
-  const idx = allItems.findIndex((item) => item.id === nav.activePageSlug);
-  if (idx === -1) return null;
-
-  const prev = idx > 0 ? allItems[idx - 1] : null;
-  const next = idx < allItems.length - 1 ? allItems[idx + 1] : null;
+  const prev = nav.adjacentPages?.previous;
+  const next = nav.adjacentPages?.next;
   if (!prev && !next) return null;
 
   const linkClass =
@@ -199,7 +223,7 @@ function PageNavigation() {
     <nav class="mt-12 flex items-stretch justify-between gap-4">
       {prev ? (
         <a href={joinHref(base, prev.href)} class={linkClass}>
-          <span class={labelClass}>← Previous</span>
+          <span class={labelClass}>← {options.messages?.previous ?? "Previous"}</span>
           <span class={titleClass}>{prev.label}</span>
         </a>
       ) : (
@@ -207,7 +231,7 @@ function PageNavigation() {
       )}
       {next ? (
         <a href={joinHref(base, next.href)} class={`${linkClass} text-right ml-auto`}>
-          <span class={labelClass}>Next →</span>
+          <span class={labelClass}>{options.messages?.next ?? "Next"} →</span>
           <span class={titleClass}>{next.label}</span>
         </a>
       ) : null}
@@ -218,6 +242,8 @@ function PageNavigation() {
 function ContentFooter() {
   const site = useContext(SiteContext);
   const page = useContext(PageContext);
+  const options = useContext(OptionsContext);
+  const editBranch = options.sourceRevision ?? site.editBranch;
   const links = site.footer.links;
 
   // Build "Edit this page" URL when repo + editBranch are configured
@@ -232,24 +258,27 @@ function ContentFooter() {
           ? page.changelog.sourcePath
           : page.changelog.editPath
         : undefined;
-  if (site.repo && site.editBranch && editPath) {
+  if (site.repo && editBranch && editPath) {
     const repoBase = site.repo.replace(/\/$/, "");
     const editBasePath =
       page.kind === "markdown" && page.markdown.editBasePath !== undefined
         ? page.markdown.editBasePath
         : site.editBasePath;
     const basePath = editBasePath ? `${editBasePath.replace(/^\/|\/$/g, "")}/` : "";
-    editUrl = `${repoBase}/edit/${site.editBranch}/${basePath}${editPath}`;
+    editUrl = `${repoBase}/edit/${editBranch}/${basePath}${editPath}`;
   }
 
   const linkStyle =
     "hover:text-[rgb(var(--color-gray-600))] dark:hover:text-[rgb(var(--color-gray-300))] transition-colors";
 
   return (
-    <div class="mt-16 mb-8 flex items-center justify-between border-t border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-800)/0.5)] pt-6 text-xs text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
-      <a href="https://sourcey.com/docs" target="_blank" rel="noopener" class={linkStyle}>
-        Docs by Sourcey
-      </a>
+    <div class="mt-16 mb-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-800)/0.5)] pt-6 text-xs text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <Markdown inline content={site.footer.text} class="sourcey-footer-text" />
+        <a href="https://sourcey.com/docs" target="_blank" rel="noopener" class={linkStyle}>
+          Docs by Sourcey
+        </a>
+      </div>
       <div class="flex items-center gap-4">
         {editUrl && (
           <a
@@ -272,25 +301,21 @@ function ContentFooter() {
                 d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
               />
             </svg>
-            Edit this page
+            {options.messages?.editPage ?? "Edit this page"}
           </a>
         )}
         {links.map((link) => (
           <a
             key={link.href}
             href={link.href}
-            target="_blank"
-            rel="noopener"
-            aria-label={link.label ?? socialLabels[link.type] ?? link.href}
+            {...linkTarget(link.href, site.siteUrl)}
+            aria-label={linkLabel(link)}
             class={linkStyle}
           >
             {link.type === "link" ? (
               (link.label ?? link.href)
             ) : (
-              <>
-                <SocialIcon type={link.type} />
-                {link.label && <span class="ml-1">{link.label}</span>}
-              </>
+              <SocialIcon type={link.type} />
             )}
           </a>
         ))}
@@ -307,18 +332,25 @@ function DefaultLayout() {
   const page = useContext(PageContext);
   const nav = useContext(NavigationContext);
   const releases = changelogNavigation(page, nav);
+  const outline = useReferenceOutline();
+  // A reading column ends on the frame's right line, 1rem inside it, until "On this page" stands there;
+  // the 1rem "On this page" keeps from the frame comes out of the gap before it, not out of the text.
+  const reading = "lg:pl-[23.7rem] lg:-ml-12 lg:mr-4 xl:mr-0 xl:w-[calc(100%-28rem)]";
 
   return (
     <div class="max-w-[92rem] mx-auto relative px-4 lg:px-8">
       <Sidebar />
-      <main id="docs" class="pt-[8.5rem] lg:pt-10">
+      <main id="docs">
         {page.kind === "markdown" ? (
-          <div class="flex flex-row-reverse gap-12 box-border w-full">
+          <div class="flex flex-row-reverse gap-8 box-border w-full">
             <TableOfContents headings={page.markdown.headings} />
-            <MarkdownPageContent
-              page={page.markdown}
-              className="lg:pl-[23.7rem] lg:-ml-12 xl:w-[calc(100%-28rem)]"
-            />
+            <MarkdownPageContent page={page.markdown} className={reading} />
+          </div>
+        ) : page.kind === "spec" && page.view?.kind === "overview" ? (
+          // A split reference's overview reads as a guide does.
+          <div class="flex flex-row-reverse gap-8 box-border w-full">
+            <TableOfContents headings={outline} />
+            <SpecPageContent className={reading} />
           </div>
         ) : page.kind === "changelog" ? (
           <div class="sourcey-changelog-layout" data-release-navigation={releases ? "sidebar" : "outline"}>
@@ -326,7 +358,9 @@ function DefaultLayout() {
             {!releases && <TableOfContents headings={page.changelog.headings} label="Releases" />}
           </div>
         ) : (
-          <SpecPageContent className="lg:pl-[23.7rem] lg:-ml-12" />
+          // The reference runs to the frame's right line, 1rem inside it, as "On this page" does:
+          // set 3rem left, it is 2rem wider than the frame and keeps no padding on the right.
+          <SpecPageContent className="lg:pl-[23.7rem] lg:-ml-12 lg:pr-0 lg:w-[calc(100%+2rem)]" />
         )}
       </main>
     </div>
@@ -338,7 +372,8 @@ function MinimalLayout() {
 
   return (
     <div class="max-w-3xl mx-auto relative px-4 lg:px-8">
-      <main id="docs" class="pt-[8.5rem] lg:pt-10">
+      <Sidebar mobileOnly />
+      <main id="docs">
         {page.kind === "markdown" ? (
           <MarkdownPageContent page={page.markdown} />
         ) : page.kind === "changelog" ? (
@@ -354,23 +389,30 @@ function MinimalLayout() {
 /**
  * The full-width frame: the sidebar is pinned to the left edge and the page
  * fills the rest of the window. Guide and spec pages share one left edge:
- * guides cap their reading column and keep the table of contents beside it;
- * spec pages give each operation the full width for its content and example
- * columns.
+ * guides, and a split API reference's overview, cap their reading column and
+ * keep the table of contents beside it; spec pages give each operation the
+ * full width for its content and example columns, and an MCP overview its
+ * connection beside the introduction.
  */
 function ApiFirstLayout() {
   const page = useContext(PageContext);
   const nav = useContext(NavigationContext);
   const releases = changelogNavigation(page, nav);
+  const outline = useReferenceOutline();
 
   return (
     <div class="relative">
       <Sidebar />
-      <main id="docs" class="api-first-main pt-[8.5rem] lg:pt-0">
+      <main id="docs" class="api-first-main">
         {page.kind === "markdown" ? (
           <div class="api-first-page">
             <MarkdownPageContent page={page.markdown} className="api-first-reading" />
             <TableOfContents headings={page.markdown.headings} />
+          </div>
+        ) : page.kind === "spec" && page.view?.kind === "overview" && !mcpConnection(page.spec) ? (
+          <div class="api-first-page">
+            <SpecPageContent className="api-first-reading" />
+            <TableOfContents headings={outline} />
           </div>
         ) : page.kind === "changelog" ? (
           <div class="api-first-page" data-release-navigation={releases ? "sidebar" : "outline"}>
@@ -391,16 +433,42 @@ function ApiFirstLayout() {
 // Page shell
 // ---------------------------------------------------------------------------
 
+/** A page drawn by its author: the site's header and footer around its own body. */
+function OwnPage({ page }: { page: MarkdownPage }) {
+  const theme = useContext(SiteContext).theme.name;
+  return (
+    <div id="page" data-sourcey-theme={theme} class="relative antialiased text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
+      <Header />
+      <span class="fixed inset-0 bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))] -z-10 pointer-events-none" />
+      <Sidebar mobileOnly />
+      <main id="main" class="sourcey-page">
+        <div id="content-area" class="prose prose-gray dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: page.html }} />
+        <ContentFooter />
+      </main>
+      <SearchDialog />
+    </div>
+  );
+}
+
 export function Page() {
   const site = useContext(SiteContext);
   const theme = site.theme.name;
 
   const page = useContext(PageContext);
+  const options = useContext(OptionsContext);
+  if (page.kind === "not-found") {
+    const content = <div class="sourcey-not-found"><p class="sourcey-status-code">404</p><h1>{page.title}</h1><p>{page.description}</p><a class="sourcey-not-found-home" href={joinHref(options.assetBase, page.homeHref)}>{options.messages?.browseDocs ?? "Browse the documentation"}<span aria-hidden="true"> →</span></a></div>;
+    if (theme === "reader") return <ReaderPage>{content}</ReaderPage>;
+    return <div id="page" data-sourcey-theme={theme}><Header /><Sidebar mobileOnly /><main id="main">{content}</main><SearchDialog /></div>;
+  }
+  // A blank page is its body alone; search still answers its shortcut.
+  if (page.kind === "markdown" && page.markdown.layout === "blank") return <><div id="page" data-sourcey-theme={theme} class="sourcey-blank" dangerouslySetInnerHTML={{ __html: page.markdown.html }} /><SearchDialog /></>;
+  if (page.kind === "markdown" && page.markdown.layout === "page" && theme !== "reader") return <OwnPage page={page.markdown} />;
   if (theme === "reader") {
     return (
       <ReaderPage>
         {page.kind === "spec" ? (
-          <SpecPageContent />
+          <SpecPageContent bare />
         ) : page.kind === "changelog" ? (
           <ChangelogPageContent page={page.changelog} />
         ) : null}

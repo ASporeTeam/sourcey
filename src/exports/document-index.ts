@@ -1,62 +1,46 @@
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import type { DocumentationEntry, DocumentationIndex } from "./documents.js";
+import { createSearch } from "../core/search-query.js";
 
-export type { DocumentationEntry, DocumentationIndex } from "./documents.js";
-
-/** The public index contract, validated once by consumers of built documentation. */
-export function parseDocumentationIndex(value: unknown): DocumentationIndex {
-  if (
-    !value ||
-    typeof value !== "object" ||
-    !("version" in value) ||
-    value.version !== 1 ||
-    !("name" in value) ||
-    typeof value.name !== "string" ||
-    !("documents" in value) ||
-    !Array.isArray(value.documents)
-  )
-    throw new Error(
-      "Expected a Sourcey documents.json version 1 index. Rebuild with Markdown exports enabled.",
-    );
-  const seen = new Set<string>();
-  for (const entry of value.documents) {
-    if (
-      !entry ||
-      typeof entry !== "object" ||
-      !["id", "title", "description", "tab", "url", "markdown", "file"].every(
-        (key) => typeof entry[key] === "string",
-      ) ||
-      !["page", "operation", "schema"].includes(entry.kind) ||
-      (entry.searchText !== undefined && typeof entry.searchText !== "string") ||
-      seen.has(entry.id)
-    )
-      throw new Error("Malformed or duplicate document entry.");
-    if (
-      !entry.file.endsWith(".md") ||
-      isAbsolute(entry.file) ||
-      entry.file.split(/[\\/]/).some((part: string) => part === ".." || !part)
-    )
-      throw new Error(`Unsafe document path: ${entry.file}`);
-    if (
-      entry.symbols !== undefined &&
-      (!Array.isArray(entry.symbols) ||
-        entry.symbols.some(
-          (symbol: unknown) =>
-            !symbol ||
-            typeof symbol !== "object" ||
-            !("name" in symbol) ||
-            typeof symbol.name !== "string" ||
-            !("kind" in symbol) ||
-            typeof symbol.kind !== "string" ||
-            ("anchor" in symbol && typeof symbol.anchor !== "string"),
-        ))
-    )
-      throw new Error(`Malformed symbols for ${entry.id}`);
-    seen.add(entry.id);
-  }
-  return value as DocumentationIndex;
+function record(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a documentation record");
+  return value as Record<string, unknown>;
 }
+function string(value: unknown): string {
+  if (typeof value !== "string") throw new Error("Expected a documentation string");
+  return value;
+}
+function optional(value: unknown): string | undefined { return value === undefined ? undefined : string(value); }
+function parseDocumentEntry(value: unknown) {
+  const entry = record(value);
+  const kind = entry.kind;
+  if (kind !== "page" && kind !== "operation" && kind !== "schema") throw new Error("Invalid document kind");
+  const file = string(entry.file);
+  if (!file.endsWith(".md") || isAbsolute(file) || file.split(/[\\/]/).some(part => part === ".." || !part)) throw new Error(`Unsafe document path: ${file}`);
+  const symbols = entry.symbols === undefined ? undefined : (() => {
+    if (!Array.isArray(entry.symbols)) throw new Error("Invalid document symbols");
+    return entry.symbols.map(value => { const symbol = record(value); return { name: string(symbol.name), kind: string(symbol.kind), anchor: optional(symbol.anchor) }; });
+  })();
+  const alternates = entry.alternates === undefined ? undefined : (() => {
+    if (!Array.isArray(entry.alternates)) throw new Error("Invalid document alternates");
+    return entry.alternates.map(value => { const alternate = record(value); return { locale: string(alternate.locale), contentVersion: optional(alternate.contentVersion), url: string(alternate.url), markdown: string(alternate.markdown) }; });
+  })();
+  return { id: string(entry.id), kind, title: string(entry.title), description: string(entry.description), tab: string(entry.tab),
+    url: string(entry.url), markdown: string(entry.markdown), file, searchText: optional(entry.searchText), symbols,
+    documentId: optional(entry.documentId), locale: optional(entry.locale), contentLocale: optional(entry.contentLocale),
+    contentVersion: optional(entry.contentVersion), versionScope: optional(entry.versionScope), alternates };
+}
+/** Executable contract owner; exported types are inferred from these validated records. */
+export function parseDocumentationIndex(value: unknown) {
+  const index = record(value);
+  if (index.version !== 1 || !Array.isArray(index.documents)) throw new Error("Expected a Sourcey documents.json version 1 index. Rebuild with Markdown exports enabled.");
+  const documents = index.documents.map(parseDocumentEntry);
+  const seen = new Set<string>();
+  for (const entry of documents) { if (seen.has(entry.id)) throw new Error("Malformed or duplicate document entry."); seen.add(entry.id); }
+  return { version: 1 as const, name: string(index.name), documents };
+}
+export type DocumentationIndex = ReturnType<typeof parseDocumentationIndex>;
+export type DocumentationEntry = DocumentationIndex["documents"][number];
 
 export async function openDocumentation(directory: string) {
   const root = await realpath(directory);
@@ -65,12 +49,8 @@ export async function openDocumentation(directory: string) {
     throw new Error("Index resolves outside the built documentation.");
   const index = parseDocumentationIndex(JSON.parse(await readFile(indexPath, "utf8")));
   const byId = new Map(index.documents.map((entry) => [entry.id, entry]));
-  const searchRows = index.documents.map((entry, order) => ({
-    entry,
-    order,
-    title: entry.title.toLowerCase(),
-    text: `${entry.title} ${entry.description} ${entry.searchText ?? ""} ${(entry.symbols ?? []).map((symbol) => symbol.name).join(" ")}`.toLowerCase(),
-  }));
+  const search = createSearch(index.documents.map(entry => ({ ...entry, content: entry.description,
+    qualifiedName: entry.symbols?.map(s => s.name).join(" ") })));
   return {
     index,
     async read(id: string): Promise<{ entry: DocumentationEntry; text: string }> {
@@ -83,24 +63,7 @@ export async function openDocumentation(directory: string) {
       return { entry, text: await readFile(path, "utf8") };
     },
     search(query: string, limit = 10): DocumentationEntry[] {
-      const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-      if (!terms.length) return [];
-      return searchRows
-        .map(({ entry, order, title, text }) => {
-          const score = terms.every((term) => text.includes(term))
-            ? terms.reduce((total, term) => total + (title.includes(term) ? 4 : 1), 0)
-            : 0;
-          return { entry, score, order };
-        })
-        .filter((match) => match.score > 0)
-        .sort(
-          (a, b) =>
-            b.score - a.score ||
-            Number(a.entry.kind === "page") - Number(b.entry.kind === "page") ||
-            a.order - b.order,
-        )
-        .slice(0, Math.max(1, Math.min(20, limit)))
-        .map((match) => match.entry);
+      return search.query(query, Math.max(1, Math.min(20, limit)));
     },
     symbols(name: string, limit = 10) {
       const needle = name.toLowerCase().trim();

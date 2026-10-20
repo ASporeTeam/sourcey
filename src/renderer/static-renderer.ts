@@ -1,9 +1,10 @@
+import type { CurrentPage } from "../core/site-model.js";
 import { h } from "preact";
 import { renderToString } from "preact-render-to-string";
 import { App } from "../components/App.js";
 import type { NormalizedSpec } from "../core/types.js";
 import type { SiteNavigation } from "../core/navigation.js";
-import type { RenderOptions, CurrentPage, SiteConfig } from "./context.js";
+import type { RenderOptions, SiteConfig } from "./context.js";
 
 /**
  * Render a page to a complete HTML string using Preact SSG.
@@ -11,7 +12,7 @@ import type { RenderOptions, CurrentPage, SiteConfig } from "./context.js";
  * If options.embeddable is true, returns the inner content without html/body wrapper.
  */
 export function renderPage(
-  spec: NormalizedSpec,
+  spec: NormalizedSpec | undefined,
   options: RenderOptions,
   navigation: SiteNavigation,
   currentPage: CurrentPage,
@@ -26,3 +27,4 @@ export function renderPage(
 
   return `<!DOCTYPE html>\n${html}`;
 }
+

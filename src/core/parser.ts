@@ -1,8 +1,9 @@
 import { $RefParser } from "@apidevtools/json-schema-ref-parser";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { dirname, extname, isAbsolute, posix, relative, resolve } from "node:path";
 import { load } from "js-yaml";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { InputReader } from "./loader.js";
 import type { LoadedSpec, OpenApiDocument, ParsedSpec } from "./types.js";
 
 /**
@@ -14,11 +15,11 @@ import type { LoadedSpec, OpenApiDocument, ParsedSpec } from "./types.js";
  */
 export async function parseSpec(
   loaded: LoadedSpec,
-  options: { publishBundle?: boolean } = {},
+  options: { publishBundle?: boolean; input?: InputReader } = {},
 ): Promise<ParsedSpec> {
   try {
     const parser = new $RefParser();
-    const resolver = { http: false as const, file: createConfinedFileResolver(loaded) };
+    const resolver = { http: false as const, file: createConfinedFileResolver(loaded, options.input) };
     const publicDocument = options.publishBundle
       ? ((await new $RefParser().bundle(
           resolveDocumentUri(loaded),
@@ -54,7 +55,7 @@ export async function parseSpec(
   }
 }
 
-function createConfinedFileResolver(loaded: LoadedSpec):
+function createConfinedFileResolver(loaded: LoadedSpec, input?: InputReader):
   | false
   | {
       order: number;
@@ -67,7 +68,9 @@ function createConfinedFileResolver(loaded: LoadedSpec):
   const documents = new Map<string, Buffer>();
   const ids = new Map<string, string | null>();
   const readLocal = async (path: string): Promise<Buffer> => {
-    const bytes = documents.get(path) ?? (await readFile(path));
+    const canonical = await realpath(path);
+    if (!isWithinRoot(await realpath(root), canonical)) throw new Error(`External $ref resolves outside the spec directory: ${path}`);
+    const bytes = documents.get(path) ?? (input ? (await input.read(path, loaded.source)).body : await readFile(path));
     documents.set(path, bytes);
     return bytes;
   };

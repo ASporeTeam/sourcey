@@ -17,7 +17,7 @@ export function Badge({ children, class: className, style }: BadgeProps) {
 
 export function RequiredBadge() {
   return (
-    <span class="required-badge whitespace-nowrap rounded-md bg-red-100/50 px-2 py-0.5 text-xs font-medium text-red-600 dark:bg-red-400/10 dark:text-red-300">
+    <span class="required-badge">
       required
     </span>
   );
@@ -25,7 +25,7 @@ export function RequiredBadge() {
 
 export function DeprecatedBadge() {
   return (
-    <span class="whitespace-nowrap rounded-md bg-amber-100/50 px-2 py-0.5 text-xs font-medium text-amber-600 dark:bg-amber-400/10 dark:text-amber-300">
+    <span class="deprecated-badge">
       deprecated
     </span>
   );
@@ -33,7 +33,7 @@ export function DeprecatedBadge() {
 
 export function ReadOnlyBadge() {
   return (
-    <span class="whitespace-nowrap rounded-md bg-[rgb(var(--color-gray-100)/0.5)] px-2 py-0.5 text-xs font-medium text-[rgb(var(--color-gray-600))] dark:bg-[rgb(var(--color-surface-dark-tint)/0.05)] dark:text-[rgb(var(--color-gray-200))]">
+    <span class="read-only-badge">
       read only
     </span>
   );

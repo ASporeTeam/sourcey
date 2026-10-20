@@ -7,21 +7,20 @@ import type { NormalizedSchema } from "../../core/types.js";
 import { SchemaView } from "../schema/SchemaView.js";
 import { ExampleView } from "../schema/ExampleView.js";
 import { SectionLabel } from "../ui/SectionLabel.js";
+import { AnchorAliases } from "../ui/AnchorAliases.js";
+import { SECTION_LABELS } from "../openapi/outline.js";
 
 /**
- * Left column: "Returns" section label + schema view or fallback text.
+ * Render only the output contract the server actually declares.
  */
-export function McpReturnsCopy({ schema }: { schema?: NormalizedSchema }) {
+export function McpReturnsCopy({ schema, id, anchorRoot }: { schema?: NormalizedSchema; id?: string; anchorRoot?: string }) {
+  if (!schema) return null;
+
   return (
-    <div class="mt-6">
-      <SectionLabel>Returns</SectionLabel>
-      {schema ? (
-        <SchemaView schema={schema} />
-      ) : (
-        <p class="text-sm text-[rgb(var(--color-gray-500))]">
-          Returns MCP content array (text, image, or embedded resource).
-        </p>
-      )}
+    <div class="mt-6" id={id}>
+      {id && <AnchorAliases target={id} />}
+      <SectionLabel>{SECTION_LABELS.returns}</SectionLabel>
+      <SchemaView schema={schema} anchorRoot={anchorRoot} usage="response" />
     </div>
   );
 }
@@ -30,28 +29,7 @@ export function McpReturnsCopy({ schema }: { schema?: NormalizedSchema }) {
  * Right column (sticky panel): example JSON for the output schema.
  */
 export function McpReturnsExample({ schema }: { schema?: NormalizedSchema }) {
-  if (!schema) {
-    return (
-      <ExampleView
-        schema={{
-          type: "object",
-          properties: {
-            content: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  type: { type: "string", enum: ["text", "image", "resource"] },
-                  text: { type: "string", example: "..." },
-                },
-              },
-            },
-          },
-        }}
-        title="Response"
-      />
-    );
-  }
+  if (!schema) return null;
 
   return <ExampleView schema={schema} title="Response" />;
 }

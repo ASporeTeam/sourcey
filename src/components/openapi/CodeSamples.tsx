@@ -3,10 +3,11 @@ import { generateCodeSamples } from "../../utils/code-samples.js";
 import { highlightCode } from "../../utils/highlighter.js";
 import { langIcon } from "../../utils/lang-icons.js";
 import { CopyButton } from "../ui/CopyButton.js";
+import { useContext } from "preact/hooks";
+import { SiteContext, SpecContext } from "../../renderer/context.js";
 
 interface CodeSamplesProps {
   operation: NormalizedOperation;
-  serverUrl: string;
   codeSampleLangs?: string[];
 }
 
@@ -14,8 +15,10 @@ interface CodeSamplesProps {
  * Code samples in a stone-themed card with language dropdown and copy button.
  * Language dropdown and copy button for generated request examples.
  */
-export function CodeSamplesExamples({ operation, serverUrl, codeSampleLangs }: CodeSamplesProps) {
-  const samples = generateCodeSamples(operation, serverUrl, codeSampleLangs);
+export function CodeSamplesExamples({ operation, codeSampleLangs }: CodeSamplesProps) {
+  const spec = useContext(SpecContext);
+  const site = useContext(SiteContext);
+  const samples = generateCodeSamples(operation, spec.servers, codeSampleLangs, spec.securitySchemes, spec.sourceUrl ?? site?.siteUrl);
   if (!samples.length) return null;
 
   const title = operation.summary ?? `${operation.method.toUpperCase()} ${operation.path}`;
@@ -40,16 +43,33 @@ export function CodeSamplesExamples({ operation, serverUrl, codeSampleLangs }: C
               aria-haspopup="listbox"
             >
               <div class="z-10 flex items-center gap-1 rounded-lg px-1.5 group-hover:bg-[rgb(var(--color-stone-200)/0.5)] group-hover:text-[rgb(var(--color-primary))] dark:group-hover:bg-[rgb(var(--color-stone-700)/0.7)] dark:group-hover:text-[rgb(var(--color-primary-light))]">
-                <span class="code-lang-icon" dangerouslySetInnerHTML={{ __html: langIcon(samples[0].lang) }} />
+                <span
+                  class="code-lang-icon"
+                  dangerouslySetInnerHTML={{ __html: langIcon(samples[0].lang) }}
+                />
                 <span class="code-lang-label truncate">{samples[0].label ?? samples[0].lang}</span>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" class="size-3.5 shrink-0">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  class="size-3.5 shrink-0"
+                >
                   <path d="m7 15 5 5 5-5" />
                   <path d="m7 9 5-5 5 5" />
                 </svg>
               </div>
             </button>
             {/* Dropdown menu (hidden by default, toggled by JS) */}
-            <div class="code-lang-menu hidden absolute right-0 top-full mt-1 z-20 min-w-[120px] rounded-lg border border-[rgb(var(--color-stone-200))] dark:border-[rgb(255_255_255/0.1)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-stone-900))] shadow-lg py-1" role="listbox">
+            <div
+              class="code-lang-menu hidden absolute right-0 top-full mt-1 z-20 min-w-[120px] rounded-lg border border-[rgb(var(--color-stone-200))] dark:border-[rgb(255_255_255/0.1)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-stone-900))] shadow-lg py-1"
+              role="listbox"
+            >
               {samples.map((sample, i) => (
                 <button
                   key={i}
@@ -78,8 +98,14 @@ export function CodeSamplesExamples({ operation, serverUrl, codeSampleLangs }: C
               class={`code-lang-panel${i === 0 ? " active" : ""}`}
               data-lang-panel={String(i)}
             >
-              <div class="relative w-full px-4 py-3.5 text-sm leading-6 bg-[rgb(var(--color-code-block-light))] dark:bg-[rgb(var(--color-code-block-dark))] overflow-x-auto" style="font-variant-ligatures: none">
-                <div class="font-mono whitespace-pre text-xs leading-[1.35rem] code-block" dangerouslySetInnerHTML={{ __html: html }} />
+              <div
+                class="relative w-full px-4 py-3.5 text-sm leading-6 bg-[rgb(var(--color-code-block-light))] dark:bg-[rgb(var(--color-code-block-dark))] overflow-x-auto"
+                style="font-variant-ligatures: none"
+              >
+                <div
+                  class="font-mono whitespace-pre text-xs leading-[1.35rem] code-block"
+                  dangerouslySetInnerHTML={{ __html: html }}
+                />
               </div>
             </div>
           );

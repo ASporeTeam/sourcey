@@ -1,6 +1,6 @@
 import type { Token, Tokens } from "marked";
 import { htmlId } from "../utils/html-id.js";
-import { lexMarkdown, renderMarkdownInline } from "../utils/markdown.js";
+import { lexMarkdown, renderMarkdownInline, PAGE_CONTENT } from "../utils/markdown.js";
 import type {
   ChangelogChangeType,
   ChangelogDiagnostic,
@@ -337,7 +337,7 @@ function createEntry(
   repoUrl: string | undefined,
 ): NormalizedChangelogEntry {
   const compact = markdown.replace(/\n+/g, " ").trim();
-  const html = renderMarkdownInline(compact);
+  const html = renderMarkdownInline(compact, PAGE_CONTENT);
   const text = stripHtml(html);
   const links = extractInlineLinks(compact);
   const refs = extractRefs(compact, repoUrl);

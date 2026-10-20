@@ -7,16 +7,16 @@ import { contentTypeForPath, outputPathFromRequestPath } from "./renderer/static
 export interface SourceyPluginOptions {
   /** Additional file paths to watch (specs, markdown) */
   watchPaths: string[];
+  dispose?: () => void;
   /** Current public base URL, used for dev routes under subpaths. */
   baseUrl?: () => string;
   /** SSR render function: given a URL path, return HTML or null */
-  render: (url: string) => Promise<string | null>;
-  /** Optional: generate search index JSON on demand */
-  searchIndex?: () => Promise<string>;
+  render: (url: string) => Promise<{ html: string; status: number } | null>;
   /** Optional: serve generated/copied files that do not go through Vite's static handler. */
   extraFile?: (outputPath: string) => Promise<string | Buffer | undefined>;
   extraFileType?: (outputPath: string) => Promise<string | undefined>;
   responseHeaders?: (pathname: string) => Promise<Record<string, string> | undefined>;
+  redirect?: (url: string) => { location: string; status: number } | undefined;
 }
 
 /**
@@ -25,40 +25,18 @@ export interface SourceyPluginOptions {
  * - Watches spec and markdown files; triggers full reload on change
  */
 export function sourceyPlugin(options: SourceyPluginOptions): Plugin {
-  const { watchPaths, baseUrl, render, searchIndex, extraFile, extraFileType, responseHeaders } =
+  const { watchPaths, baseUrl, render, extraFile, extraFileType, responseHeaders } =
     options;
-  const watchSet = new Set(watchPaths.map((p) => resolve(p)));
 
   return {
     name: "sourcey",
+    closeBundle() { options.dispose?.(); },
 
     configureServer(server: ViteDevServer) {
       // Add spec/markdown files to Vite's watcher
       for (const p of watchPaths) {
         server.watcher.add(resolve(p));
       }
-
-      // Trigger full reload when watched files or source components change
-      server.watcher.on("change", async (file) => {
-        const ext = extname(file);
-        if (
-          watchSet.has(file) ||
-          ext === ".md" ||
-          ext === ".yml" ||
-          ext === ".yaml" ||
-          ext === ".tsx" ||
-          ext === ".ts"
-        ) {
-          // Invalidate entire SSR module graph so next render uses fresh source.
-          // Shallow invalidation misses transitive importers (e.g. markdown-loader
-          // changes don't propagate to static-renderer), so nuke everything.
-          server.moduleGraph.invalidateAll();
-
-          const timestamp = new Date().toLocaleTimeString();
-          console.log(`  [${timestamp}] ${file} changed, reloading…`);
-          server.ws.send({ type: "full-reload" });
-        }
-      });
 
       // Return a post middleware (runs after Vite internals)
       // We use pre-middleware instead by calling server.middlewares.use directly
@@ -68,9 +46,11 @@ export function sourceyPlugin(options: SourceyPluginOptions): Plugin {
           const url = req.url ?? "/";
           const pathname = url.split("?", 1)[0] ?? "/";
           const currentBaseUrl = normalizeBaseUrl(baseUrl?.());
-          const baseSearchPath = currentBaseUrl
-            ? `${currentBaseUrl}search-index.json`
-            : "/search-index.json";
+          const redirect = options.redirect?.(url);
+          if (redirect) {
+            res.writeHead(redirect.status, { Location: redirect.location });
+            res.end(); return;
+          }
 
           // Let Vite handle its own requests
           if (
@@ -80,21 +60,6 @@ export function sourceyPlugin(options: SourceyPluginOptions): Plugin {
             url === "/favicon.ico"
           ) {
             return next();
-          }
-
-          // Serve search index on demand
-          if (searchIndex && (pathname === "/search-index.json" || pathname === baseSearchPath)) {
-            try {
-              const json = await searchIndex();
-              res.writeHead(200, {
-                "Content-Type": "application/json",
-                "Cache-Control": "no-cache",
-              });
-              res.end(json);
-              return;
-            } catch {
-              return next();
-            }
           }
 
           if (extraFile) {
@@ -117,21 +82,21 @@ export function sourceyPlugin(options: SourceyPluginOptions): Plugin {
           }
 
           // Only handle HTML page requests (no extension, or .html)
-          const ext = extname(url);
+          const ext = extname(pathname);
           if (ext && ext !== ".html") {
             return next();
           }
 
           try {
-            let html = await render(url);
-            if (!html) {
+            const result = await render(url);
+            if (!result) {
               return next();
             }
 
             // Let Vite transform the HTML (injects HMR client script)
-            html = await server.transformIndexHtml(url, html);
+            const html = await server.transformIndexHtml(url, result.html);
 
-            res.writeHead(200, {
+            res.writeHead(result.status, {
               "Content-Type": "text/html; charset=utf-8",
               "Cache-Control": "no-cache",
               ...(await responseHeaders?.(pathname)),

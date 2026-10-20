@@ -1,3 +1,10 @@
+import { activeSection, isNavGroup, walkNavItems, type SiteNavGroup } from "../../core/navigation.js";
+import { useReferenceOutline } from "../openapi/outline.js";
+import { ContextControls, ContextNotice } from "./ContextControls.js";
+import { LogoImage, logoHref } from "../ui/Logo.js";
+import { Markdown } from "../ui/Markdown.js";
+import { SocialIcon, linkLabel } from "../ui/SocialIcon.js";
+import { english } from "../../core/messages.js";
 import type { ComponentChildren } from "preact";
 import { useContext } from "preact/hooks";
 import {
@@ -59,46 +66,106 @@ function Link({
   );
 }
 
+function ReaderGroups({ groups, active, href }: { groups: SiteNavGroup[]; active: string; href: (path: string) => string }) {
+  return <>{groups.map(group => {
+    const label = group.href ? <a class="nav-section" href={href(group.href)}>{group.label}</a> : <span class="nav-section">{group.label}</span>;
+    const contents = <>{group.items.map(item => isNavGroup(item)
+      ? <div class="reader-nested-group"><ReaderGroups groups={[item]} active={active} href={href} /></div>
+      : <a href={href(item.href)} aria-current={item.id === active ? "page" : undefined}><span>{item.label}</span>{item.id === active && <span class="active-nav-dot" />}</a>)}</>;
+    return group.collapsed !== undefined && group.items.length
+      ? <details class="sourcey-nav-group" open={!group.collapsed || [...walkNavItems([group])].some(item => item.id === active)}><summary>{label}</summary>{contents}</details>
+      : <>{group.label && label}{contents}</>;
+  })}</>;
+}
+
 export function ReaderPage({ children }: { children?: ComponentChildren }) {
   const site = useContext(SiteContext);
   const nav = useContext(NavigationContext);
   const page = useContext(PageContext);
-  const { assetBase: base } = useContext(OptionsContext);
+  const { assetBase: base, messages = english } = useContext(OptionsContext);
   const settings = site.theme.reader ?? {};
   const document = settings.document;
-  const tab = nav.tabs.find((item) => item.slug === nav.activeTabSlug);
-  const items = tab?.groups.flatMap((group) => group.items) ?? [];
+  const { tab, group } = activeSection(nav);
+  const items = tab ? [...walkNavItems(tab.groups)] : [];
   const index = items.findIndex((item) => item.id === nav.activePageSlug);
-  const previous = items[index - 1];
-  const next = items[index + 1];
+  const previous = nav.adjacentPages?.previous;
+  const next = nav.adjacentPages?.next;
   const label = document?.label ?? tab?.label ?? site.name;
   const edition = [label, document?.version].filter(Boolean).join(" ");
   const href = (path: string) => joinHref(base, path);
   // The chapter menu and its fallback links list the same chapters in order;
   // the menu navigates through the links, whose addresses hosts may re-base.
-  const chapters = nav.tabs.map((section) => ({
-    section,
-    items: section.groups.flatMap((group) => group.items),
-  }));
   const activeHref = href(items[index]?.href ?? tab?.href ?? "");
-  const home = safeUrl(site.logo?.href ?? href(nav.tabs[0]?.href ?? "")) ?? "/";
+  const home = safeUrl(logoHref(site, nav, base)) ?? "/";
   const searchHref = settings.searchHref ? safeUrl(settings.searchHref) : null;
+  const docPage = page.kind === "markdown" ? page.markdown : null;
+  // Chapters and reference pages read in order, under the same breadcrumb and footer.
+  const paged = docPage !== null || page.kind === "spec";
   const before: ReaderLink | undefined = previous
-    ? { label: previous.label, href: href(previous.href), description: "← Previous" }
-    : settings.pagination?.before;
+    ? { label: previous.label, href: href(previous.href), description: `← ${messages.previous}` }
+    : docPage ? settings.pagination?.before : undefined;
   const after: ReaderLink | undefined = next
-    ? { label: next.label, href: href(next.href), description: "Next →" }
-    : settings.pagination?.after;
+    ? { label: next.label, href: href(next.href), description: `${messages.next} →` }
+    : docPage ? settings.pagination?.after : undefined;
   const isCurrent = (target: string) => {
     if (target.startsWith("/") && site.baseUrl) return site.baseUrl.startsWith(target);
     return target === activeHref;
   };
-  const navigationLinks = site.navbar.links.map((link) => ({
-    ...link,
-    label: link.label ?? link.type,
-  }));
-  const docPage = page.kind === "markdown" ? page.markdown : null;
-  const headings = docPage?.headings ?? (page.kind === "changelog" ? page.changelog.headings : []);
+  const navigationLinks = site.navbar.links.map((link) => ({ ...link, label: linkLabel(link) }));
+  const outline = useReferenceOutline();
+  const headings = docPage?.headings ?? (page.kind === "changelog" ? page.changelog.headings : outline);
+  // A chapter names its edition; a reference page, the section listing it.
+  const crumbs = [tab?.label, docPage ? edition : group?.label].filter(
+    (crumb, i, all): crumb is string => !!crumb && all.indexOf(crumb) === i,
+  );
+  const breadcrumb = (
+    <div class="doc-breadcrumb">
+      {crumbs.map((crumb, i) => (
+        <>
+          {i > 0 && <Icon name="chevron" size={12} />}
+          <span>{crumb}</span>
+        </>
+      ))}
+      {docPage && document?.status && <span class="pill soft">{document.badge ?? document.status}</span>}
+    </div>
+  );
+  const pagination = (before || after) && (
+    <nav class="doc-pagination" aria-label="Previous and next chapter">
+      {before ? (
+        <Link link={before}>
+          <span>{before.description}</span>
+          <strong>{before.label}</strong>
+        </Link>
+      ) : (
+        <span />
+      )}
+      {after && (
+        <Link link={after}>
+          <span>{after.description}</span>
+          <strong>{after.label}</strong>
+        </Link>
+      )}
+    </nav>
+  );
+  const footer = (
+    <footer class="doc-footer">
+      <span>{settings.footer?.text ?? (site.footer.text ? <Markdown inline content={site.footer.text} class="sourcey-footer-text" /> : site.name)}</span>
+      <span class="doc-footer-links">
+        {settings.footer?.links?.map((link) => (
+          <Link key={link.href} link={link}>
+            {link.label}
+            <Icon name="northeast" size={12} />
+          </Link>
+        ))}
+        <span class="sourcey-attribution">
+          <a href="https://sourcey.com/docs" target="_blank" rel="noopener">
+            Docs by Sourcey
+            <Icon name="northeast" size={12} />
+          </a>
+        </span>
+      </span>
+    </footer>
+  );
 
   return (
     <div class="sourcey-reader" id="page">
@@ -110,13 +177,14 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
           <a class="home-link" href={home} aria-label={`${site.name} home`}>
             <span class="brand">
               {site.logo?.light && (
-                <img
-                  class={settings.logoMark ? "brand-mark" : "brand-logo"}
-                  src={site.logo.light}
-                  alt={settings.logoMark ? "" : site.name}
+                <LogoImage
+                  className={site.logo.mark ? "brand-mark" : "brand-logo"}
+                  light={site.logo.dark ?? site.logo.light}
+                  dark={site.logo.dark}
+                  alt={site.logo.mark ? "" : site.name}
                 />
               )}
-              {(!site.logo?.light || settings.logoMark) && <span>{site.name}</span>}
+              {(!site.logo?.light || site.logo.mark) && <span>{site.name}</span>}
             </span>
           </a>
           <nav class="desktop-nav" aria-label="Main navigation">
@@ -124,29 +192,31 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
               <a
                 key={link.href}
                 href={safeUrl(link.href) ?? undefined}
+                class={link.type === "link" ? undefined : "desktop-nav-icon"}
+                aria-label={link.type === "link" ? undefined : link.label}
                 aria-current={isCurrent(link.href) ? "page" : undefined}
               >
-                {link.label}
+                {link.type === "link" ? link.label : <SocialIcon type={link.type} size={18} />}
               </a>
             ))}
           </nav>
           <div class="header-actions">
             {searchHref ? (
-              <a class="search-link" href={searchHref} aria-label="Search documentation">
+              <a class="search-link" href={searchHref} aria-label={messages.search}>
                 <Icon name="search" size={17} />
-                <span>Search</span>
+                <span>{messages.search}</span>
                 <kbd>/</kbd>
               </a>
             ) : (
               <button
                 class="search-link"
                 id="search-open"
-                aria-label="Search documentation"
+                aria-label={messages.search}
                 data-reader-enhancement
                 hidden
               >
                 <Icon name="search" size={17} />
-                <span>Search</span>
+                <span>{messages.search}</span>
                 <kbd>/</kbd>
               </button>
             )}
@@ -154,7 +224,9 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
               id="theme-toggle"
               class="reader-theme-toggle"
               type="button"
-              aria-label="Switch to dark mode"
+              aria-label={messages.dark}
+              data-light-label={messages.light}
+              data-dark-label={messages.dark}
               data-reader-enhancement
               hidden
             >
@@ -169,7 +241,9 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
             )}
             <button
               class="menu-toggle"
-              aria-label="Open navigation"
+              aria-label={messages.openMenu}
+              data-open-label={messages.openMenu}
+              data-close-label={messages.closeMenu}
               aria-controls="reader-mobile-nav"
               aria-expanded="false"
               data-reader-enhancement
@@ -179,6 +253,7 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
             </button>
           </div>
         </div>
+        <div class="reader-context-row"><ContextControls /></div>
         <nav id="reader-mobile-nav" aria-label="Mobile navigation" hidden>
           {navigationLinks.map((link) => (
             <Link key={link.href} link={link}>
@@ -192,6 +267,12 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
               <Icon name="search" />
             </a>
           )}
+          {site.navbar.primary && (
+            <a class="mobile-cta" href={safeUrl(site.navbar.primary.href) ?? undefined}>
+              {site.navbar.primary.label}
+              <Icon />
+            </a>
+          )}
         </nav>
         <nav class="reader-mobile-fallback" aria-label="Site links" data-reader-fallback>
           {navigationLinks.map((link) => (
@@ -199,198 +280,113 @@ export function ReaderPage({ children }: { children?: ComponentChildren }) {
           ))}
         </nav>
       </header>
-      <div class="docs-shell">
-        <aside class="docs-sidebar" aria-label={`${tab?.label ?? "Documentation"} navigation`}>
-          <div class="docs-project">
-            <a
-              class={`docs-map${document ? "" : " docs-project-title"}`}
-              href={href(tab?.href ?? "")}
-            >
-              <strong class="docs-map-label">{label}</strong>
-              {document?.title && <span class="docs-map-title">{document.title}</span>}
-            </a>
-            {(document?.version || document?.status) && (
-              <span class="docs-version">
-                <span class="small-dot" />
-                {[document.version, document.status?.toLowerCase()].filter(Boolean).join(" ")}
-              </span>
-            )}
-          </div>
-          {nav.tabs.length > 1 && (
-            <nav class="reader-tabs" aria-label="Documentation sections">
-              {nav.tabs.map((item) => (
-                <a
-                  href={href(item.href)}
-                  aria-current={item.slug === nav.activeTabSlug ? "page" : undefined}
-                >
-                  {item.label}
-                </a>
-              ))}
-            </nav>
-          )}
-          <nav aria-label="Chapters">
-            {tab?.groups.map((group) => (
-              <>
-                {group.href ? (
-                  <a class="nav-section" href={href(group.href)}>
-                    {group.label}
-                  </a>
-                ) : (
-                  <span class="nav-section">{group.label}</span>
-                )}
-                {group.items.map((item) => (
+      {docPage?.layout === "page" ? (
+        // A page drawn by its author keeps the header and footer, without chapters or contents.
+        <main id="main" class="reader-page">
+          <article class="reader-prose" dangerouslySetInnerHTML={{ __html: docPage.html }} />
+          {footer}
+        </main>
+      ) : (
+        <div class="docs-shell">
+          <details open class="docs-sidebar" data-reader-chapters aria-label={`${tab?.label ?? "Documentation"} navigation`}>
+            <summary class="reader-chapters-trigger">{edition}<Icon name="chevron" size={14} /></summary>
+            <div class="docs-project">
+              <a
+                class={`docs-map${document ? "" : " docs-project-title"}`}
+                href={href(tab?.href ?? "")}
+              >
+                <strong class="docs-map-label">{label}</strong>
+                {document?.title && <span class="docs-map-title">{document.title}</span>}
+              </a>
+              {(document?.version || document?.status) && (
+                <span class="docs-version">
+                  <span class="small-dot" />
+                  {[document.version, document.status?.toLowerCase()].filter(Boolean).join(" ")}
+                </span>
+              )}
+            </div>
+            <ContextNotice />
+            {nav.tabs.length > 1 && (
+              <nav class="reader-tabs" aria-label="Documentation sections">
+                {nav.tabs.map((item) => (
                   <a
                     href={href(item.href)}
-                    aria-current={item.id === nav.activePageSlug ? "page" : undefined}
-                  >
-                    <span>{item.label}</span>
-                    {item.id === nav.activePageSlug && <span class="active-nav-dot" />}
-                  </a>
-                ))}
-              </>
-            ))}
-          </nav>
-          {(settings.sidebar?.links?.length || settings.sidebar?.note) && (
-            <div class="docs-sidebar-bottom">
-              {settings.sidebar.links?.map((link) => (
-                <Link key={link.href} link={link}>
-                  {link.icon && <Icon name={link.icon} size={16} />}
-                  {link.label}
-                  <Icon name="northeast" size={13} />
-                </Link>
-              ))}
-              {settings.sidebar.note && <p>{settings.sidebar.note}</p>}
-            </div>
-          )}
-        </aside>
-        <div class="mobile-doc-nav">
-          <label for="chapter-select">{edition}</label>
-          <select
-            id="chapter-select"
-            aria-label={`${tab?.label ?? "Documentation"} chapter`}
-            data-reader-enhancement
-            hidden
-          >
-            {chapters.map(({ section, items: sectionItems }) => (
-              <optgroup label={section.label}>
-                {sectionItems.map((item) => (
-                  <option
-                    selected={section.slug === nav.activeTabSlug && item.id === nav.activePageSlug}
+                    aria-current={item.slug === nav.activeTabSlug ? "page" : undefined}
                   >
                     {item.label}
-                  </option>
+                  </a>
                 ))}
-              </optgroup>
-            ))}
-          </select>
-          <details class="reader-chapter-fallback" data-reader-fallback>
-            <summary>Chapters</summary>
-            <nav>
-              {chapters.map(({ section, items: sectionItems }) => (
-                <>
-                  {chapters.length > 1 && <strong>{section.label}</strong>}
-                  {sectionItems.map((item) => (
-                    <a href={href(item.href)}>{item.label}</a>
-                  ))}
-                </>
-              ))}
-            </nav>
-          </details>
-        </div>
-        <main id="main" class="docs-main">
-          {docPage ? (
-            <>
-              <div class="doc-breadcrumb">
-                <span>{tab?.label}</span>
-                {/* Without a document label the edition is the tab's own label. */}
-                {edition !== tab?.label && (
-                  <>
-                    <Icon name="chevron" size={12} />
-                    <span>{edition}</span>
-                  </>
-                )}
-                {document?.status && (
-                  <span class="pill soft">{document.badge ?? document.status}</span>
-                )}
-              </div>
-              <header class="doc-title">
-                <h1>{docPage.title}</h1>
-                {docPage.description && !docPage.hideLede && <p>{docPage.description}</p>}
-              </header>
-              <div class="doc-metadata">
-                {document?.status && <span>{document.status}</span>}
-                {document?.updated && <span>{document.updated}</span>}
-                <button data-copy-page data-reader-enhancement hidden>
-                  <Icon name="copy" size={12} />
-                  <span aria-live="polite">Copy link</span>
-                </button>
-              </div>
-              <article class="reader-prose" dangerouslySetInnerHTML={{ __html: docPage.html }} />
-              {(before || after) && (
-                <nav class="doc-pagination" aria-label="Previous and next chapter">
-                  {before ? (
-                    <Link link={before}>
-                      <span>{before.description}</span>
-                      <strong>{before.label}</strong>
-                    </Link>
-                  ) : (
-                    <span />
-                  )}
-                  {after && (
-                    <Link link={after}>
-                      <span>{after.description}</span>
-                      <strong>{after.label}</strong>
-                    </Link>
-                  )}
-                </nav>
-              )}
-              <footer class="doc-footer">
-                <span>{settings.footer?.text ?? site.name}</span>
-                <span class="doc-footer-links">
-                  {settings.footer?.links?.map((link) => (
-                    <Link key={link.href} link={link}>
-                      {link.label}
-                      <Icon name="northeast" size={12} />
-                    </Link>
-                  ))}
-                  <span class="sourcey-attribution">
-                    <a href="https://sourcey.com/docs" target="_blank" rel="noopener">
-                      Docs by Sourcey
-                      <Icon name="northeast" size={12} />
-                    </a>
-                  </span>
-                </span>
-              </footer>
-            </>
-          ) : (
-            children
-          )}
-        </main>
-        <aside class="docs-toc" aria-label="On this page">
-          {headings.length > 0 && (
-            <>
-              <span class="eyebrow">On this page</span>
-              <nav>
-                {headings
-                  .filter((heading) => heading.level === Math.min(...headings.map((h) => h.level)))
-                  .map((heading) => (
-                    <a href={`#${heading.id}`}>{heading.text}</a>
-                  ))}
               </nav>
-            </>
-          )}
-          {settings.aside?.links?.map((link) => (
-            <Link key={link.href} className="toc-example" link={link}>
-              {link.icon && <Icon name={link.icon} size={19} />}
-              {link.description && <strong>{link.description}</strong>}
-              <span>
-                {link.label}
-                <Icon size={12} />
-              </span>
-            </Link>
-          ))}
-        </aside>
-      </div>
+            )}
+            <nav aria-label="Chapters">
+              {tab && <ReaderGroups groups={tab.groups} active={nav.activePageSlug} href={href} />}
+            </nav>
+            {(settings.sidebar?.links?.length || settings.sidebar?.note) && (
+              <div class="docs-sidebar-bottom">
+                {settings.sidebar.links?.map((link) => (
+                  <Link key={link.href} link={link}>
+                    {link.icon && <Icon name={link.icon} size={16} />}
+                    {link.label}
+                    <Icon name="northeast" size={13} />
+                  </Link>
+                ))}
+                {settings.sidebar.note && <p>{settings.sidebar.note}</p>}
+              </div>
+            )}
+          </details>
+          <main id="main" class="docs-main">
+            {docPage ? (
+              <>
+                {breadcrumb}
+                <header class="doc-title">
+                  <h1>{docPage.title}</h1>
+                  {docPage.description && !docPage.hideLede && <p>{docPage.description}</p>}
+                </header>
+                <div class="doc-metadata">
+                  {document?.status && <span>{document.status}</span>}
+                  {document?.updated && <span>{document.updated}</span>}
+                  <button data-copy-page data-reader-enhancement data-copied-label={messages.copied} data-failure-label={messages.copyAddress} data-copy-label={messages.copyLink} hidden>
+                    <Icon name="copy" size={12} />
+                    <span aria-live="polite">{messages.copyLink}</span>
+                  </button>
+                </div>
+                <article class="reader-prose" dangerouslySetInnerHTML={{ __html: docPage.html }} />
+              </>
+            ) : (
+              <>
+                {page.kind === "spec" && breadcrumb}
+                {children}
+              </>
+            )}
+            {paged && pagination}
+            {paged && footer}
+          </main>
+          <aside class="docs-toc" aria-label={messages.onThisPage}>
+            {headings.length > 0 && (
+              <>
+                <span class="eyebrow">{messages.onThisPage}</span>
+                <nav>
+                  {headings
+                    .filter((heading) => heading.level === Math.min(...headings.map((h) => h.level)))
+                    .map((heading) => (
+                      <a href={`#${heading.id}`}>{heading.text}</a>
+                    ))}
+                </nav>
+              </>
+            )}
+            {settings.aside?.links?.map((link) => (
+              <Link key={link.href} className="toc-example" link={link}>
+                {link.icon && <Icon name={link.icon} size={19} />}
+                {link.description && <strong>{link.description}</strong>}
+                <span>
+                  {link.label}
+                  <Icon size={12} />
+                </span>
+              </Link>
+            ))}
+          </aside>
+        </div>
+      )}
       {!searchHref && <SearchDialog />}
     </div>
   );

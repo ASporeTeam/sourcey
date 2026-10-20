@@ -5,7 +5,6 @@
 // this file only manages the class.
 (function () {
   function init() {
-    var navbar = document.getElementById('navbar');
     var navLinks = document.querySelectorAll('#nav .nav-link, #nav .nav-group-link');
     var targets = document.querySelectorAll('[data-traverse-target]');
 
@@ -79,9 +78,15 @@
       }
     }
 
-    // Scroll to element with header offset.
-    // For the first traverse target, scroll to the very top of the page
-    // so the title and all top padding are visible.
+    // Where the theme's CSS lands a destination: the header cleared, then the
+    // gap a page's content starts with.
+    function landing(el) {
+      var root = getComputedStyle(document.documentElement);
+      return parseFloat(root.scrollPaddingTop) + parseFloat(getComputedStyle(el).scrollMarginTop) || 0;
+    }
+
+    // Scroll to a place on the page, landing it as any link does. The first
+    // traverse target opens the page, so the page returns to its title.
     function scrollToId(id, behavior) {
       var el = document.getElementById(id);
       if (!el) return;
@@ -90,8 +95,7 @@
         window.scrollTo({ top: 0, behavior: behavior });
         return;
       }
-      var offset = (navbar ? navbar.offsetHeight : 0) - 1;
-      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - offset, behavior: behavior });
+      el.scrollIntoView({ block: 'start', behavior: behavior });
     }
 
     // Handle anchor clicks: activate highlight, scroll with header offset, lock scroll tracker.
@@ -125,7 +129,9 @@
       // If a nav link was just clicked, don't override it until scroll settles
       if (clickedId) return;
 
-      var threshold = (navbar ? navbar.offsetHeight : 0) + 20;
+      // A section is current once it reaches the line destinations land on.
+      var first = targets[0] || tocHeadingEls[0];
+      var threshold = landing(first) + 20;
       var best = null;
 
       // Check API traverse targets
@@ -177,9 +183,8 @@
       }
     }, { passive: true });
 
-    // Activate on initial load based on URL hash or scroll position.
-    // Always use JS scroll to override the browser's native hash scroll,
-    // which uses CSS scroll-margin-top and may not match the actual navbar height.
+    // Activate on initial load based on URL hash or scroll position. A hash
+    // lands again once the page has settled, as a link on the page would.
     var hash = window.location.hash.slice(1)
       || new URLSearchParams(window.location.search).get('target');
     if (hash && document.getElementById(hash)) {

@@ -6,50 +6,38 @@ import {
   SiteContext,
   NavigationContext,
 } from "../../renderer/context.js";
-import { langIconCSS } from "../../utils/lang-icons.js";
 import { shadedNeutrals } from "../../utils/palette.js";
+import { hasContextChoices } from "./ContextControls.js";
 import pkg from "../../../package.json" with { type: "json" };
+import { pageMetadata } from "../../core/page-metadata.js";
+import { breadcrumbList, structuredDataJson } from "../../core/breadcrumbs.js";
+
+/**
+ * The weights the themes set. Google serves each from a variable family's one file, or the
+ * static weights a family has, and skips the rest; a range fails unless it is the family's
+ * exact axis (Poppins, Lato and Roboto Mono all refuse 100..900).
+ */
+export const GOOGLE_FONT_WEIGHTS = "400;500;550;600;650;700;750";
 
 export function Head() {
   const site = useContext(SiteContext);
   const spec = useContext(SpecContext);
   const options = useContext(OptionsContext);
   const page = useContext(PageContext);
-  const changelogVersion =
-    page.kind === "changelog" && page.changelog.permalinkVersionId
-      ? page.changelog.changelog.versions.find(
-          (version) => version.id === page.changelog.permalinkVersionId,
-        )
-      : undefined;
-
-  const siteName = site.name || spec.info.title || "";
-  const separator = site.titleSeparator;
-  const pageTitle =
-    page.kind === "markdown"
-      ? composePageTitle(page.markdown.title, siteName, separator)
-      : page.kind === "changelog"
-        ? (() => {
-            const baseTitle = changelogVersion
-              ? `${changelogVersion.version ?? "Unreleased"}${separator}${page.changelog.title}`
-              : page.changelog.title;
-            return composePageTitle(baseTitle, siteName, separator);
-          })()
-        : composePageTitle(siteName, "API Reference", separator);
-
-  const pageDescription =
-    page.kind === "markdown"
-      ? page.markdown.description || pageTitle
-      : page.kind === "changelog"
-        ? changelogVersion?.summary || page.changelog.description || pageTitle
-        : (spec.info.summary ?? spec.info.description ?? `${siteName} API Documentation`);
-
   const nav = useContext(NavigationContext);
+  const metadata = pageMetadata(page, site, spec?.operations.some(operation => operation.mcpExtras)
+    ? nav.tabs.find(tab => tab.slug === nav.activeTabSlug)?.label
+    : undefined);
+  const { browserTitle: pageTitle, description: pageDescription, siteName } = metadata;
+  const breadcrumbs = !options.noindex && page.kind !== "not-found"
+    ? breadcrumbList(nav, metadata.title, options.pageUrl, site.baseUrl)
+    : undefined;
+
   const { colors, fonts, layout } = site.theme;
   // Desktop: h-16 row + h-12 tabs (when multi-tab) = 7rem, or h-16 alone = 4rem.
   // Mobile: h-16 row + h-14 breadcrumb = 7.5rem (always).
-  const headerHeight = nav.tabs.length > 1 ? "7rem" : "4rem";
+  const headerHeight = nav.tabs.length > 1 || hasContextChoices(options.equivalents) ? "7rem" : "4rem";
   const headerHeightMobile = "7.5rem";
-  const showLangIconCSS = page.kind === "spec" && site.codeSamples.length > 0;
   // The full-width theme shades its neutrals from the primary colour. They sit
   // with the other config tokens, so a site's custom CSS can still set them.
   const shades = site.theme.name === "api-first" ? shadedNeutrals(colors.primary) : undefined;
@@ -75,7 +63,7 @@ export function Head() {
       --content-max-width: ${layout.content};
       --header-height: ${headerHeightMobile};
     }
-    html { scroll-padding-top: var(--header-height); }
+    html:has(#navbar) { scroll-padding-top: var(--header-height); }
     @media (min-width: 1024px) {
       :root { --header-height: ${headerHeight}; }
     }
@@ -89,13 +77,16 @@ export function Head() {
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>{pageTitle}</title>
       <meta name="description" content={pageDescription} />
+      {breadcrumbs && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredDataJson(breadcrumbs) }} />}
+      {options.noindex && <meta name="robots" content="noindex,follow" />}
+      {options.equivalents?.filter(e => e.kind === "locale" && e.lang).map(e => <link rel="alternate" hrefLang={e.lang} href={e.href} />)}
       <meta name="generator" content={`Sourcey ${pkg.version}`} />
       {options.pageUrl && <link rel="canonical" href={options.pageUrl} />}
       <meta property="og:title" content={pageTitle} />
       <meta property="og:description" content={pageDescription} />
       <meta property="og:type" content="website" />
       {siteName && <meta property="og:site_name" content={siteName} />}
-      {options.pageUrl && <meta property="og:url" content={options.pageUrl} />}
+      {options.pageUrl && /^https?:\/\//.test(options.pageUrl) && <meta property="og:url" content={options.pageUrl} />}
       {options.ogImageUrl && <meta property="og:image" content={options.ogImageUrl} />}
       {options.ogImageUrl && <meta property="og:image:width" content="1200" />}
       {options.ogImageUrl && <meta property="og:image:height" content="630" />}
@@ -104,7 +95,10 @@ export function Head() {
       <meta name="twitter:title" content={pageTitle} />
       <meta name="twitter:description" content={pageDescription} />
       {options.ogImageUrl && <meta name="twitter:image" content={options.ogImageUrl} />}
-      <meta name="sourcey-search" content={`${options.assetBase}search-index.json`} />
+      <meta name="sourcey-assets" content={options.assetBase || "./"} />
+      {options.componentStyles?.map(path => <link rel="stylesheet" href={`${options.assetBase}${path}`} />)}
+      <meta name="sourcey-search-indexes" content={JSON.stringify(options.searchIndexes ?? [])} />
+      {options.assets && <meta name="sourcey-search-module" content={options.assets.search} />}
       {options.alternateLinks?.map((link) => (
         <link
           key={`${link.type}-${link.href}`}
@@ -114,41 +108,21 @@ export function Head() {
           title={link.title}
         />
       ))}
-      {fonts.googleFont && (
+      {fonts.google.length > 0 && (
         <>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-          <link
-            rel="stylesheet"
-            href={`https://fonts.googleapis.com/css2?family=${encodeURIComponent(fonts.googleFont)}:wght@100..900&display=swap`}
-          />
+          {/* One stylesheet per family, so a family Google lacks cannot stop the other loading. */}
+          {fonts.google.map(family => (
+            <link key={family} rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@${GOOGLE_FONT_WEIGHTS}&display=swap`} />
+          ))}
         </>
       )}
       <style dangerouslySetInnerHTML={{ __html: themeCSS }} />
-      {showLangIconCSS && <style dangerouslySetInnerHTML={{ __html: langIconCSS() }} />}
-      {site.theme.name !== "reader" && site.customCSS && (
-        <style dangerouslySetInnerHTML={{ __html: site.customCSS }} />
-      )}
-      <script src={`${options.assetBase}sourcey-theme.js`} />
-      <link rel="stylesheet" href={`${options.assetBase}sourcey.css`} />
-      {site.theme.name === "reader" && site.customCSS && (
-        <style dangerouslySetInnerHTML={{ __html: site.customCSS }} />
-      )}
+      {options.assets && <script src={options.assets.theme} data-default={site.theme.appearance?.default ?? "system"} data-storage-key={site.theme.appearance?.storageKey ?? "sourcey-theme"} />}
+      {options.assets?.styles.map(href => <link rel="stylesheet" href={href} />)}
+      {site.customCSS && <style dangerouslySetInnerHTML={{ __html: site.customCSS }} />}
       {site.favicon && <link rel="icon" href={site.favicon} />}
     </head>
   );
-}
-
-function composePageTitle(title: string, siteName: string, separator: string): string {
-  if (!siteName) return title;
-  if (!title) return siteName;
-  return sameTitle(title, siteName) ? title : `${title}${separator}${siteName}`;
-}
-
-function sameTitle(left: string, right: string): boolean {
-  return normalizeTitle(left) === normalizeTitle(right);
-}
-
-function normalizeTitle(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
 }

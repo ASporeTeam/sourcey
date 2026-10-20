@@ -4,8 +4,13 @@ import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedTheme } from "../config.js";
+import { heavyBuildJob } from "../core/build-jobs.js";
+import { cachedArtifacts } from "../core/artifact-cache.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const fontFiles = ["Inter-Regular.ttf", "Inter-Bold.ttf"].map((file) =>
+  resolve(__dirname, "fonts", file),
+);
 
 export interface OgImageOptions {
   title: string;
@@ -25,11 +30,7 @@ async function loadFonts(): Promise<{ regular: ArrayBuffer; bold: ArrayBuffer }>
   if (fontsCache) return fontsCache;
 
   // Works from both src/ (dev) and dist/ (published)
-  const fontsDir = resolve(__dirname, "fonts");
-  const [regular, bold] = await Promise.all([
-    readFile(resolve(fontsDir, "Inter-Regular.ttf")),
-    readFile(resolve(fontsDir, "Inter-Bold.ttf")),
-  ]);
+  const [regular, bold] = await Promise.all([readFile(fontFiles[0]), readFile(fontFiles[1])]);
 
   fontsCache = {
     regular: regular.buffer.slice(regular.byteOffset, regular.byteOffset + regular.byteLength),
@@ -50,13 +51,16 @@ function rgbaCss(triplet: string, alpha: number): string {
   return `rgba(${triplet.replace(/ /g, ", ")}, ${alpha})`;
 }
 
-function ogCard({ title, description, siteName, theme, logo }: OgImageOptions) {
-  const primary = rgbCss(theme.colors.primary);
-  const primaryGlow = rgbaCss(theme.colors.primary, 0.18);
+type OgCardInput = Omit<OgImageOptions, "theme"> & { primary: string };
+function ogCard({ title, description, siteName, primary: color, logo }: OgCardInput) {
+  const primary = rgbCss(color);
+  const primaryGlow = rgbaCss(color, 0.18);
 
   const displayTitle = title.length > 90 ? title.slice(0, 87) + "..." : title;
   const displayDesc = description
-    ? description.length > 160 ? description.slice(0, 157) + "..." : description
+    ? description.length > 160
+      ? description.slice(0, 157) + "..."
+      : description
     : undefined;
 
   return {
@@ -202,21 +206,48 @@ function ogCard({ title, description, siteName, theme, logo }: OgImageOptions) {
 // ---------------------------------------------------------------------------
 
 export async function generateOgImage(options: OgImageOptions): Promise<Buffer> {
-  const fonts = await loadFonts();
+  const card: OgCardInput = {
+    title: options.title,
+    description: options.description,
+    siteName: options.siteName,
+    primary: options.theme.colors.primary,
+    logo: options.logo,
+  };
+  const files = await cachedArtifacts(
+    "og-image",
+    JSON.stringify(card),
+    ["satori", "@resvg/resvg-js"],
+    async () => {
+      const image = await heavyBuildJob(async () => {
+        const fonts = await loadFonts();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const svg = await satori(ogCard(options) as any, {
-    width: 1200,
-    height: 630,
-    fonts: [
-      { name: "Inter", data: fonts.regular, weight: 400, style: "normal" as const },
-      { name: "Inter", data: fonts.bold, weight: 700, style: "normal" as const },
-    ],
-  });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const svg = await satori(ogCard(card) as any, {
+          width: 1200,
+          height: 630,
+          embedFont: true,
+          fonts: [
+            { name: "Inter", data: fonts.regular, weight: 400, style: "normal" as const },
+            { name: "Inter", data: fonts.bold, weight: 700, style: "normal" as const },
+          ],
+        });
 
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: "width" as const, value: 1200 },
-  });
-  const png = resvg.render();
-  return Buffer.from(png.asPng());
+        const resvg = new Resvg(svg, {
+          fitTo: { mode: "width" as const, value: 1200 },
+          // Satori embeds text outlines. Only SVG logos can need a font lookup;
+          // keep that database deterministic instead of loading every host font.
+          font: {
+            loadSystemFonts: false,
+            fontFiles,
+            defaultFontFamily: "Inter",
+            sansSerifFamily: "Inter",
+          },
+        });
+        const png = resvg.render();
+        return png.asPng();
+      });
+      return new Map([["image.png", image]]);
+    },
+  );
+  return files.get("image.png")!;
 }

@@ -6,6 +6,7 @@ import { markdown, mcp, openapi } from "../src/adapters/index.js";
 import { resolveConfigFromRaw } from "../src/config.js";
 import { buildSourceySite, writeSourceySite } from "../src/site.js";
 import { rgbToOklch, shadedNeutrals } from "../src/utils/palette.js";
+import { engineAsset } from "./built-site.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -23,11 +24,18 @@ async function buildDemo(theme: "api-first" | "default", customCss?: string) {
   );
   if (customCss) await writeFile(join(dir, "brand.css"), customCss);
   await copyFile(new URL("fixtures/cheese.yml", import.meta.url), join(dir, "cheese.yml"));
-  await copyFile(new URL("fixtures/nitrosend.mcp.json", import.meta.url), join(dir, "tools.mcp.json"));
+  await copyFile(
+    new URL("fixtures/nitrosend.mcp.json", import.meta.url),
+    join(dir, "tools.mcp.json"),
+  );
   const config = await resolveConfigFromRaw(
     {
       name: "Cheese Store",
-      theme: { name: theme, colors: { primary: "#d97706" }, ...(customCss ? { css: ["brand.css"] } : {}) },
+      theme: {
+        name: theme,
+        colors: { primary: "#d97706" },
+        ...(customCss ? { css: ["brand.css"] } : {}),
+      },
       navigation: {
         tabs: [
           {
@@ -42,14 +50,18 @@ async function buildDemo(theme: "api-first" | "default", customCss?: string) {
     },
     dir,
   );
-  const site = await buildSourceySite({ config, outputDir: join(dir, "output"), generateOgImages: false });
+  const site = await buildSourceySite({
+    config,
+    outputDir: join(dir, "output"),
+    generateOgImages: false,
+  });
   await writeSourceySite(site);
   const read = (path: string) => readFile(join(dir, "output", path), "utf8");
   return {
     guide: await read("quickstart.html"),
     api: await read("api.html"),
     mcp: await read("mcp.html"),
-    css: await read("sourcey.css"),
+    css: await readFile(await engineAsset(join(dir, "output"), "sourcey.css"), "utf8"),
   };
 }
 
@@ -62,7 +74,9 @@ describe("api-first theme", () => {
     expect(guide).toContain('class="api-first-page"');
     expect(guide).toContain("api-first-reading");
     expect(guide).toMatch(/<nav class="page-trail" aria-label="Breadcrumb">.*Getting Started/s);
-    expect(guide).toMatch(/<aside id="toc" class="toc-wide[^"]*"[^>]*>\s*<h5 class="toc-wide-label">On this page<\/h5>/);
+    expect(guide).toMatch(
+      /<aside id="toc" class="toc-wide[^"]*"[^>]*>\s*<h5 class="toc-wide-label"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg>On this page<\/h5>/s,
+    );
     expect(guide).not.toContain("noreferrer");
     expect(css).toContain(".operation-split");
     expect(css).toContain("var(--sidebar-width)");
@@ -77,24 +91,31 @@ describe("api-first theme", () => {
     expect(guide.indexOf("--color-gray-50: 1 2 3;")).toBeGreaterThan(injected);
     expect(guide).toContain("--sidebar-width: 17.5rem;");
     expect(guide).toContain("--toc-width: 13.5rem;");
-    expect(guide).toContain("--content-max-width: 52rem;");
+    expect(guide).toContain("--content-max-width: 44rem;");
   });
 
   it("hard-codes no colour in its stylesheet", async () => {
-    const css = await readFile(new URL("../src/themes/api-first/sourcey.css", import.meta.url), "utf8");
+    const css = await readFile(
+      new URL("../src/themes/api-first/sourcey.css", import.meta.url),
+      "utf8",
+    );
     expect(css).not.toMatch(/rgb\(\s*\d/);
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 
-  it("splits each API and MCP operation into content and examples, without the endpoint box", async () => {
+  it("splits operations into content and examples with a full-width interactive HTTP endpoint", async () => {
     const { api, mcp } = await buildDemo("api-first");
     expect(api).toMatch(/<section id="operation-[^"]+" class="operation-split"/);
-    expect(api).toMatch(/<div class="operation-line" data-method="get"><span class="operation-line-method">GET<\/span><span class="operation-line-path">\/[^<]+<\/span>/);
+    expect(api).toContain('class="sourcey-endpoint ');
+    expect(api).toContain("data-try-it-trigger");
     expect(api).toContain('class="operation-split-examples"');
     expect(api).toContain("code-group code-samples not-prose");
-    expect(api).not.toContain("https://cheese.example.com/v2</span>");
+    expect(api).toContain("https://cheese.sourcey.com/v2</span>");
+    expect(mcp).not.toContain("data-try-it-trigger");
     expect(mcp).toContain('class="operation-split"');
-    expect(mcp).toMatch(/<div class="operation-line" data-method="tool"><span class="operation-line-method">TOOL<\/span><\/div>/);
+    expect(mcp).toMatch(
+      /<div class="operation-line" data-method="tool"><span class="operation-line-method">TOOL<\/span><\/div>/,
+    );
   });
 
   it("leaves the default theme's layout and neutrals as they were", async () => {
@@ -110,22 +131,29 @@ describe("api-first theme", () => {
 
 describe("inline code", () => {
   it("renders as a chip in every theme, without literal backticks", async () => {
-    const css = await readFile(new URL("../src/themes/default/sourcey.css", import.meta.url), "utf8");
+    const css = await readFile(
+      new URL("../src/themes/default/sourcey.css", import.meta.url),
+      "utf8",
+    );
     expect(css).not.toMatch(/content:\s*"`"/);
     expect(css).toMatch(/:where\(code\)[^{]*::before,[^{]*::after \{\s*content: none;/);
   });
 });
 
 describe("primary shading", () => {
-  const hueOf = (rgb: string) => rgbToOklch(rgb.split(" ").map(Number) as [number, number, number])[2];
+  const hueOf = (rgb: string) =>
+    rgbToOklch(rgb.split(" ").map(Number) as [number, number, number])[2];
 
   it("tints every neutral toward the primary's hue and steps lightness down the scale", () => {
     const amber = shadedNeutrals("217 119 6");
     const steps = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
-    const lightness = steps.map((step) => rgbToOklch(amber.gray[step].split(" ").map(Number) as [number, number, number])[0]);
+    const lightness = steps.map(
+      (step) => rgbToOklch(amber.gray[step].split(" ").map(Number) as [number, number, number])[0],
+    );
     expect([...lightness].sort((a, b) => b - a)).toEqual(lightness);
     const primaryHue = rgbToOklch([217, 119, 6])[2];
-    for (const step of [200, 500, 800]) expect(Math.abs(hueOf(amber.gray[step]) - primaryHue)).toBeLessThan(0.2);
+    for (const step of [200, 500, 800])
+      expect(Math.abs(hueOf(amber.gray[step]) - primaryHue)).toBeLessThan(0.2);
     expect(shadedNeutrals("99 102 241").gray[800]).not.toEqual(amber.gray[800]);
   });
 

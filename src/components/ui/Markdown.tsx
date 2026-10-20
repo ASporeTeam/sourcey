@@ -1,4 +1,7 @@
-import { renderMarkdown, renderMarkdownInline } from "../../utils/markdown.js";
+import { useContext } from "preact/hooks";
+import { OptionsContext, SiteContext } from "../../renderer/context.js";
+import { renderMarkdown, renderMarkdownInline, siteMarkdownOptions } from "../../utils/markdown.js";
+import { smartypants } from "../../utils/typography.js";
 
 interface MarkdownProps {
   content?: string;
@@ -6,10 +9,14 @@ interface MarkdownProps {
   class?: string;
 }
 
+/** Authored Markdown in generated reference pages; its alerts are the site's callouts. */
 export function Markdown({ content, inline, class: className }: MarkdownProps) {
+  const site = useContext(SiteContext);
+  const { messages } = useContext(OptionsContext);
   if (!content) return null;
 
-  const html = inline ? renderMarkdownInline(content) : renderMarkdown(content);
+  const rendered = inline ? renderMarkdownInline(content) : renderMarkdown(content, siteMarkdownOptions(site.theme.icons, messages));
+  const html = site.smartypants ? smartypants(rendered) : rendered;
 
   if (inline) {
     return <span class={className} dangerouslySetInnerHTML={{ __html: html }} />;

@@ -3,7 +3,6 @@ import type { ChangelogDiagnostic, NormalizedSpec } from "./core/types.js";
 import type { ResolvedConfig } from "./config.js";
 import { loadConfig, configFromSpec } from "./config.js";
 import { buildSourceySite, writeSourceySite } from "./site.js";
-import { createMinimalSpec } from "./site-assembly.js";
 
 // ---------------------------------------------------------------------------
 // Build options
@@ -29,23 +28,13 @@ export interface BuildResult {
  * Wraps the spec in a single-tab site and renders through the modern layout.
  */
 export async function buildDocs(options: BuildOptions): Promise<BuildResult> {
-  const config = configFromSpec(options.specSource);
+  const config = await configFromSpec(options.specSource);
 
-  const result = await buildSiteDocs({
-    config,
-    outputDir: options.outputDir,
-    skipWrite: options.skipWrite,
-    embeddable: options.embeddable,
-    strictChangelog: options.strictChangelog,
-  });
-
-  const spec = result._specs?.values().next().value ?? createMinimalSpec();
-  return {
-    spec,
-    outputDir: result.outputDir,
-    pageCount: result.pageCount,
-    changelogDiagnostics: result.changelogDiagnostics,
-  };
+  const site = await buildSourceySite({ config, outputDir: options.outputDir, strictChangelog: options.strictChangelog });
+  if (!options.skipWrite) await writeSourceySite(site, { embeddable: options.embeddable });
+  const spec = site.references.values().next().value;
+  if (!spec) throw new Error("No OpenAPI reference was compiled");
+  return { spec, outputDir: site.outputDir, pageCount: site.pageCount, changelogDiagnostics: site.changelogDiagnostics };
 }
 
 // ---------------------------------------------------------------------------
@@ -68,8 +57,11 @@ export interface SiteBuildResult {
   changelogDiagnostics: ChangelogDiagnostic[];
   godocDiagnostics: import("./core/godoc-loader.js").GodocLoaderDiagnostic[];
   rustdocDiagnostics: import("./core/rustdoc-loader.js").RustdocLoaderDiagnostic[];
-  /** @internal specs by tab slug, for buildDocs compat */
-  _specs?: Map<string, NormalizedSpec>;
+  overlayDiagnostics: import("./core/overlay.js").OverlayDiagnostic[];
+  contentDiagnostics: import("./core/markdown-loader.js").ContentDiagnostic[];
+  anchorDiagnostics: import("./core/site-model.js").AnchorDiagnostic[];
+  /** Publishing checks: the public origin, page summaries, canonical and language links, and link fragments. */
+  siteDiagnostics: import("./core/site-diagnostics.js").SiteDiagnostic[];
 }
 
 export async function buildSiteDocs(options: SiteBuildOptions = {}): Promise<SiteBuildResult> {
@@ -92,14 +84,17 @@ export async function buildSiteDocs(options: SiteBuildOptions = {}): Promise<Sit
     changelogDiagnostics: sourceySite.changelogDiagnostics,
     godocDiagnostics: sourceySite.godocDiagnostics,
     rustdocDiagnostics: sourceySite.rustdocDiagnostics,
-    _specs: sourceySite.specsBySlug,
+    overlayDiagnostics: sourceySite.overlayDiagnostics,
+    contentDiagnostics: sourceySite.contentDiagnostics,
+    anchorDiagnostics: sourceySite.anchorDiagnostics,
+    siteDiagnostics: sourceySite.siteDiagnostics,
   };
 }
 
 export { defineConfig } from "./config.js";
 export type { DiscoveryConfig, DiscoveryResource, ExportsConfig } from "./exports/config.js";
 export type { DocumentationIndex, DocumentationEntry } from "./exports/documents.js";
-export { doxygen, godoc, markdown, mcp, mkdocs, openapi, rustdoc } from "./adapters/index.js";
+export { doxygen, godoc, markdown, mcp, openapi, rustdoc } from "./adapters/index.js";
 export { resolveInternalLinks } from "./site-assembly.js";
 export { buildSourceySite, collectSourceyWatchPaths, writeSourceySite } from "./site.js";
 export type { SourceySiteArtifacts, SourceySiteOptions, SourceySiteWriteOptions } from "./site.js";
@@ -113,6 +108,7 @@ export type {
   NormalizedParameter,
   NormalizedRequestBody,
   NormalizedResponse,
+  UnmatchedTargetPolicy,
 } from "./core/types.js";
 
 export type {
@@ -120,7 +116,6 @@ export type {
   GodocSourceOptions,
   MarkdownSourceOptions,
   McpSourceOptions,
-  MkDocsSourceOptions,
   OpenApiSourceOptions,
   ResolvedTabSource,
   RustdocSourceOptions,
@@ -130,7 +125,14 @@ export type {
 
 export type {
   SourceyConfig,
+  TabConfig,
+  GroupConfig,
+  NavigationItem,
+  NavigationTarget,
+  OperationNavigation,
+  PageNavigation,
   ThemeConfig,
+  TryItConfig,
   ThemeName,
   ThemePreset,
   ReaderThemeConfig,
@@ -140,3 +142,10 @@ export type {
   RustdocMode,
   RustdocFeatures,
 } from "./config.js";
+export type { OverlayDiagnostic } from "./core/overlay.js";
+export type { ContentDiagnostic } from "./core/markdown-loader.js";
+export type { AnchorDiagnostic } from "./core/site-model.js";
+
+export { defineComponent } from "./core/markdown-components.js";
+export type { NativeComponentDefinition, ContentNode, ComponentBuildContext, NativeContentContext, ResolvedComponent, StaticAttributes } from "./core/markdown-components.js";
+export { updateSourceySite } from "./site.js";

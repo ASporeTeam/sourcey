@@ -6,6 +6,7 @@ import { resolveConfigFromRaw } from "../src/config.js";
 import { buildSourceySite, writeSourceySite } from "../src/site.js";
 import { resolveThemeAssets } from "../src/themes/assets.js";
 import { themeDefinitions } from "../src/themes/registry.js";
+import { engineAsset, engineHref, publishedSearchRows } from "./built-site.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -28,8 +29,11 @@ describe("reader theme", () => {
       expect(resolveThemeAssets(theme).sourceyCssPaths[0]).toMatch(/default\/sourcey\.css$/);
     }
     expect(themeDefinitions.minimal).toEqual(themeDefinitions.default);
-    expect(resolveThemeAssets("default").sourceyCssPaths).toHaveLength(1);
-    expect(resolveThemeAssets("api-first").sourceyCssPaths.at(-1)).toMatch(/api-first\/sourcey\.css$/);
+    expect(resolveThemeAssets("default").sourceyCssPaths).toHaveLength(2);
+    expect(resolveThemeAssets("default").sourceyCssPaths[1]).toMatch(/default\/forms\.css$/);
+    expect(resolveThemeAssets("api-first").sourceyCssPaths.at(-1)).toMatch(
+      /api-first\/sourcey\.css$/,
+    );
     expect(resolveThemeAssets("reader").clientEntry).toMatch(/client\/reader\.(ts|js)$/);
     expect(resolveThemeAssets("reader").sourceyCssPaths.at(-1)).toMatch(/reader\/sourcey\.css$/);
   });
@@ -103,12 +107,14 @@ describe("reader theme", () => {
     expect(index).toContain('data-sourcey-theme="reader"');
     expect(index).toContain("<h1>The interaction contract</h1>");
     expect(index).toContain("<span>Overview</span>");
-    expect(index).toContain('href="authorization/"');
+    expect(index).toContain('href="/specification/authorization/"');
     expect(index).toContain('href="#scope"');
     expect(index).toContain('id="search-dialog"');
     expect(index).toContain("data-reader-fallback");
     expect(index).toContain('href="https://sourcey.com/docs"');
-    expect(index).toMatch(/<a[^>]+href="https:\/\/sourcey\.com\/docs"[^>]*>\s*Docs by Sourcey\s*<svg/);
+    expect(index).toMatch(
+      /<a[^>]+href="https:\/\/sourcey\.com\/docs"[^>]*>\s*Docs by Sourcey\s*<svg/,
+    );
     expect(index).not.toMatch(/Docs by\s*<a/);
     expect(index).not.toContain("noreferrer");
     expect(index).not.toContain("sourcey-logo.png");
@@ -117,16 +123,18 @@ describe("reader theme", () => {
     expect(index).toContain("See this contract in use.");
     expect(index).toContain("Edit this contract");
     expect(index).not.toContain("fonts.googleapis.com");
-    expect(index).toContain('src="sourcey-theme.js"');
+    expect(engineHref(index, "sourcey-theme.js")).toMatch(/^\/specification\/_assets\//);
     expect(index).toContain('id="theme-toggle"');
     expect(index).not.toContain("MailSchema");
-    expect(chapter).toContain('href="../"');
+    expect(chapter).toContain('href="/specification/"');
     expect(chapter).toContain('href="/contribute/"');
-    expect(chapter).toContain('src="../sourcey.js"');
-    expect(index.indexOf("--lime: #eeff88")).toBeGreaterThan(index.indexOf('href="sourcey.css"'));
-    expect(await readFile(join(dir, "output/sourcey.css"), "utf8")).toContain(".docs-shell");
-    expect(await readFile(join(dir, "output/sourcey.js"), "utf8")).toContain("reader-mobile-nav");
-    expect(JSON.parse(await readFile(join(dir, "output/search-index.json"), "utf8"))).toEqual(
+    expect(engineHref(chapter, "sourcey.js")).toMatch(/^\/specification\/_assets\//);
+    expect(chapter).toContain('href="/specification/authorization/index.md"');
+    expect(chapter).not.toContain('/specification/specification/');
+    expect(index.indexOf("--lime: #eeff88")).toBeGreaterThan(index.indexOf(`href="${engineHref(index, "sourcey.css")}"`));
+    expect(await readFile(await engineAsset(join(dir, "output"), "sourcey.css"), "utf8")).toContain(".docs-shell");
+    expect(await readFile(await engineAsset(join(dir, "output"), "sourcey.js"), "utf8")).toContain("reader-mobile-nav");
+    expect(await publishedSearchRows(join(dir, "output"))).toEqual(
       expect.arrayContaining([expect.objectContaining({ url: "/specification/authorization/" })]),
     );
     expect(await readFile(join(dir, "output/llms.txt"), "utf8")).toContain("Authorization");
@@ -135,8 +143,14 @@ describe("reader theme", () => {
   it("links a strip-mode root under a base without a trailing slash, and navigates chapters through links", async () => {
     const dir = await mkdtemp(join(tmpdir(), "sourcey-reader-strip-"));
     directories.push(dir);
-    await writeFile(join(dir, "index.md"), "---\ntitle: Overview\n---\n\n[Continue](./authorization.md)\n");
-    await writeFile(join(dir, "authorization.md"), "---\ntitle: Authorization\n---\n\n[Back](./index.md)\n");
+    await writeFile(
+      join(dir, "index.md"),
+      "---\ntitle: Overview\n---\n\n[Continue](./authorization.md)\n",
+    );
+    await writeFile(
+      join(dir, "authorization.md"),
+      "---\ntitle: Authorization\n---\n\n[Back](./index.md)\n",
+    );
     const config = await resolveConfigFromRaw(
       {
         name: "Example standards",
@@ -144,7 +158,13 @@ describe("reader theme", () => {
         prettyUrls: "strip",
         theme: { name: "reader", fonts: { google: false } },
         navigation: {
-          tabs: [{ tab: "Specification", slug: "", groups: [{ group: "Start", pages: ["index", "authorization"] }] }],
+          tabs: [
+            {
+              tab: "Specification",
+              slug: "",
+              groups: [{ group: "Start", pages: ["index", "authorization"] }],
+            },
+          ],
         },
       },
       dir,
@@ -156,14 +176,12 @@ describe("reader theme", () => {
       const html = await readFile(join(dir, "output", page), "utf8");
       expect(html, page).toContain('href="/specification"');
       expect(html, page).not.toMatch(/href="(?:\.\/|\.\.\/|\/specification\/)(?:#[^"]*)?"/);
-      const options = [...html.matchAll(/<option\b([^>]*)>([^<]*)<\/option>/g)];
-      const links = html
-        .match(/class="reader-chapter-fallback"[\s\S]*?<\/nav>/)![0]
-        .matchAll(/<a href="[^"]+">([^<]*)<\/a>/g);
-      expect(options.map(([, attributes]) => attributes), page).not.toContainEqual(
-        expect.stringContaining("value="),
-      );
-      expect(options.map(([, , label]) => label), page).toEqual([...links].map(([, label]) => label));
+      expect(html.match(/data-reader-chapters=/g), page).toHaveLength(1);
+      expect(html, page).not.toContain("reader-chapter-fallback");
+      const chapters = html.match(/<nav aria-label="Chapters">([\s\S]*?)<\/nav>/)![1];
+      expect(chapters.match(/<a /g), page).toHaveLength(2);
+      expect(chapters, page).toContain('href="/specification"');
+      expect(chapters, page).toContain('href="/specification/authorization"');
       // Without a document label the trail names the tab once.
       const trail = html.match(/class="doc-breadcrumb">([\s\S]*?)<\/div>/)![1];
       expect(trail.match(/Specification/g), page).toHaveLength(1);

@@ -6,7 +6,12 @@
 
 // ── Top-level normalized spec ──────────────────────────────────────
 
+/** How imported targets that no longer exist are reported. */
+export type UnmatchedTargetPolicy = "error" | "warn" | "ignore";
+
 export interface NormalizedSpec {
+  /** Remote source URI, when supplied, for resolving relative server URLs. */
+  sourceUrl?: string;
   info: ApiInfo;
   servers: ServerDefinition[];
   tags: NormalizedTag[];
@@ -127,7 +132,10 @@ export interface McpConnectionInfo {
     type: string;
     command?: string;
     args?: string[];
+    env?: Record<string, string>;
     url?: string;
+    /** Header placeholders an HTTP transport expects, such as a bearer token. */
+    headers?: Record<string, string>;
   };
   serverName: string;
   mcpVersion?: string;
@@ -140,6 +148,9 @@ export interface NormalizedParameter {
   description?: string;
   required: boolean;
   deprecated: boolean;
+  style?: string;
+  explode?: boolean;
+  allowReserved?: boolean;
   schema?: NormalizedSchema;
   content?: Record<string, MediaTypeContent>;
   example?: unknown;
@@ -196,6 +207,8 @@ export interface NormalizedSchema {
   description?: string;
   default?: unknown;
   enum?: unknown[];
+  enumNames?: string[];
+  enumDescriptions?: string[];
   const?: unknown;
 
   // Object

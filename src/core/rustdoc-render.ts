@@ -9,7 +9,7 @@
  * from a rustdoc URL keep working.
  */
 
-import { renderMarkdown, renderCodeBlock } from "../utils/markdown.js";
+import { renderMarkdown, renderCodeBlock, type CalloutRenderOptions } from "../utils/markdown.js";
 import {
   apiImplToggle,
   apiItemInfoRow,
@@ -33,6 +33,7 @@ import { RUSTDOC_DIAGNOSTIC_CODES } from "./rustdoc-types.js";
 import { fencedCode } from "../exports/markdown.js";
 
 export interface RenderContext {
+  callouts: CalloutRenderOptions;
   crate: CrateSpec;
   itemsById: Map<string, Item>;
   externalCrates: Map<number, ExternalCrateRef>;
@@ -800,6 +801,7 @@ function renderItemDocs(item: Item, ctx: RenderContext, headingOffset = 4): stri
   let ordinal = 0;
   const markdown = definitions ? `${item.docs_markdown}\n\n${definitions}\n` : item.docs_markdown;
   const rendered = renderMarkdown(markdown, {
+    callouts: ctx.callouts,
     headingOffset,
     headingPrefix: `${itemAnchor(item)}-`,
     resolveHref,
@@ -994,6 +996,7 @@ export function renderModulePage(
       moduleItem
         ? renderItemDocs(moduleItem, ctx, 2)
         : `<div class="docblock rust-doc">${renderMarkdown(module.docs_markdown, {
+            callouts: ctx.callouts,
             headingOffset: 2,
             headingPrefix: `${module.id}-`,
           })}</div>`,

@@ -1,13 +1,22 @@
-import type { NormalizedResponse } from "../../core/types.js";
+import type { NormalizedOperation, NormalizedResponse } from "../../core/types.js";
+import { useContext } from "preact/hooks";
+import { OptionsContext, PageContext, SpecContext } from "../../renderer/context.js";
+import { operationSectionAnchor, operationFieldRoot, referenceFieldPath } from "../../core/reference-identity.js";
+import { htmlId } from "../../utils/html-id.js";
+import { AnchorAliases } from "../ui/AnchorAliases.js";
 import { httpStatusText } from "../../utils/http.js";
 import { SchemaDatatype } from "../schema/SchemaDatatype.js";
 import { ExampleVariantsCard, VariantBody, VariantDropdown } from "../schema/ExampleView.js";
 import { Markdown } from "../ui/Markdown.js";
 import { CopyButton } from "../ui/CopyButton.js";
 import { buildExampleVariants } from "../../utils/example-variants.js";
+import { SchemaView } from "../schema/SchemaView.js";
+import { Parameters } from "./Parameters.js";
+import { DisclosureIcon } from "../ui/DisclosureIcon.js";
 
 interface ResponsesProps {
   responses: NormalizedResponse[];
+  operation?: NormalizedOperation;
 }
 
 function statusColorClass(code: string): string {
@@ -21,13 +30,19 @@ function statusColorClass(code: string): string {
 /**
  * Response status list (rendered in the content column).
  */
-export function ResponsesCopy({ responses }: ResponsesProps) {
+export function ResponsesCopy({ responses, operation }: ResponsesProps) {
+  const spec = useContext(SpecContext);
+  const page = useContext(PageContext);
+  const messages = useContext(OptionsContext).messages;
+  const sectionId = (status: string) => operation ? operationSectionAnchor(operation, spec, `response-${htmlId(status)}`, page?.kind === "spec" && page.view?.kind === "operation") : undefined;
+  const fieldRoot = operation && referenceFieldPath(operationFieldRoot(operation), "responses");
   if (!responses.length) return null;
 
   return (
     <div class="params-list">
-      {responses.map((r) => (
-        <div key={r.statusCode} class="param-item">
+      {responses.map((r, index) => (
+        <div key={r.statusCode} class="param-item" id={sectionId(r.statusCode)}>
+          {operation && <AnchorAliases target={sectionId(r.statusCode)!} />}
           <div class="param-header font-mono text-sm">
             <span class={`px-1.5 py-0.5 rounded-md text-xs font-bold ${statusColorClass(r.statusCode)}`}>
               {r.statusCode}
@@ -53,6 +68,12 @@ export function ResponsesCopy({ responses }: ResponsesProps) {
               )}
             </div>
           )}
+          {r.headers && Object.keys(r.headers).length > 0 && <details class="schema-expandable"><summary class="schema-expandable-toggle"><DisclosureIcon />{messages?.responseHeaders ?? "Response headers"}</summary><div class="schema-expandable-content"><Parameters parameters={Object.values(r.headers)} anchorRoot={fieldRoot && referenceFieldPath(fieldRoot, r.statusCode, "headers")} /></div></details>}
+          {r.content && Object.entries(r.content).map(([mediaType, content]) => content.schema && <details key={mediaType} class="schema-expandable" open={index === 0}>
+            {/* A wildcard media type is a spec naming none (Swagger 2.0 without `produces`), not a format to show. */}
+            <summary class="schema-expandable-toggle"><DisclosureIcon />{messages?.responseFields ?? "Response fields"}{mediaType !== "*/*" && <> <code>{mediaType}</code></>}</summary>
+            <div class="schema-expandable-content"><SchemaView schema={content.schema} anchorRoot={fieldRoot && referenceFieldPath(fieldRoot, r.statusCode, "content", mediaType)} usage="response" /></div>
+          </details>)}
         </div>
       ))}
     </div>
@@ -67,7 +88,7 @@ export function ResponsesExamples({ responses }: ResponsesProps) {
   if (!responses.length) return null;
 
   const groups = responses
-    .map((r) => ({ statusCode: r.statusCode, variants: buildExampleVariants(r.content) }))
+    .map((r) => ({ statusCode: r.statusCode, variants: buildExampleVariants(r.content, "response") }))
     .filter((g) => g.variants.length > 0);
 
   if (!groups.length) return null;

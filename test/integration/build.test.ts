@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { buildDocs, buildSiteDocs } from "../../src/index.js";
-import { loadConfig } from "../../src/config.js";
-import { resolve, dirname } from "node:path";
-import { readFile, rm, writeFile, mkdir, readdir } from "node:fs/promises";
+import { loadConfig, resolveConfigFromRaw } from "../../src/config.js";
+import { resolve } from "node:path";
+import { readFile, rm, writeFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { engineAsset, engineHref, publishedSearchRows } from "../built-site.js";
 
 const FIXTURES = resolve(import.meta.dirname, "../fixtures");
 
@@ -111,29 +112,29 @@ describe("buildDocs (integration)", () => {
 
       expect(result.pageCount).toBeGreaterThan(0);
 
-      // Root index.html renders the first page directly (no redirect)
+      // No page publishes at the root, so it leads to the first page.
       const indexHtml = await readFile(resolve(outputDir, "index.html"), "utf-8");
-      expect(indexHtml).toContain("<!DOCTYPE html>");
-      expect(indexHtml).not.toContain("Redirecting");
-      expect(indexHtml).toMatch(
-        /<a[^>]+href="https:\/\/sourcey\.com\/docs"[^>]*>Docs by Sourcey<\/a>/,
-      );
-      expect(indexHtml).not.toMatch(/Docs by\s*<a/);
-      expect(indexHtml).not.toContain("noreferrer");
-      expect(indexHtml).not.toContain("sourcey-logo.png");
+      expect(indexHtml).toContain('<meta http-equiv="refresh" content="0;url=/api.html">');
+      expect(await readFile(resolve(outputDir, "_redirects"), "utf-8")).toBe("/ /api.html 302\n");
 
       const apiHtml = await readFile(resolve(outputDir, "api.html"), "utf-8");
+      expect(apiHtml).toMatch(
+        /<a[^>]+href="https:\/\/sourcey\.com\/docs"[^>]*>Docs by Sourcey<\/a>/,
+      );
+      expect(apiHtml).not.toMatch(/Docs by\s*<a/);
+      expect(apiHtml).not.toContain("noreferrer");
+      expect(apiHtml).not.toContain("sourcey-logo.png");
       expect(apiHtml).toContain("<!DOCTYPE html>");
       expect(apiHtml).toContain("Petstore");
       expect(apiHtml).toContain("API Reference");
-      expect(apiHtml).toContain("sourcey.css");
-      expect(apiHtml).toContain("sourcey.js");
+      expect(engineHref(apiHtml, "sourcey.css")).toBeDefined();
+      expect(engineHref(apiHtml, "sourcey.js")).toBeDefined();
       expect(apiHtml).toContain("data-sourcey-sidebar-scroll");
 
-      const css = await readFile(resolve(outputDir, "sourcey.css"), "utf-8");
+      const css = await readFile(await engineAsset(outputDir, "sourcey.css"), "utf-8");
       expect(css).toContain("#sourcey");
 
-      const js = await readFile(resolve(outputDir, "sourcey.js"), "utf-8");
+      const js = await readFile(await engineAsset(outputDir, "sourcey.js"), "utf-8");
       expect(js).toContain("data-traverse-target");
       expect(js).toContain("sourcey:sidebar-scroll:v1");
 
@@ -152,15 +153,13 @@ describe("buildDocs (integration)", () => {
   it("removes stale output files when pages disappear from a rebuild", async () => {
     const outputDir = resolve(import.meta.dirname, "../../.test-output-prune");
     try {
-      await buildDocs({
-        specSource: `${FIXTURES}/petstore-openapi3.yaml`,
-        outputDir,
-      });
-
-      const stalePath = resolve(outputDir, "documentation/modules/pluga.html");
-      await mkdir(dirname(stalePath), { recursive: true });
-      await writeFile(stalePath, "stale", "utf-8");
+      const configDir = resolve(import.meta.dirname, "../llms-site");
+      const config = await resolveConfigFromRaw({ navigation: { tabs: [{ tab: "Docs", slug: "documentation", groups: [{ group: "Start", pages: ["introduction"] }] }] } }, configDir);
+      await buildSiteDocs({ config, outputDir, generateOgImages: false });
+      const stalePath = resolve(outputDir, "documentation/introduction.html");
       expect(existsSync(stalePath)).toBe(true);
+      const unowned = resolve(outputDir, "operator-note.txt");
+      await writeFile(unowned, "Keep this file.");
 
       await buildDocs({
         specSource: `${FIXTURES}/petstore-openapi3.yaml`,
@@ -168,6 +167,7 @@ describe("buildDocs (integration)", () => {
       });
 
       expect(existsSync(stalePath)).toBe(false);
+      expect(await readFile(unowned, "utf8")).toBe("Keep this file.");
     } finally {
       await rm(outputDir, { recursive: true, force: true });
     }
@@ -187,7 +187,9 @@ describe("buildDocs (integration)", () => {
       expect(html).toContain("operation-");
       expect(html).toContain('id="sidebar"');
       expect(html).toContain('id="nav"');
-      expect(html).toContain('href="api.html#tag-cheese"');
+      const tagHref = html.match(/href="([^"]*#tag-cheese)"/)?.[1];
+      expect(tagHref).toBeDefined();
+      expect(new URL(tagHref!, "https://docs.example.test/index.html").href).toBe("https://docs.example.test/api.html#tag-cheese");
       expect(html).toContain('class="nav-group-label nav-group-link"');
       expect(html).toContain("Authentication");
       expect(html).toContain("bearer");
@@ -253,9 +255,7 @@ describe("buildDocs (integration)", () => {
         outputDir,
       });
 
-      const searchIndex = JSON.parse(
-        await readFile(resolve(outputDir, "search-index.json"), "utf-8"),
-      ) as Array<{
+      const searchIndex = (await publishedSearchRows(outputDir)) as Array<{
         title: string;
         content: string;
         url: string;
@@ -318,7 +318,7 @@ describe("buildDocs (integration)", () => {
       expect(changelogHtml).toContain("sourcey-changelog-version");
       expect(changelogHtml).toContain("1.2.0");
       expect(changelogHtml).toContain('id="1-2-0"');
-      expect(changelogHtml).toContain('href="introduction.html"');
+      expect(changelogHtml).toContain('href="/reference/introduction.html"');
       expect(changelogHtml).toContain(
         'property="og:image" content="https://docs.example.com/reference/_og/changelog.png"',
       );
@@ -329,7 +329,7 @@ describe("buildDocs (integration)", () => {
       const permalinkHtml = await readFile(resolve(outputDir, "changelog/1-2-0.html"), "utf-8");
       expect(permalinkHtml).toContain("1.2.0");
       expect(permalinkHtml).toContain("Added root feed generation");
-      expect(permalinkHtml).toContain('href="../introduction.html"');
+      expect(permalinkHtml).toContain('href="/reference/introduction.html"');
       expect(permalinkHtml).toContain(
         'property="og:image" content="https://docs.example.com/reference/_og/changelog/1-2-0.png"',
       );
@@ -365,7 +365,7 @@ describe("buildDocs (integration)", () => {
         "1.2.0 (2026-04-20)",
       );
 
-      const searchIndex = await readFile(resolve(outputDir, "search-index.json"), "utf-8");
+      const searchIndex = JSON.stringify(await publishedSearchRows(outputDir));
       expect(searchIndex).toContain('"category":"Releases"');
       expect(searchIndex).toContain("1.2.0");
       expect(searchIndex).toContain("/reference/changelog.html#1-2-0");
@@ -395,11 +395,11 @@ describe("buildDocs (integration)", () => {
       const llms = await readFile(resolve(outputDir, "llms.txt"), "utf-8");
       expect(llms).toContain("(/introduction/index.md)");
 
-      const searchIndex = await readFile(resolve(outputDir, "search-index.json"), "utf-8");
+      const searchIndex = JSON.stringify(await publishedSearchRows(outputDir));
       expect(searchIndex).toContain('"url":"/introduction/"');
       expect(searchIndex).not.toContain('.html"');
 
-      expect(existsSync(resolve(outputDir, "_redirects"))).toBe(false);
+      expect(await readFile(resolve(outputDir, "_redirects"), "utf-8")).toBe("/ /introduction/ 302\n");
     } finally {
       await rm(outputDir, { recursive: true, force: true });
     }
@@ -449,12 +449,12 @@ describe("buildDocs (integration)", () => {
       const llms = await readFile(resolve(outputDir, "llms.txt"), "utf-8");
       expect(llms).toContain("(/introduction.md)");
 
-      const searchIndex = await readFile(resolve(outputDir, "search-index.json"), "utf-8");
+      const searchIndex = JSON.stringify(await publishedSearchRows(outputDir));
       expect(searchIndex).toContain('"url":"/introduction"');
       expect(searchIndex).toContain('"url":"/api#');
       expect(searchIndex).not.toContain('.html"');
 
-      expect(existsSync(resolve(outputDir, "_redirects"))).toBe(false);
+      expect(await readFile(resolve(outputDir, "_redirects"), "utf-8")).toBe("/ /introduction 302\n");
     } finally {
       await rm(outputDir, { recursive: true, force: true });
     }

@@ -1,20 +1,61 @@
-import { Marked, type Token, type Tokens } from "marked";
+import { decodeHTML } from "entities";
+import { slug as githubSlug } from "github-slugger";
+import { Marked, Lexer, type Token, type Tokens } from "marked";
 import { highlightCode } from "./highlighter.js";
 import { COPY_ICON_SVG } from "./copy-svg.js";
 import { htmlId } from "./html-id.js";
-import { escapeAttr, safeUrl, sanitizeRenderedHtml } from "./html.js";
+import { escapeAttr, escapeHtml, safeUrl, sanitizeRenderedHtml } from "./html.js";
+import { ALERT, CALLOUTS, alertBody, alertCallout, renderCallout } from "./callouts.js";
+import { english, type UiMessages } from "../core/messages.js";
+import type { IconSet } from "../config.js";
 
 /**
  * Shared code block renderer used by all markdown rendering.
  * Outputs the prose-code-block wrapper with copy button and Shiki highlighting.
  */
-export function renderCodeBlock(text: string, lang?: string): string {
-  const language = lang?.split(/\s/)[0] ?? "";
-  const shiki = highlightCode(text, language);
-  return `<div class="prose-code-block not-prose">
-<div class="prose-code-copy">
-<button aria-label="Copy code" class="copy-btn" type="button" data-copy-source="code">${COPY_ICON_SVG}</button>
-</div>
+export interface CodeFenceMetadata {
+  language: string;
+  title?: string;
+  highlight: number[];
+  focus: number[];
+  add: number[];
+  remove: number[];
+}
+export function parseCodeFenceInfo(info = ""): CodeFenceMetadata {
+  const metadata: CodeFenceMetadata = { language: "", highlight: [], focus: [], add: [], remove: [] };
+  let remaining = info.trim();
+  const language = remaining.match(/^[\w+#.-]+/);
+  if (language) { metadata.language = language[0]; remaining = remaining.slice(language[0].length).trimStart(); }
+  function lines(value: string): number[] {
+    const result = new Set<number>();
+    for (const range of value.split(",")) {
+      const match = range.trim().match(/^(\d+)(?:-(\d+))?$/);
+      if (!match) throw new Error(`Invalid code line range: ${range}`);
+      const start = Number(match[1]), end = Number(match[2] ?? match[1]);
+      if (start < 1 || end < start || end - start > 10000) throw new Error(`Invalid code line range: ${range}`);
+      for (let line = start; line <= end; line++) result.add(line);
+    }
+    return [...result];
+  }
+  const used = new Set<string>();
+  while (remaining) {
+    const title = remaining.match(/^title=("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/);
+    const annotation = remaining.match(/^(?:(highlight|focus|add|remove)=)?\{([^}]+)\}/);
+    const key = title ? "title" : annotation ? annotation[1] ?? "highlight" : undefined;
+    if (!key) throw new Error(`Unknown code metadata: ${remaining}`);
+    if (used.has(key)) throw new Error(`Duplicate code metadata: ${key}`);
+    used.add(key);
+    if (title) { metadata.title = title[1].slice(1, -1).replace(/\\(["'\\])/g, "$1"); remaining = remaining.slice(title[0].length).trimStart(); }
+    else { metadata[key as "highlight" | "focus" | "add" | "remove"] = lines(annotation![2]); remaining = remaining.slice(annotation![0].length).trimStart(); }
+  }
+  return metadata;
+}
+export function renderCodeBlock(text: string, info?: string, metadata = parseCodeFenceInfo(info), copyLabel = "Copy code"): string {
+  const lineCount = text.split("\n").length;
+  for (const line of [...metadata.highlight, ...metadata.focus, ...metadata.add, ...metadata.remove]) if (line > lineCount) throw new Error(`Code annotation refers to missing line ${line}`);
+  const shiki = highlightCode(text, metadata.language, metadata);
+  return `<div class="prose-code-block not-prose">${metadata.title ? `<div class="prose-code-title">${escapeHtml(metadata.title)}</div>` : ""}
+<div class="prose-code-copy"><button aria-label="${escapeAttr(copyLabel)}" class="copy-btn" type="button" data-copy-source="code">${COPY_ICON_SVG}</button></div>
 <div class="prose-code-content">${shiki}</div>
 </div>`;
 }
@@ -86,13 +127,48 @@ function parseVideoUrl(
   return { src: rawVideoUrl, type: "video", mime };
 }
 
+/**
+ * Where a block extension begins in the paragraph at the start of src. marked
+ * asks so it can end that paragraph early, and a paragraph ends at the next
+ * blank line regardless, so the search stops there rather than scanning the
+ * rest of the document at every paragraph. `lineStart` finds the marker only
+ * where a line begins.
+ */
+function blockStart(src: string, marker: string, lineStart = false): number | undefined {
+  const blank = src.indexOf("\n\n");
+  const paragraph = blank === -1 ? src : src.slice(0, blank);
+  if (lineStart && paragraph.startsWith(marker)) return 0;
+  const index = paragraph.indexOf(lineStart ? `\n${marker}` : marker);
+  return index === -1 ? undefined : index + (lineStart ? 1 : 0);
+}
+
+/**
+ * Visit every token of a lexed document, each before its children, as marked's
+ * walkTokens does, but without growing an array per token, which made a large
+ * document's walk quadratic.
+ */
+export function forEachToken(tokens: readonly Token[], visit: (token: Token) => void): void {
+  for (const token of tokens) {
+    visit(token);
+    if (token.type === "table") {
+      const table = token as Tokens.Table;
+      for (const cell of table.header) forEachToken(cell.tokens, visit);
+      for (const row of table.rows) for (const cell of row) forEachToken(cell.tokens, visit);
+    } else if (token.type === "list") forEachToken((token as Tokens.List).items, visit);
+    else {
+      const children = (token as Tokens.Generic).tokens;
+      if (children) forEachToken(children, visit);
+    }
+  }
+}
+
 const videoExtension: import("marked").MarkedExtension = {
   extensions: [
     {
       name: "video",
       level: "block",
       start(src: string) {
-        return src.match(/::video\[/)?.index;
+        return blockStart(src, "::video[");
       },
       tokenizer(src: string): VideoToken | undefined {
         const match = src.match(/^::video\[([^\]]+)\](?:\{([^}]*)\})?/);
@@ -136,7 +212,7 @@ const iframeExtension: import("marked").MarkedExtension = {
       name: "iframe",
       level: "block",
       start(src: string) {
-        return src.match(/::iframe\[/)?.index;
+        return blockStart(src, "::iframe[");
       },
       tokenizer(src: string): IframeToken | undefined {
         const match = src.match(/^::iframe\[([^\]]+)\](?:\{([^}]*)\})?/);
@@ -167,7 +243,58 @@ const iframeExtension: import("marked").MarkedExtension = {
   ],
 };
 
+/** How GitHub alerts render: the site's icon set and its locale's callout titles. */
+export interface CalloutRenderOptions {
+  icons: IconSet;
+  messages: UiMessages;
+}
+
+/** A GitHub alert (`> [!NOTE]` and its quoted lines) renders as the native callout; other blockquotes stay blockquotes. */
+function alertExtension(callouts: CalloutRenderOptions): import("marked").MarkedExtension {
+  return {
+    extensions: [
+      {
+        name: "alert",
+        level: "block",
+        start: (src: string) => blockStart(src, "> [!", true),
+        tokenizer(src: string) {
+          const match = src.match(ALERT);
+          if (!match) return undefined;
+          const token = { type: "alert", raw: match[0], alert: match[1], tokens: [] as Token[] };
+          this.lexer.blockTokens(alertBody(match[2]), token.tokens);
+          return token;
+        },
+        renderer(token: Tokens.Generic): string {
+          const { kind, title } = alertCallout(token.alert, callouts.messages);
+          return `${renderCallout(kind, { title: escapeHtml(title ?? callouts.messages[CALLOUTS[kind].label]), content: this.parser.parse(token.tokens ?? []), icons: callouts.icons })}\n`;
+        },
+      },
+    ],
+  };
+}
+
+/** Callouts outside a site: Heroicons and English titles. */
+export const DEFAULT_CALLOUTS: CalloutRenderOptions = { icons: "heroicons", messages: english };
+
+const PLAIN: MarkdownRenderOptions = {};
+const siteOptions = new WeakMap<MarkdownRenderOptions, WeakMap<UiMessages, Partial<Record<IconSet, MarkdownRenderOptions>>>>();
+
+/**
+ * Render options for a site's Markdown: its callouts over a renderer's own
+ * options, one object per combination so each parser is built once.
+ */
+export function siteMarkdownOptions(icons: IconSet, messages: UiMessages, base: MarkdownRenderOptions = PLAIN): MarkdownRenderOptions {
+  const byMessages = siteOptions.get(base) ?? new WeakMap<UiMessages, Partial<Record<IconSet, MarkdownRenderOptions>>>();
+  siteOptions.set(base, byMessages);
+  const byIcons = byMessages.get(messages) ?? {};
+  byMessages.set(messages, byIcons);
+  return (byIcons[icons] ??= { ...base, callouts: { icons, messages } });
+}
+
 export interface MarkdownRenderOptions {
+  /** Alerts without options draw Heroicons with English titles. */
+  callouts?: CalloutRenderOptions;
+  copyLabel?: string;
   code?: (token: Tokens.Code) => string;
   headingOffset?: number;
   headingPrefix?: string;
@@ -176,17 +303,21 @@ export interface MarkdownRenderOptions {
    * link's text alone, undefined keeps the destination as written.
    */
   resolveHref?: (href: string) => string | null | undefined;
+  /** Keep `operation:` destinations for the build to point at the operation's published address. */
+  operationLinks?: boolean;
 }
 
 /** Keep adapter rendering on the same Markdown, links and sanitization path. */
 function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
-  return new Marked(videoExtension, iframeExtension, {
+  return new Marked(videoExtension, iframeExtension, alertExtension(options.callouts ?? DEFAULT_CALLOUTS), {
     renderer: {
       code(token: Tokens.Code): string {
-        return options.code ? options.code(token) : renderCodeBlock(token.text, token.lang);
+        return options.code ? options.code(token) : renderCodeBlock(token.text, token.lang, undefined, options.copyLabel);
       },
-      heading({ tokens, depth }: Tokens.Heading): string {
-        const id = `${options.headingPrefix ?? ""}${htmlId(headingSource(tokens))}`;
+      heading({ tokens, depth, text }: Tokens.Heading): string {
+        const explicit = text.match(/\s+\{#([^}]+)\}\s*$/);
+        if (explicit) tokens = Lexer.lexInline(text.slice(0, explicit.index));
+        const id = `${options.headingPrefix ?? ""}${explicit?.[1] ?? htmlId(headingSource(tokens))}`;
         const level = Math.min(6, depth + (options.headingOffset ?? 0));
         return `<h${level} id="${escapeAttr(id)}">${this.parser.parseInline(tokens)}</h${level}>\n`;
       },
@@ -206,7 +337,7 @@ function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
         const text = this.parser.parseInline(tokens);
         const resolved = options.resolveHref?.(href);
         if (resolved === null) return text;
-        const linkUrl = safeUrl(resolved ?? href);
+        const linkUrl = options.operationLinks ? pageLinkHref(resolved ?? href) : safeUrl(resolved ?? href);
         if (!linkUrl) return text;
         const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
         const isExternal = linkUrl.startsWith("http://") || linkUrl.startsWith("https://");
@@ -258,14 +389,17 @@ function headingText(tokens: Token[]): string {
     .join("");
 }
 
-const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+/** Decode readable HTML entities through the same standards-complete owner. */
+export const decodeEntities = decodeHTML;
 
-function decodeEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, body: string) => {
-    if (body[0] !== "#") return NAMED_ENTITIES[body.toLowerCase()] ?? entity;
-    const code = body[1] === "x" || body[1] === "X" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
-    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
-  });
+export function headingInfo(heading: Tokens.Heading) {
+  const explicit = heading.text.match(/\s+\{#([^}]+)\}\s*$/);
+  const markdown = explicit ? heading.text.slice(0, explicit.index) : heading.text;
+  const inline = Lexer.lexInline(markdown);
+  const text = headingText(inline);
+  const source = headingSource(inline);
+  const id = explicit?.[1] ?? (githubSlug(text) || "section");
+  return { id, text, markdown, explicit: !!explicit, previousId: htmlId(source) };
 }
 
 /**
@@ -279,8 +413,10 @@ export function extractHeadings(input: string): PageHeading[] {
     if (token.type === "heading") {
       const depth = (token as Tokens.Heading).depth;
       if (depth === 2 || depth === 3) {
-        const { tokens: inline } = token as Tokens.Heading;
-        headings.push({ level: depth as 2 | 3, text: headingText(inline), id: htmlId(headingSource(inline)) });
+        const heading = token as Tokens.Heading;
+        const explicit = heading.text.match(/\s+\{#([^}]+)\}\s*$/);
+        const text = headingText(heading.tokens).replace(/\s+\{#[^}]+\}\s*$/, "");
+        headings.push({ level: depth as 2 | 3, text, id: explicit?.[1] ?? htmlId(headingSource(heading.tokens)) });
       }
     }
   }
@@ -292,7 +428,7 @@ export function firstHeadingText(input: string, depth: number): string | undefin
   const heading = lexMarkdown(input).find(
     (token): token is Tokens.Heading => token.type === "heading" && token.depth === depth,
   );
-  return heading ? headingText(heading.tokens).trim() || undefined : undefined;
+  return heading ? headingInfo(heading).text.trim() || undefined : undefined;
 }
 
 /**
@@ -307,7 +443,9 @@ export function extractFirstParagraph(input?: string): string {
       // A row of badges or navigation links, joined by separators such as
       // &ensp; or ·, has no prose of its own and is not a summary.
       const prose = textOutsideLinks(token.tokens ?? []).replace(/&#?\w+;/g, "");
-      if (/[\p{L}\p{N}]/u.test(prose)) return summaryText(token.tokens ?? []).replace(/\s+/g, " ").trim();
+      const summary = summaryText(token.tokens ?? []).replace(/\s+/g, " ").trim();
+      // A paragraph ending in a colon ("See also:") introduces the block after it, not the page.
+      if (/[\p{L}\p{N}]/u.test(prose) && !summary.endsWith(":")) return summary;
     }
   }
   return "";
@@ -330,10 +468,19 @@ function textOutsideLinks(tokens: Token[]): string {
  * or a row of badges never describes the page.
  */
 function summaryText(tokens: Token[]): string {
+  // Inline HTML arrives one tag per token: a script, style or template hides
+  // the tokens until it closes, and a <br> is a space.
+  let hidden = 0;
   return tokens
     .map((token) => {
+      if (token.type === "html") {
+        const was = hidden;
+        hidden = Math.max(0, hidden + (token.raw.match(/<(script|style|template)\b/gi)?.length ?? 0) - (token.raw.match(/<\/(script|style|template)\b/gi)?.length ?? 0));
+        return !was && !hidden && /^<br\b/i.test(token.raw) ? " " : "";
+      }
+      if (hidden) return "";
       if (token.type === "codespan") return token.raw;
-      if (token.type === "image" || token.type === "html") return "";
+      if (token.type === "image") return "";
       if (token.type === "br") return " ";
       if (token.type === "link") {
         const label = summaryText(token.tokens ?? []).trim();
@@ -412,13 +559,25 @@ export function renderMarkdown(input?: string, options?: MarkdownRenderOptions):
     parser = parsersByOptions.get(options) ?? createMarkdownParser(options);
     parsersByOptions.set(options, parser);
   }
-  return sanitizeRenderedHtml(parser.parse(input, { async: false }) as string);
+  return sanitizeRenderedHtml(parser.parse(input, { async: false }) as string, options?.operationLinks ? ["operation"] : []);
+}
+
+/** A page's link to an operation by name, as navigation names one: `operation:GET /pets`. */
+export const OPERATION_LINK = "operation:";
+/** Rendering for a page's own content, whose links the build resolves once routes exist. */
+export const PAGE_CONTENT: MarkdownRenderOptions = { operationLinks: true };
+
+/** A page's link destination: an operation by name, kept for the build, or a safe URL. */
+export function pageLinkHref(value: string): string | null {
+  return value.startsWith(OPERATION_LINK) ? encodeURI(value) : safeUrl(value);
 }
 
 /**
  * Render Markdown to inline HTML (strip wrapping <p> tags).
  */
-export function renderMarkdownInline(input?: string): string {
+export function renderMarkdownInline(input?: string, options?: MarkdownRenderOptions): string {
   if (!input) return "";
-  return sanitizeRenderedHtml(marked.parseInline(input, { async: false }) as string);
+  const parser = options ? parsersByOptions.get(options) ?? createMarkdownParser(options) : marked;
+  if (options) parsersByOptions.set(options, parser);
+  return sanitizeRenderedHtml(parser.parseInline(input, { async: false }) as string, options?.operationLinks ? ["operation"] : []);
 }

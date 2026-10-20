@@ -73,16 +73,15 @@
     return commonPath(paths);
   }
 
-  function searchIndexScope() {
-    var meta = document.querySelector('meta[name="sourcey-search"]');
+  // The site's root, which every page names as the base of its assets.
+  function siteScope() {
+    var meta = document.querySelector('meta[name="sourcey-assets"]');
     var content = meta && meta.getAttribute('content');
     if (!content) return null;
 
     try {
       var url = new URL(content, window.location.href);
-      if (url.origin === window.location.origin) {
-        return normalizePath(url.pathname.replace(/\/search-index\.json$/, ''));
-      }
+      if (url.origin === window.location.origin) return normalizePath(url.pathname);
     } catch {
       // Ignore malformed metadata.
     }
@@ -92,7 +91,7 @@
 
   function sidebarStorageKey(scroller, nav) {
     var tab = scroller.getAttribute('data-sourcey-sidebar-tab') || 'default';
-    var scope = navScope(nav) || searchIndexScope() || normalizePath(window.location.pathname);
+    var scope = navScope(nav) || siteScope() || normalizePath(window.location.pathname);
     return 'sourcey:sidebar-scroll:v1:' + window.location.origin + scope + ':' + tab;
   }
 
@@ -178,21 +177,12 @@
     var openBtns = document.querySelectorAll('[data-drawer-slide]');
     if (!dialog) return;
 
-    // Sync active state from desktop sidebar to drawer on open
-    function syncActiveState() {
-      var activeDesktop = document.querySelector('#nav .nav-link.active');
-      if (!activeDesktop) return;
-      var activeHref = activeDesktop.getAttribute('href');
-      if (!activeHref) return;
-
-      dialog.querySelectorAll('.nav-link').forEach(function (link) {
-        link.classList.toggle('active', link.getAttribute('href') === activeHref);
-      });
-    }
+    window.matchMedia('(min-width: 1024px)').addEventListener('change', function (event) {
+      if (event.matches && dialog.open) dialog.close();
+    });
 
     openBtns.forEach(function (btn) {
       btn.addEventListener('click', function () {
-        syncActiveState();
         dialog.showModal();
       });
     });

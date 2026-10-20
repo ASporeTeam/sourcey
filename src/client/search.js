@@ -11,79 +11,80 @@
     var activeIndex = -1;
     var filtered = [];
     var indexLoaded = false;
+    var returnFocus;
 
-    // Always load from JSON search index
-    var searchMeta = document.querySelector('meta[name="sourcey-search"]');
-
+    var engine;
+    var loading;
+    var querySequence = 0;
+    var queryTimer;
+    var assets;
+    function searchAssets(page) {
+      var module = page.querySelector('meta[name="sourcey-search-module"]');
+      var indexes = page.querySelector('meta[name="sourcey-search-indexes"]');
+      if (!module || !indexes) throw new Error("This page names no search assets");
+      return { module: new URL(module.content, location.href).href, indexes: JSON.parse(indexes.content) };
+    }
+    function startSearch(named) {
+      return import(/* @vite-ignore */ named.module).then(function (module) { return module.loadSearch(named.indexes); });
+    }
+    // A page left open across a deploy names search assets the new build
+    // replaced: read the names the page carries now, once, and start again.
+    function currentAssets() {
+      return fetch(location.href, { cache: "no-store" })
+        .then(function (response) { if (!response.ok) throw new Error(response.statusText); return response.text(); })
+        .then(function (html) { return searchAssets(new DOMParser().parseFromString(html, "text/html")); });
+    }
     function loadJsonIndex(callback) {
-      if (indexLoaded) {
-        callback();
-        return;
+      if (indexLoaded) { callback(); return; }
+      if (!loading) {
+        loading = Promise.resolve()
+          .then(function () { return startSearch(assets || (assets = searchAssets(document))); })
+          .catch(function () {
+            return currentAssets().then(function (current) { return startSearch(current).then(function (loaded) { assets = current; return loaded; }); });
+          })
+          .then(function (loaded) {
+            engine = loaded;
+            entries = loaded.rows.map(function (e) { return Object.assign({}, e, { summary: e.qualifiedName || e.title, tag: e.owner || e.tab }); });
+            indexLoaded = true;
+          }).finally(function () { loading = null; });
       }
-      if (!searchMeta) {
-        indexLoaded = true;
-        callback();
-        return;
+      loading.then(callback).catch(showFailure);
+    }
+
+    /** One line in place of results: loading, nothing found, or a failure with its way out. */
+    function showStatus(text, action) {
+      var status = document.createElement("p");
+      status.className = "search-status";
+      status.textContent = text;
+      if (action) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = "search-status-action";
+        button.textContent = action.label;
+        button.addEventListener("click", action.run);
+        status.append(" ", button);
       }
-      var url = searchMeta.getAttribute("content");
-      fetch(url)
-        .then(function (r) {
-          return r.json();
-        })
-        .then(function (data) {
-          entries = data.map(function (e) {
-            var title = e.title || "";
-            var qualifiedName = e.qualifiedName || "";
-            var owner = e.owner || "";
-            var tab = e.tab || "";
-            return {
-              url: e.url,
-              method: e.method || "",
-              path: e.path || "",
-              title: title,
-              summary: qualifiedName || title,
-              tag: owner ? owner : tab,
-              content: e.content || "",
-              category: e.category || "",
-              featured: !!e.featured,
-              symbolKind: e.symbolKind || "",
-              owner: owner,
-              ownerKind: e.ownerKind || "",
-              namespace: e.namespace || "",
-              qualifiedName: qualifiedName,
-              titleLower: title.toLowerCase(),
-              pathLower: (e.path || "").toLowerCase(),
-              qualifiedLower: qualifiedName.toLowerCase(),
-              ownerLower: owner.toLowerCase(),
-              searchText: [
-                e.method || "",
-                e.path || "",
-                title,
-                qualifiedName,
-                owner,
-                e.ownerKind || "",
-                e.namespace || "",
-                e.symbolKind || "",
-                e.content || "",
-                tab,
-              ]
-                .join(" ")
-                .toLowerCase(),
-            };
-          });
-          indexLoaded = true;
-          callback();
-        })
-        .catch(function () {
-          indexLoaded = true;
-          callback();
-        });
+      results.replaceChildren(status);
+    }
+    function showFailure() {
+      showStatus(dialog.getAttribute("data-error"), {
+        label: dialog.getAttribute("data-retry"),
+        run: function () {
+          showStatus(dialog.getAttribute("data-loading"));
+          loadJsonIndex(function () { showResults(input.value); });
+          input.focus();
+        },
+      });
     }
 
     var dialogInner = dialog.querySelector(".search-dialog-inner");
 
     function positionDialog() {
-      if (!openBtn || !dialogInner) return;
+      if (!dialogInner) return;
+      if (window.innerWidth < 1024 || !openBtn || openBtn.getBoundingClientRect().width < 40) {
+        Object.assign(dialogInner.style, { position: "absolute", top: "16px", left: "16px", right: "16px", width: "auto", maxWidth: "none", transform: "none", margin: "0" });
+        return;
+      }
       var rect = openBtn.getBoundingClientRect();
       dialogInner.style.position = "absolute";
       dialogInner.style.top = rect.top - 4 + "px";
@@ -96,14 +97,16 @@
     }
 
     function open() {
+      returnFocus = document.activeElement;
       positionDialog();
+      if (!dialog.open) dialog.showModal();
       dialog.classList.add("open");
       input.value = "";
       input.focus();
       if (!indexLoaded) {
-        results.innerHTML = '<div class="search-loading">Loading…</div>';
+        showStatus(dialog.getAttribute("data-loading"));
         loadJsonIndex(function () {
-          showResults("");
+          showResults(input.value);
         });
       } else {
         showResults("");
@@ -112,91 +115,38 @@
     }
 
     function close() {
+      querySequence++;
+      clearTimeout(queryTimer);
       dialog.classList.remove("open");
+      dialog.close();
+      if (returnFocus && returnFocus.focus) returnFocus.focus();
       document.removeEventListener("keydown", onDialogKey);
     }
 
-    function showResults(query) {
+    async function showResults(query) {
+      if (!indexLoaded) return;
+      var request = ++querySequence;
       var q = query.toLowerCase().trim();
       if (!q) {
-        // Show featured pages first, then endpoints
-        var featured = entries.filter(function (e) {
-          return e.featured;
+        // Where each part of the site starts, under the part's name.
+        filtered = entries.map(function (e) {
+          return Object.assign({}, e, { category: e.tab || e.category });
         });
-        var rest = entries.filter(function (e) {
-          return !e.featured && e.category !== "Sections";
-        });
-        filtered = featured.concat(rest).slice(0, 30);
       } else {
-        var terms = q.split(/\s+/);
-        filtered = entries
-          .map(function (e) {
-            return { entry: e, score: scoreEntry(e, q, terms) };
-          })
-          .filter(function (result) {
-            return result.score > 0;
-          });
-        var categoryOrder = {
-          Pages: 0,
-          Endpoints: 1,
-          Models: 2,
-          Functions: 3,
-          Types: 4,
-          Enums: 5,
-          "Enum Values": 6,
-          Variables: 7,
-          Friends: 8,
-          Properties: 9,
-          Members: 10,
-          Sections: 20,
-        };
-        filtered.sort(function (a, b) {
-          if (b.score !== a.score) return b.score - a.score;
-          return (categoryOrder[a.entry.category] || 19) - (categoryOrder[b.entry.category] || 19);
-        });
-        filtered = filtered
-          .map(function (result) {
-            return result.entry;
-          })
-          .slice(0, 50);
+        try {
+          var matches = await engine.query(q);
+          if (request !== querySequence || !dialog.open) return;
+          filtered = matches.map(function(e) { return Object.assign({}, e, { summary: e.qualifiedName || e.title, tag: e.owner || e.tab }); });
+        } catch {
+          if (request !== querySequence) return;
+          engine.dispose(); indexLoaded = false; entries = [];
+          showFailure();
+          return;
+        }
       }
 
       activeIndex = filtered.length ? 0 : -1;
       render();
-    }
-
-    function scoreEntry(e, q, terms) {
-      if (
-        !terms.every(function (t) {
-          return e.searchText.indexOf(t) !== -1;
-        })
-      )
-        return 0;
-
-      var compactQuery = q.replace(/\s+/g, "");
-      var qualified = e.qualifiedLower || "";
-      var title = e.titleLower || "";
-      var path = e.pathLower || "";
-      var owner = e.ownerLower || "";
-      var score = 1;
-
-      if (qualified && qualified === compactQuery) score += 1200;
-      if (title && title === q) score += 900;
-      if (path && path === q) score += 850;
-      if (qualified && qualified.endsWith("::" + compactQuery)) score += 780;
-      if (owner && compactQuery === owner + "::" + title) score += 760;
-      if (qualified && compactQuery.indexOf("::") !== -1 && qualified.indexOf(compactQuery) !== -1)
-        score += 700;
-      if (title && title.indexOf(q) === 0) score += 500;
-      if (qualified && qualified.indexOf(compactQuery) !== -1) score += 420;
-      if (owner && owner.indexOf(compactQuery) !== -1) score += 240;
-      if (path && path.indexOf(q) !== -1) score += 180;
-      if (e.content.toLowerCase().indexOf(q) !== -1) score += 80;
-
-      if (e.category === "Sections") score -= 70;
-      if (e.symbolKind) score += 35;
-      if (e.featured) score += 20;
-      return score;
     }
 
     function render() {
@@ -223,11 +173,14 @@
             escapeHtml(e.path) +
             "</span>"
           : '<span class="search-result-path">' + escapeHtml(e.summary) + "</span>";
-        var tagLine = e.tag
+        // A row's part of the site, unless its group or its title already names it.
+        var tagLine = e.tag && e.tag !== cat && e.tag !== e.summary
           ? '<span class="search-result-tag">' + escapeHtml(e.tag) + "</span>"
           : "";
+        // A summary that only repeats the path, or the method and path, says nothing more:
+        // an MCP tool's path is its name, and an operation without a summary is titled by both.
         var summaryLine =
-          e.method && e.summary
+          e.method && e.summary && e.summary !== e.path && e.summary.toLowerCase() !== (e.method + " " + e.path).toLowerCase()
             ? '<span class="search-result-summary">' + escapeHtml(e.summary) + "</span>"
             : "";
 
@@ -248,6 +201,7 @@
       }
 
       results.innerHTML = html;
+      if (!filtered.length) showStatus(dialog.getAttribute("data-empty"));
 
       // Scroll active result into view
       var activeEl = results.querySelector(".search-result.active");
@@ -297,7 +251,15 @@
     }
 
     input.addEventListener("input", function () {
-      showResults(input.value);
+      querySequence++;
+      clearTimeout(queryTimer);
+      queryTimer = setTimeout(function () {
+        if (!indexLoaded) {
+          if (!loading) loadJsonIndex(function () { showResults(input.value); });
+          return;
+        }
+        showResults(input.value);
+      }, 100);
     });
 
     results.addEventListener("click", function (e) {
@@ -326,6 +288,8 @@
         open();
       }
     });
+
+    dialog.addEventListener("cancel", function (event) { event.preventDefault(); close(); });
 
     // Close on backdrop click
     dialog.addEventListener("click", function (e) {

@@ -1,182 +1,54 @@
 import { describe, it, expect } from "vitest";
-import { resolveInternalLinks } from "../../src/index.js";
-import type { ResolvedConfig } from "../../src/config.js";
-import type { SitePage } from "../../src/renderer/html-builder.js";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { markdown } from "../../src/index.js";
+import { resolveConfigFromRaw, type SourceyConfig } from "../../src/config.js";
+import { buildSourceySite } from "../../src/site.js";
 
-const EMPTY_SPEC = {
-  info: { title: "", version: "", description: "" },
-  servers: [],
-  tags: [],
-  operations: [],
-  schemas: {},
-  securitySchemes: {},
-  webhooks: [],
-};
+async function compile(files: Record<string, string>, raw: SourceyConfig) {
+  const root = await mkdtemp(join(tmpdir(), "sourcey-links-"));
+  try {
+    for (const [name, body] of Object.entries(files)) {
+      const path = join(root, name);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, body);
+    }
+    const config = await resolveConfigFromRaw(raw, root);
+    const site = await buildSourceySite({ config, generateOgImages: false });
+    return new Map(site.pages.flatMap(page => page.currentPage.kind === "markdown" ? [[page.outputPath, page.currentPage.markdown.html] as const] : []));
+  } finally { await rm(root, { recursive: true, force: true }); }
+}
 
-describe("resolveInternalLinks", () => {
-  it("rewrites module-guide links to aliased API reference pages", () => {
-    const pages: SitePage[] = [
-      {
-        outputPath: "documentation/modules/base.html",
-        currentPage: {
-          kind: "markdown",
-          markdown: {
-            title: "Base Module",
-            description: "",
-            slug: "modules/base",
-            html: '<p><a href="../api/base.md">API Reference</a> <a href="../concepts/runtime-contracts.md">Runtime Contracts</a></p>',
-            markdown: "[Reference](../api/base.md)",
-            headings: [],
-            sourcePath: "modules/base.md",
-            editPath: "modules/base.md",
-          },
-        },
-        spec: EMPTY_SPEC,
-        tabSlug: "documentation",
-        pageSlug: "modules/base",
-      },
-      {
-        outputPath: "documentation/concepts/runtime-contracts.html",
-        currentPage: {
-          kind: "markdown",
-          markdown: {
-            title: "Runtime Contracts",
-            description: "",
-            slug: "concepts/runtime-contracts",
-            html: "<p>Contracts</p>",
-            markdown: "[Reference](../api/base.md)",
-            headings: [],
-            sourcePath: "concepts/runtime-contracts.md",
-            editPath: "concepts/runtime-contracts.md",
-          },
-        },
-        spec: EMPTY_SPEC,
-        tabSlug: "documentation",
-        pageSlug: "concepts/runtime-contracts",
-      },
-      {
-        outputPath: "api-reference/base.html",
-        currentPage: {
-          kind: "markdown",
-          markdown: {
-            title: "base",
-            description: "",
-            slug: "base",
-            html: "<p>API reference</p>",
-            markdown: "[Reference](../api/base.md)",
-            headings: [],
-            sourcePath: "api/base.md",
-            editPath: "api/base.md",
-          },
-        },
-        spec: EMPTY_SPEC,
-        tabSlug: "api-reference",
-        pageSlug: "base",
-      },
-    ];
-
-    resolveInternalLinks(pages, {} as ResolvedConfig);
-
-    expect(pages[0].currentPage.markdown?.html).toContain('href="../../api-reference/base.html"');
-    expect(pages[0].currentPage.markdown?.html).toContain(
-      'href="../../documentation/concepts/runtime-contracts.html"',
-    );
+describe("compiled internal links", () => {
+  it("resolves source-relative guide links across native tabs, from the site's base", async () => {
+    const pages = await compile({
+      "docs/modules/base.md": "# Base\n\n[API Reference](../api/base.md) [Runtime Contracts](../concepts/runtime-contracts.md)",
+      "docs/concepts/runtime-contracts.md": "# Runtime Contracts",
+      "docs/api/base.md": "# Base API",
+    }, { navigation: { tabs: [
+      { tab: "Documentation", slug: "documentation", source: markdown({ root: "docs", groups: [{ group: "Guides", pages: ["modules/base", "concepts/runtime-contracts"] }] }) },
+      { tab: "API", slug: "api-reference", source: markdown({ root: "docs/api", groups: [{ group: "Reference", pages: ["base"] }] }) },
+    ] } });
+    expect(pages.get("documentation/modules/base.html")).toContain('href="/api-reference/base.html"');
+    expect(pages.get("documentation/modules/base.html")).toContain('href="/documentation/concepts/runtime-contracts.html"');
   });
 
-  it("rewrites stale html links to strip pretty URLs when they resolve internally", () => {
-    const pages: SitePage[] = [
-      {
-        outputPath: "introduction.html",
-        currentPage: {
-          kind: "markdown",
-          markdown: {
-            title: "Introduction",
-            description: "",
-            slug: "introduction",
-            html: '<p><a href="/docs/quickstart.html">Quickstart</a> <a href="missing.html">Missing</a></p>',
-            markdown: "[Reference](../api/base.md)",
-            headings: [],
-            sourcePath: "introduction.md",
-            editPath: "introduction.md",
-          },
-        },
-        spec: EMPTY_SPEC,
-        tabSlug: "",
-        pageSlug: "introduction",
-      },
-      {
-        outputPath: "quickstart.html",
-        currentPage: {
-          kind: "markdown",
-          markdown: {
-            title: "Quickstart",
-            description: "",
-            slug: "quickstart",
-            html: "<p>Quickstart</p>",
-            markdown: "[Reference](../api/base.md)",
-            headings: [],
-            sourcePath: "quickstart.md",
-            editPath: "quickstart.md",
-          },
-        },
-        spec: EMPTY_SPEC,
-        tabSlug: "",
-        pageSlug: "quickstart",
-      },
-    ];
-
-    resolveInternalLinks(pages, { prettyUrls: "strip" } as ResolvedConfig);
-
-    expect(pages[0].currentPage.markdown?.html).toContain('href="quickstart"');
-    expect(pages[0].currentPage.markdown?.html).toContain('href="missing.html"');
+  it("converts a published HTML link to the current URL policy without changing unknown targets or code", async () => {
+    const pages = await compile({
+      "introduction.md": '# Introduction\n\n[Quickstart](/docs/quickstart.html) [Missing](missing.html)\n\n`[Quickstart](/docs/quickstart.html)`',
+      "quickstart.md": "# Quickstart",
+    }, { baseUrl: "/docs", prettyUrls: "strip", navigation: { tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Guides", pages: ["introduction", "quickstart"] }] }] } });
+    expect(pages.get("introduction.html")).toContain('href="/docs/quickstart"');
+    expect(pages.get("introduction.html")).toContain('href="missing.html"');
+    expect(pages.get("introduction.html")).toContain("<code>[Quickstart](/docs/quickstart.html)</code>");
   });
 
-  it("rewrites output-relative html links between generated pages", () => {
-    const pages: SitePage[] = [
-      {
-        outputPath: "api-reference/base.html",
-        currentPage: {
-          kind: "markdown",
-          markdown: {
-            title: "Base",
-            description: "",
-            slug: "base",
-            html: '<p>See <a href="icy.html#onshutdownsignal">icy</a>.</p>',
-            markdown: "[Reference](../api/base.md)",
-            headings: [],
-            sourcePath: "api/base.md",
-            editPath: null,
-          },
-        },
-        spec: EMPTY_SPEC,
-        tabSlug: "api-reference",
-        pageSlug: "base",
-      },
-      {
-        outputPath: "api-reference/icy.html",
-        currentPage: {
-          kind: "markdown",
-          markdown: {
-            title: "icy",
-            description: "",
-            slug: "icy",
-            html: "<p>icy namespace</p>",
-            markdown: "[Reference](../api/base.md)",
-            headings: [],
-            sourcePath: "api/icy.md",
-            editPath: null,
-          },
-        },
-        spec: EMPTY_SPEC,
-        tabSlug: "api-reference",
-        pageSlug: "icy",
-      },
-    ];
-
-    resolveInternalLinks(pages, { prettyUrls: "strip" } as ResolvedConfig);
-
-    expect(pages[0].currentPage.markdown?.html).toContain(
-      'href="../api-reference/icy#onshutdownsignal"',
-    );
+  it("resolves output-relative links and fragments between reference pages", async () => {
+    const pages = await compile({
+      "api/base.md": '# Base\n\nThe base API reference.\n\nSee [icy](icy.html#onshutdownsignal).',
+      "api/icy.md": "# icy\n\n## onShutdownSignal",
+    }, { prettyUrls: "strip", navigation: { tabs: [{ tab: "API", slug: "api-reference", source: markdown({ root: "api", groups: [{ group: "Reference", pages: ["base", "icy"] }] }) }] } });
+    expect(pages.get("api-reference/base.html")).toContain('href="/api-reference/icy#onshutdownsignal"');
   });
 });

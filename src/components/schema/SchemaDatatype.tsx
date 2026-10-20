@@ -1,33 +1,47 @@
+import { useContext } from "preact/hooks";
+import { OptionsContext } from "../../renderer/context.js";
 import type { NormalizedSchema } from "../../core/types.js";
 import { schemaRange } from "../../utils/http.js";
+import { formatSchemaType } from "../../core/schema.js";
 
 interface SchemaDatatypeProps {
   schema: NormalizedSchema;
+  /** Keep compound type facts together in a field header; a single badge needs no group. */
+  grouped?: boolean;
 }
 
 /**
  * Renders type information as a pill badge.
  * Combines type, format, and nullable into one label.
  */
-export function SchemaDatatype({ schema }: SchemaDatatypeProps) {
-  const base = formatBaseType(schema);
+export function SchemaDatatype({ schema, grouped = false }: SchemaDatatypeProps) {
+  const targets = useContext(OptionsContext).referenceTargets;
+  const reference = schema.refName ?? schema.items?.refName;
+  const target = reference ? targets?.schemas[reference] : undefined;
+  const base = formatSchemaType(schema);
   const suffix = schema.nullable ? " | null" : "";
-  const fmt = schema.format ? `<${schema.format}>` : "";
+  // A format that only repeats the type (`format: string`) says nothing more.
+  const fmt = schema.format && ![schema.type].flat().includes(schema.format) ? `<${schema.format}>` : "";
   const typeLabel = `${base}${fmt}${suffix}`;
+  const enumeration = renderEnum(schema.enum) ||
+    (schema.type === "array" && renderEnum(schema.items?.enum));
+  const range = schemaRange(schema);
 
-  return (
+  const content = (
     <>
-      <span class="json-property-type">{typeLabel}</span>
-      {renderEnum(schema.enum) ||
-        (schema.type === "array" && schema.items?.enum && renderEnum(schema.items.enum))}
-      {schemaRange(schema) && (
-        <span class="json-property-range">{schemaRange(schema)}</span>
+      {target ? <a class="json-property-type json-property-reference" href={target.href}>{typeLabel}</a> : <span class="json-property-type">{typeLabel}</span>}
+      {enumeration}
+      {range && (
+        <span class="json-property-range">{range}</span>
       )}
       {schema.default !== undefined && (
         <span class="json-property-default-value">{String(schema.default)}</span>
       )}
     </>
   );
+  return grouped && (enumeration || range || schema.default !== undefined)
+    ? <span class="param-type">{content}</span>
+    : content;
 }
 
 function renderEnum(values?: unknown[]) {
@@ -43,23 +57,3 @@ function renderEnum(values?: unknown[]) {
   );
 }
 
-function formatBaseType(schema: NormalizedSchema): string {
-  if (schema.allOf?.length) {
-    return schema.allOf.map(formatBaseType).join(" & ");
-  }
-  if (schema.oneOf?.length) {
-    return schema.oneOf.map(formatBaseType).join(" | ");
-  }
-  if (schema.anyOf?.length) {
-    return schema.anyOf.map(formatBaseType).join(" | ");
-  }
-  if (schema.type === "array" && schema.items) {
-    const itemType = schema.items.refName ?? formatBaseType(schema.items);
-    return `Array<${itemType}>`;
-  }
-  if (schema.refName) {
-    return schema.refName;
-  }
-  const type = Array.isArray(schema.type) ? schema.type.join(" | ") : schema.type;
-  return type ?? "any";
-}

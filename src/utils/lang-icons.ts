@@ -81,7 +81,7 @@ export function langIcon(lang: string): string {
 
 /**
  * Generate CSS rules for all language icon masks.
- * Call once at render time and inject into a <style> tag.
+ * Compiled once as a shared stylesheet, rather than repeated in every page.
  */
 export function langIconCSS(): string {
   const rules: string[] = [];

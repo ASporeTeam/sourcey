@@ -1,6 +1,9 @@
 import { useContext } from "preact/hooks";
-import { SpecContext } from "../../renderer/context.js";
+import { AnchorAliases } from "../ui/AnchorAliases.js";
+import { OptionsContext, SpecContext } from "../../renderer/context.js";
+import { english } from "../../core/messages.js";
 import type { SecurityRequirement } from "../../core/types.js";
+import { SECTION_LABELS } from "./outline.js";
 import { safeUrl } from "../../utils/html.js";
 import { SectionLabel } from "../ui/SectionLabel.js";
 import { Markdown } from "../ui/Markdown.js";
@@ -8,12 +11,13 @@ import { DeprecatedBadge } from "../ui/Badge.js";
 
 interface SecurityProps {
   security: SecurityRequirement[];
+  id?: string;
 }
 
 /**
  * Per-operation security requirements.
  */
-export function SecurityCopy({ security }: SecurityProps) {
+export function SecurityCopy({ security, id }: SecurityProps) {
   const spec = useContext(SpecContext);
 
   if (!security.length) return null;
@@ -22,8 +26,9 @@ export function SecurityCopy({ security }: SecurityProps) {
   if (!hasEntries) return null;
 
   return (
-    <div class="mt-6">
-      <SectionLabel>Authorization</SectionLabel>
+    <div class="mt-6" id={id}>
+      {id && <AnchorAliases target={id} />}
+      <SectionLabel>{SECTION_LABELS.authentication}</SectionLabel>
       <div>
         {security.map((req, i) => (
           <div key={i} class="params-list">
@@ -71,6 +76,7 @@ export function SecurityCopy({ security }: SecurityProps) {
  */
 export function SecurityDefinitions() {
   const spec = useContext(SpecContext);
+  const { messages = english } = useContext(OptionsContext);
   const schemes = Object.entries(spec.securitySchemes);
 
   if (!schemes.length) return null;
@@ -81,8 +87,9 @@ export function SecurityDefinitions() {
       class="py-8 border-t border-[rgb(var(--color-gray-100))] dark:border-[rgb(var(--color-gray-800))]"
       data-traverse-target="authentication"
     >
+      <AnchorAliases target="authentication" />
       <h2 class="text-xl font-bold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] mb-4">
-        Authentication
+        {messages.authentication}
       </h2>
       <div class="params-list">
         {schemes.map(([name, scheme]) => {

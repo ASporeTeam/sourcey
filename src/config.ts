@@ -1,6 +1,6 @@
-import { access } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
-import { createJiti } from "jiti";
+import { runnerImport } from "vite";
 import { normalizeBaseUrl, normalizeSiteUrl } from "./site-url.js";
 import type { PrettyUrls } from "./site-url.js";
 import {
@@ -8,10 +8,13 @@ import {
   godoc as godocSource,
   markdown as markdownSource,
   mcp as mcpSource,
-  mkdocs as mkdocsSource,
   openapi as openapiSource,
   rustdoc as rustdocSource,
 } from "./adapters/index.js";
+import type { ResolvedSiteContext } from "./core/site-model.js";
+import { canonicalInputPath } from "./core/loader.js";
+import { resolveContexts } from "./core/contexts.js";
+import type { NativeComponentDefinition } from "./core/markdown-components.js";
 import type { MarkdownPreprocessor } from "./core/markdown-loader.js";
 import {
   resolveDiscovery,
@@ -57,7 +60,7 @@ export interface ReaderThemeConfig {
     /** Human-readable publication or revision date; never inferred from build time. */
     updated?: string;
   };
-  /** Show the site name beside a mark-only logo. Full wordmarks remain the default. */
+  /** @deprecated Use `logo.mark`; accepted through the 3.x line. */
   logoMark?: boolean;
   /** Host-authored links and note rendered below the chapter navigation. */
   sidebar?: { links?: ReaderLink[]; note?: string };
@@ -70,6 +73,7 @@ export interface ReaderThemeConfig {
 }
 
 export interface ThemeConfig {
+  appearance?: { default?: "system" | "light" | "dark"; storageKey?: string };
   /** Selects the complete rendering theme. */
   name?: ThemeName;
   /** @deprecated Use `name`. Retained for compatibility through the 3.x line. */
@@ -80,7 +84,9 @@ export interface ThemeConfig {
     dark?: string;
   };
   fonts?: {
+    /** A family for text, loaded from Google Fonts, or "system" for the platform stack without a downloaded typeface. */
     sans?: string;
+    /** A family for code, loaded from Google Fonts, or "system" (the default) for the platform monospace stack. */
     mono?: string;
     /** Disable Google Fonts when fonts are supplied through custom CSS. */
     google?: boolean;
@@ -92,7 +98,17 @@ export interface ThemeConfig {
   };
   css?: string[];
   reader?: ReaderThemeConfig;
+  /**
+   * Outline icons for cards, callouts and built-in chrome. `lucide` needs the
+   * optional `lucide-static` package installed beside Sourcey.
+   * @default "heroicons"
+   */
+  icons?: IconSet;
 }
+
+/** Outline icon sets a theme can draw from; brand marks for links are separate. */
+export const ICON_SETS = ["heroicons", "lucide"] as const;
+export type IconSet = (typeof ICON_SETS)[number];
 
 export interface ChangelogConfig {
   /** Disable changelog auto-detection for CHANGELOG.md and layout: changelog pages. */
@@ -105,7 +121,62 @@ export interface ChangelogConfig {
   ogImages?: boolean;
 }
 
+export interface TryItConfig {
+  /** Browser-managed session credentials. Defaults to same-origin. */
+  credentials?: "omit" | "same-origin" | "include";
+}
+
+export interface LocaleConfig {
+  label: string;
+  lang?: string;
+  dir?: "ltr" | "rtl";
+  content?: string;
+  path?: string;
+  messages?: import("./core/messages.js").UiMessageOverrides;
+}
+export interface I18nConfig {
+  defaultLocale: string;
+  locales: Record<string, LocaleConfig>;
+  fallback?: "default" | false;
+}
+export interface VersionItem {
+  id: string;
+  label: string;
+  path?: string;
+  content?: string;
+  revision?: string;
+  status?: "maintained" | "preview" | "archived";
+  notice?: string | false;
+  index?: boolean;
+}
+export interface VersionsConfig {
+  default: string;
+  items: (VersionItem & { navigation?: SourceyConfig["navigation"] })[];
+}
+export interface TabVersionsConfig {
+  default: string;
+  items: (VersionItem & { source?: SourceAdapter })[];
+}
+export type Redirect = { to: string; status: 301 | 302 | 303 | 307 | 308 };
+
 export interface SourceyConfig {
+  /** Copy this explicitly public directory to the output root, retaining paths. */
+  publicDir?: string | false;
+  /**
+   * A folder of the site's own pages, outside the documentation: each at the
+   * address its path names (`pages/index.md` is the home page, `pages/404.md`
+   * the not-found page), in no tab or version, and drawn by its frontmatter
+   * `layout`: `page` (the default) or `blank`.
+   */
+  pages?: string;
+  /** Omit the generated status page when the host owns it. */
+  notFound?: boolean;
+  i18n?: I18nConfig;
+  versions?: VersionsConfig;
+  components?: Record<string, NativeComponentDefinition>;
+  redirects?: Record<string, string | Redirect>;
+  /** Interactive console on OpenAPI references. No requests run until Send. */
+  tryIt?: false | TryItConfig;
   /** Static machine-readable documentation outputs. */
   exports?: false | ExportsConfig;
   /** Discovery manifests and explicitly configured service descriptors. Off by default. */
@@ -135,6 +206,8 @@ export interface SourceyConfig {
         light: string;
         dark?: string;
         href?: string;
+        /** The image is a mark without the site's name, so the name shows beside it. Full wordmarks are the default. */
+        mark?: boolean;
       };
   favicon?: string;
   /** Static OG image URL or local path. When set, skips automatic per-page OG image generation. */
@@ -159,9 +232,20 @@ export interface SourceyConfig {
     primary?: { type: "button"; label: string; href: string };
   };
   footer?: {
+    /** One line of inline Markdown at the foot of every page, such as a copyright or licence notice. */
+    text?: string;
     links?: NavbarLink[];
   };
   changelog?: false | ChangelogConfig;
+  /** How Markdown prose renders. */
+  markdown?: {
+    /**
+     * Typographer's quotes, dashes and ellipses in prose: `"` becomes “ or ”,
+     * `--` an em dash and `...` an ellipsis, as Astro renders Markdown by
+     * default. Code keeps every character as written. Off by default.
+     */
+    smartypants?: boolean;
+  };
   /** Search configuration. */
   search?: {
     /** Page slugs to feature at the top of search results when no query is entered. */
@@ -320,14 +404,26 @@ export interface GodocConfig {
 }
 
 export interface TabConfig {
+  /** Browse canonical documents in an authored order instead of generated groups. */
+  navigation?: GroupConfig[];
+  /** Existing fragment spellings mapped to real section IDs, by document identity. */
+  anchors?: Record<string, Record<string, string>>;
+  /** Missing imported fragment targets. Default: error. Invalid aliases always fail. */
+  anchorUnmatched?: import("./core/types.js").UnmatchedTargetPolicy;
+  id?: string;
+  versions?: false | TabVersionsConfig;
+  translations?: Record<string, SourceAdapter>;
+  /** How an OpenAPI or MCP reference publishes: one page unless split. */
+  reference?: ReferenceConfig;
+  routes?: Record<string, string>;
+  /** Override the site's console setting for this API. */
+  tryIt?: false | TryItConfig;
   tab: string;
   /** Custom URL slug for this tab. Defaults to slugified tab name. */
   slug?: string;
-  /** Source adapter object, usually created with `mkdocs()`, `openapi()`, `markdown()`, `doxygen()`, `godoc()`, or `mcp()`. */
+  /** Source adapter object, usually created with `openapi()`, `markdown()`, `doxygen()`, `godoc()`, or `mcp()`. */
   source?: SourceAdapter;
   openapi?: string;
-  /** Path to a MkDocs mkdocs.yml/mkdocs.yaml file. Sourcey imports docs_dir and nav. */
-  mkdocs?: string;
   groups?: GroupConfig[];
   doxygen?: DoxygenConfig;
   /** Path to an mcp.json file (MCP server snapshot). */
@@ -344,27 +440,51 @@ export interface TabConfig {
   rustdoc?: RustdocConfig | string;
 }
 
-export interface GroupConfig {
-  group: string;
-  pages: string[];
+export interface ReferenceConfig {
+  /** `"operations"`: a page for each operation and model, beside an overview that lists them. */
+  split?: "operations";
+  /**
+   * Each operation's permanent address, built from `{operationId}`, `{method}`,
+   * `{path}` or `{operation}` (its ID, or its path when it has none). A split
+   * reference publishes the operation's page there; a single page redirects it
+   * to the operation's section.
+   */
+  operations?: string;
 }
 
-export type LinkType =
-  | "github"
-  | "twitter"
-  | "discord"
-  | "linkedin"
-  | "youtube"
-  | "slack"
-  | "mastodon"
-  | "bluesky"
-  | "reddit"
-  | "npm"
-  | "link";
+export interface PageNavigation {
+  page: string;
+  /** Stable owning tab ID for a document in another source. */
+  tab?: string;
+  label?: string;
+  hidden?: boolean;
+}
+export interface OperationNavigation {
+  /** Canonical operation identity, for example GET /keys. */
+  operation: string;
+  /** Stable owning reference tab ID. Defaults to the current tab. */
+  reference?: string;
+  label?: string;
+}
+export type NavigationTarget = PageNavigation | OperationNavigation;
+export type NavigationItem = string | NavigationTarget | { href: string; label: string } | GroupConfig;
+export interface GroupConfig {
+  group: string;
+  id?: string;
+  href?: string;
+  collapsed?: boolean;
+  pages: NavigationItem[];
+}
+
+/** Networks a navbar or footer link can name; each renders as its brand icon. */
+export const SOCIAL_NETWORKS = ["github", "twitter", "discord", "discourse", "linkedin", "youtube", "slack", "mastodon", "bluesky", "reddit", "npm"] as const;
+export type SocialNetwork = (typeof SOCIAL_NETWORKS)[number];
+export type LinkType = SocialNetwork | "link";
 
 export interface NavbarLink {
   type: LinkType;
   href: string;
+  /** A text link's text; for a network, its icon's accessible name (the network's name by default). */
   label?: string;
 }
 
@@ -377,12 +497,15 @@ export function defineConfig(config: SourceyConfig): SourceyConfig {
 // ---------------------------------------------------------------------------
 
 export interface ResolvedTheme {
+  appearance: { default: "system" | "light" | "dark"; storageKey: string };
   name: ThemeName;
   colors: { primary: string; light: string; dark: string };
-  fonts: { sans: string; mono: string; googleFont: string | false };
+  /** CSS stacks, and the named families loaded from Google Fonts. */
+  fonts: { sans: string; mono: string; google: string[] };
   layout: { sidebar: string; toc: string; content: string };
   css: string[];
   reader?: ReaderThemeConfig;
+  icons: IconSet;
 }
 
 export interface ResolvedChangelogConfig {
@@ -392,7 +515,23 @@ export interface ResolvedChangelogConfig {
   ogImages: boolean;
 }
 
+/** Host-owned URL policy, retained when native config or its imports reload. */
+export interface SiteHostConfig {
+  landingPage?: boolean;
+  /** Physical status-page layout required by the host router. */
+  statusPageFormat?: "file" | "directory";
+  baseUrl?: string;
+  siteUrl?: string | false;
+  prettyUrls?: PrettyUrls;
+}
+
 export interface ResolvedConfig {
+  landingPage: boolean;
+  publicDir?: string;
+  pages?: string;
+  notFound: boolean;
+  host?: Readonly<SiteHostConfig>;
+  tryIt?: false | TryItConfig;
   exports: ResolvedExports;
   discovery: ResolvedDiscovery;
   name: string;
@@ -401,17 +540,24 @@ export interface ResolvedConfig {
   baseUrl: string;
   prettyUrls: PrettyUrls;
   theme: ResolvedTheme;
-  logo?: { light?: string; dark?: string; href?: string };
+  logo?: { light?: string; dark?: string; href?: string; mark?: boolean };
   favicon?: string;
   ogImage?: string;
   repo?: string;
   editBranch?: string;
   editBasePath?: string;
   codeSamples: string[];
-  tabs: ResolvedTab[];
+  contexts: ResolvedSiteContext[];
+  configDir: string;
+  authoring: SourceyConfig;
+  configPath?: string;
+  configDependencies?: string[];
+  components: Record<string, NativeComponentDefinition>;
+  redirects: Record<string, Redirect>;
   navbar: { links: NavbarLink[]; primary?: { type: "button"; label: string; href: string } };
-  footer: { links: NavbarLink[] };
+  footer: { text?: string; links: NavbarLink[] };
   changelog: ResolvedChangelogConfig;
+  markdown: { smartypants: boolean };
   search: { featured: string[] };
 }
 
@@ -440,11 +586,18 @@ export interface ResolvedGodocConfig {
 }
 
 export interface ResolvedTab {
+  navigation?: GroupConfig[];
+  anchors?: Record<string, Record<string, string>>;
+  anchorUnmatched?: import("./core/types.js").UnmatchedTargetPolicy;
+  contentLocale?: string;
+  id: string;
+  reference: ReferenceConfig;
+  routes?: Record<string, string>;
+  tryIt?: false | TryItConfig;
   label: string;
   slug: string;
   source: ResolvedTabSource;
   openapi?: string;
-  mkdocs?: string;
   groups?: ResolvedGroup[];
   doxygen?: ResolvedDoxygenConfig;
   mcp?: string;
@@ -453,6 +606,8 @@ export interface ResolvedTab {
 }
 
 export interface ResolvedPage {
+  kind: "page";
+  contentLocale?: string;
   /** Original config slug (e.g. "run/index") */
   slug: string;
   /** Absolute filesystem path to the .md/.mdx file */
@@ -468,11 +623,16 @@ export interface ResolvedPage {
   sourceRoot?: string;
   /** Optional source-adapter Markdown preprocessors. */
   preprocess?: MarkdownPreprocessor[];
+  hidden?: boolean;
 }
 
 export interface ResolvedGroup {
+  kind: "group";
   label: string;
-  pages: ResolvedPage[];
+  id: string;
+  href?: string;
+  collapsed?: boolean;
+  items: (ResolvedPage | ResolvedGroup | { kind: "link"; label: string; href: string } | { kind: "target"; target: NavigationTarget })[];
 }
 
 // ---------------------------------------------------------------------------
@@ -497,7 +657,7 @@ const DEFAULT_LAYOUT = {
   content: "44rem",
 };
 
-export async function loadConfig(configOrDir?: string): Promise<ResolvedConfig> {
+export async function loadConfig(configOrDir?: string, host?: Readonly<SiteHostConfig>, mode: "production" | "development" = "production"): Promise<ResolvedConfig> {
   let configPath: string;
 
   if (configOrDir && configOrDir.endsWith(".ts")) {
@@ -518,9 +678,13 @@ export async function loadConfig(configOrDir?: string): Promise<ResolvedConfig> 
     );
   }
 
-  const jiti = createJiti(import.meta.url);
-  const mod = (await jiti.import(configPath)) as { default: SourceyConfig };
-  const raw = mod.default;
+  // Native builds default to production; dev selects its mode at startup.
+  // An embedding host's established environment always retains ownership.
+  process.env.NODE_ENV ??= mode;
+  // JSON is data, exported as one default value. Vite can then skip the
+  // JavaScript AST transform for large imported navigation/fragment tables.
+  const { module, dependencies } = await runnerImport<{ default: SourceyConfig }>(configPath, { root: dirname(configPath), configFile: false, logLevel: "silent", json: { stringify: true, namedExports: false } });
+  const raw = module.default;
 
   if (!raw?.navigation?.tabs) {
     throw new Error(
@@ -528,74 +692,66 @@ export async function loadConfig(configOrDir?: string): Promise<ResolvedConfig> 
     );
   }
 
-  return resolveConfigFromRaw(raw, dirname(configPath));
+  const config = await resolveConfigFromRaw(raw, dirname(configPath), host);
+  config.configPath = configPath;
+  config.configDependencies = [...new Set(await Promise.all([configPath, ...dependencies.filter(path => !path.includes("/node_modules/"))].map(canonicalInputPath)))];
+  return config;
 }
 
 /**
  * Build a ResolvedConfig for a standalone spec file (no config file needed).
  */
-export function configFromSpec(specPath: string): ResolvedConfig {
-  const absSpec = resolve(specPath);
-  return {
-    exports: resolveExports(undefined),
-    discovery: resolveDiscovery(undefined),
-    name: "API Reference",
-    titleSeparator: " - ",
-    siteUrl: undefined,
-    baseUrl: "",
-    prettyUrls: false,
-    theme: {
-      name: "default",
-      colors: { ...DEFAULT_COLORS },
-      fonts: {
-        sans: `'${DEFAULT_FONT_SANS}', ${SYSTEM_SANS}`,
-        mono: SYSTEM_MONO,
-        googleFont: DEFAULT_FONT_SANS,
+export async function configFromSpec(specPath: string): Promise<ResolvedConfig> {
+  return resolveConfigFromRaw(
+    {
+      name: "API Reference",
+      navigation: {
+        tabs: [{ tab: "API Reference", slug: "api", source: openapiSource(resolve(specPath)) }],
       },
-      layout: { ...DEFAULT_LAYOUT },
-      css: [],
     },
-    codeSamples: ["curl", "javascript", "python"],
-    tabs: [
-      {
-        label: "API Reference",
-        slug: "api",
-        source: { kind: "openapi", spec: absSpec, watchPaths: [absSpec] },
-        openapi: absSpec,
-      },
-    ],
-    navbar: { links: [] },
-    footer: { links: [] },
-    changelog: { enabled: true, feed: false, permalinks: false, ogImages: false },
-    search: { featured: [] },
-  };
+    process.cwd(),
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Resolution + validation
 // ---------------------------------------------------------------------------
 
+function publicSettings(raw: SourceyConfig, host?: Readonly<SiteHostConfig>) {
+  const siteUrl = normalizeSiteUrl(host?.siteUrl === false ? undefined : host?.siteUrl ?? raw.siteUrl);
+  const baseUrl = normalizeBaseUrl(host?.baseUrl ?? raw.baseUrl);
+  return {
+    host,
+    landingPage: host?.landingPage ?? true,
+    siteUrl,
+    baseUrl,
+    prettyUrls: resolvePrettyUrls(host?.prettyUrls ?? raw.prettyUrls),
+    discovery: resolveDiscovery(raw.discovery, siteUrl, baseUrl),
+  };
+}
+
+export function applySiteHostConfig(config: ResolvedConfig, host: Readonly<SiteHostConfig>): ResolvedConfig {
+  return { ...config, ...publicSettings(config.authoring, host) };
+}
+
 export async function resolveConfigFromRaw(
   raw: SourceyConfig,
   configDir: string,
+  host?: Readonly<SiteHostConfig>,
 ): Promise<ResolvedConfig> {
   const theme = resolveTheme(raw, configDir);
-  const logo = resolveLogo(raw.logo, configDir);
-  const tabs = await resolveTabs(raw.navigation.tabs, configDir);
+  const logo = resolveLogo(raw.logo, raw.theme?.reader?.logoMark, configDir);
+  const contexts = await resolveContexts(raw, configDir, resolveTabs);
   const changelog = resolveChangelog(raw.changelog);
 
   return {
+    ...publicSettings(raw, host),
+    publicDir: raw.publicDir ? resolve(configDir, raw.publicDir) : undefined,
+    pages: raw.pages ? await pagesDirectory(resolve(configDir, raw.pages)) : undefined,
     exports: resolveExports(raw.exports),
-    discovery: resolveDiscovery(
-      raw.discovery,
-      normalizeSiteUrl(raw.siteUrl),
-      normalizeBaseUrl(raw.baseUrl),
-    ),
+    tryIt: resolveTryIt(raw.tryIt),
     name: raw.name ?? "",
     titleSeparator: raw.titleSeparator ?? " - ",
-    siteUrl: normalizeSiteUrl(raw.siteUrl),
-    baseUrl: normalizeBaseUrl(raw.baseUrl),
-    prettyUrls: resolvePrettyUrls(raw.prettyUrls),
     theme,
     logo,
     favicon:
@@ -610,19 +766,42 @@ export async function resolveConfigFromRaw(
     editBranch: raw.editBranch,
     editBasePath: raw.editBasePath,
     codeSamples: resolveCodeSamples(raw.codeSamples),
-    tabs,
+    contexts,
+    configDir,
+    authoring: raw,
+    components: raw.components ?? {},
+    notFound: raw.notFound !== false,
+    redirects: resolveRedirects(raw.redirects),
     navbar: {
       links: raw.navbar?.links ?? [],
       primary: raw.navbar?.primary,
     },
     footer: {
+      text: raw.footer?.text?.trim() || undefined,
       links: raw.footer?.links ?? [],
     },
     changelog,
+    markdown: { smartypants: raw.markdown?.smartypants === true },
     search: {
       featured: raw.search?.featured ?? [],
     },
   };
+}
+
+function resolveTryIt(value: SourceyConfig["tryIt"]): false | TryItConfig {
+  if (value === false) return false;
+  if (
+    value !== undefined &&
+    (value === null ||
+      typeof value !== "object" ||
+      (value.credentials !== undefined &&
+        !["omit", "same-origin", "include"].includes(value.credentials)))
+  ) {
+    throw new Error(
+      "tryIt must be false or an object with credentials: omit, same-origin, or include.",
+    );
+  }
+  return { credentials: value?.credentials ?? "same-origin" };
 }
 
 function isUrl(source: string): boolean {
@@ -654,19 +833,20 @@ function resolveTheme(raw: SourceyConfig, configDir: string): ResolvedTheme {
       }
     : { ...DEFAULT_COLORS };
 
-  const sansName = raw.theme?.fonts?.sans ?? DEFAULT_FONT_SANS;
-  const monoName = raw.theme?.fonts?.mono;
+  const named = (name: string | undefined) => (name && name !== "system" ? name : undefined);
+  const sansName = named(raw.theme?.fonts?.sans ?? DEFAULT_FONT_SANS);
+  const monoName = named(raw.theme?.fonts?.mono);
   const fonts = {
-    sans: `'${sansName}', ${SYSTEM_SANS}`,
+    sans: sansName ? `'${sansName}', ${SYSTEM_SANS}` : SYSTEM_SANS,
     mono: monoName ? `'${monoName}', ${SYSTEM_MONO}` : SYSTEM_MONO,
-    googleFont: raw.theme?.fonts?.google === false ? (false as const) : sansName,
+    google: raw.theme?.fonts?.google === false ? [] : [sansName, monoName].filter((name): name is string => Boolean(name)),
   };
 
   const defaults =
     name === "reader"
       ? { sidebar: "245px", toc: "220px", content: "850px" }
       : name === "api-first"
-        ? { sidebar: "17.5rem", toc: "13.5rem", content: "52rem" }
+        ? { sidebar: "17.5rem", toc: "13.5rem", content: "44rem" }
         : DEFAULT_LAYOUT;
   const layout = {
     sidebar: raw.theme?.layout?.sidebar ?? defaults.sidebar,
@@ -676,15 +856,24 @@ function resolveTheme(raw: SourceyConfig, configDir: string): ResolvedTheme {
 
   const css = (raw.theme?.css ?? []).map((p) => resolve(configDir, p));
 
-  return { name, colors, fonts, layout, css, reader: raw.theme?.reader };
+  const appearance = {
+    default: raw.theme?.appearance?.default ?? "system",
+    storageKey: raw.theme?.appearance?.storageKey ?? "sourcey-theme",
+  };
+  if (!["system", "light", "dark"].includes(appearance.default))
+    throw new Error("Invalid theme.appearance.default");
+  const icons = raw.theme?.icons ?? "heroicons";
+  if (!ICON_SETS.includes(icons)) throw new Error(`Invalid theme.icons "${icons}"; use ${ICON_SETS.map((set) => `"${set}"`).join(" or ")}`);
+  return { name, colors, fonts, layout, css, reader: raw.theme?.reader, appearance, icons };
 }
 
-function resolveLogo(logo: SourceyConfig["logo"], configDir: string): ResolvedConfig["logo"] {
+function resolveLogo(logo: SourceyConfig["logo"], readerMark: boolean | undefined, configDir: string): ResolvedConfig["logo"] {
   if (!logo) return undefined;
   const resolvePath = (p?: string) =>
     p && !p.startsWith("http") && !p.startsWith("data:") ? resolve(configDir, p) : p;
-  if (typeof logo === "string") return { light: resolvePath(logo) };
-  return { light: resolvePath(logo.light), dark: resolvePath(logo.dark), href: logo.href };
+  const { light, dark, href, mark } = typeof logo === "string" ? { light: logo } : logo;
+  // The reader theme's earlier `logoMark` says the same of its logo.
+  return { light: resolvePath(light), dark: resolvePath(dark), href, ...((mark ?? readerMark) ? { mark: true } : {}) };
 }
 
 function resolveChangelog(raw: SourceyConfig["changelog"]): ResolvedChangelogConfig {
@@ -700,7 +889,11 @@ function resolveChangelog(raw: SourceyConfig["changelog"]): ResolvedChangelogCon
   };
 }
 
-async function resolveTabs(tabs: TabConfig[], configDir: string): Promise<ResolvedTab[]> {
+async function resolveTabs(
+  tabs: TabConfig[],
+  configDir: string,
+  locale?: import("./adapters/types.js").SourceLocaleContext,
+): Promise<ResolvedTab[]> {
   const slugs = new Set<string>();
   const resolved: ResolvedTab[] = [];
 
@@ -709,12 +902,12 @@ async function resolveTabs(tabs: TabConfig[], configDir: string): Promise<Resolv
 
     const slug = tab.slug !== undefined ? tab.slug : slugify(tab.tab);
     if (slugs.has(slug)) throw new Error(`Duplicate tab slug "${slug}" (from "${tab.tab}")`);
+    if (slug.startsWith("@")) throw new Error(`Tab slug "${slug}" (from "${tab.tab}"): slugs starting with @ are reserved`);
     slugs.add(slug);
 
     const sources = [
       tab.source,
       tab.openapi,
-      tab.mkdocs,
       tab.groups?.length ? tab.groups : undefined,
       tab.doxygen,
       tab.mcp,
@@ -723,33 +916,46 @@ async function resolveTabs(tabs: TabConfig[], configDir: string): Promise<Resolv
     ].filter(Boolean).length;
     if (sources > 1) {
       throw new Error(
-        `Tab "${tab.tab}" has multiple sources; use only one of "source", "openapi", "mkdocs", "groups", "doxygen", "mcp", "godoc", or "rustdoc"`,
+        `Tab "${tab.tab}" has multiple sources; use only one of "source", "openapi", "groups", "doxygen", "mcp", "godoc", or "rustdoc"`,
       );
     }
     if (sources === 0) {
       throw new Error(
-        `Tab "${tab.tab}" needs one of "source", "openapi", "mkdocs", "groups", "doxygen", "mcp", "godoc", or "rustdoc"`,
+        `Tab "${tab.tab}" needs one of "source", "openapi", "groups", "doxygen", "mcp", "godoc", or "rustdoc"`,
       );
     }
 
-    const adapter = tab.source ?? legacySourceAdapter(tab);
+    const adapter = tab.source ?? tabSourceAdapter(tab);
     const source = await adapter.resolve({
       configDir,
+      locale,
       tabName: tab.tab,
       tabSlug: slug,
       resolvePath: (path) => resolve(configDir, path),
       assertExists,
       isUrl,
     });
-    resolved.push(resolvedTabFromSource(tab.tab, slug, source));
+    if (tab.anchorUnmatched !== undefined && !["error", "warn", "ignore"].includes(tab.anchorUnmatched)) throw new Error(`Invalid anchorUnmatched in tab "${tab.tab}"; expected error, warn or ignore`);
+    const reference = tab.reference ?? {};
+    if (reference.split !== undefined && reference.split !== "operations") throw new Error(`Invalid reference.split in tab "${tab.tab}"; expected "operations"`);
+    if (reference.operations !== undefined && (typeof reference.operations !== "string" || !reference.operations.trim())) throw new Error(`Invalid reference.operations in tab "${tab.tab}"; expected an address such as "{operationId}"`);
+    resolved.push({
+      ...resolvedTabFromSource(tab.tab, slug, source),
+      id: tab.id ?? slug,
+      reference,
+      routes: tab.routes,
+      anchors: tab.anchors,
+      anchorUnmatched: tab.anchorUnmatched,
+      navigation: tab.navigation,
+      tryIt: tab.tryIt === undefined ? undefined : resolveTryIt(tab.tryIt),
+    });
   }
 
   return resolved;
 }
 
-function legacySourceAdapter(tab: TabConfig): SourceAdapter {
+function tabSourceAdapter(tab: TabConfig): SourceAdapter {
   if (tab.openapi) return openapiSource(tab.openapi);
-  if (tab.mkdocs) return mkdocsSource(tab.mkdocs);
   if (tab.mcp) return mcpSource(tab.mcp);
   if (tab.doxygen) return doxygenSource(tab.doxygen);
   if (tab.godoc) return godocSource(tab.godoc);
@@ -762,7 +968,7 @@ function resolvedTabFromSource(
   slug: string,
   source: ResolvedTabSource,
 ): ResolvedTab {
-  const base: ResolvedTab = { label, slug, source };
+  const base: ResolvedTab = { id: slug, label, slug, source, reference: {} };
   switch (source.kind) {
     case "openapi":
       return { ...base, openapi: source.spec };
@@ -771,7 +977,6 @@ function resolvedTabFromSource(
     case "markdown":
       return {
         ...base,
-        mkdocs: source.adapter === "mkdocs" ? source.configPath : undefined,
         groups: source.groups,
       };
     case "doxygen":
@@ -849,10 +1054,31 @@ function resolveCodeSamples(value: string[] | undefined): string[] {
   return [...langs];
 }
 
+async function pagesDirectory(path: string): Promise<string> {
+  if (!(await stat(path).then(info => info.isDirectory(), () => false))) throw new Error(`pages is not a folder: ${path}`);
+  return path;
+}
+
 async function assertExists(filePath: string, label: string): Promise<void> {
   try {
     await access(filePath);
   } catch {
     throw new Error(`${label} not found: ${filePath}`);
   }
+}
+
+function resolveRedirects(raw: SourceyConfig["redirects"]): Record<string, Redirect> {
+  const result: Record<string, Redirect> = {};
+  for (const [from, value] of Object.entries(raw ?? {})) {
+    if (!from.startsWith("/") || from.startsWith("//") || /[\s?*#\\]/.test(from) || decodeURI(new URL(from, "https://sourcey.invalid").pathname) !== decodeURI(from))
+      throw new Error(`Unsupported redirect path: ${from}`);
+    const redirect: Redirect = typeof value === "string" ? { to: value, status: 301 } : value;
+    if (
+      ![301, 302, 303, 307, 308].includes(redirect.status) ||
+      !/^(\/(?!\/)|https?:\/\/)/.test(redirect.to) || /[\s\\]/.test(redirect.to)
+    )
+      throw new Error(`Invalid redirect: ${from}`);
+    result[from] = redirect;
+  }
+  return result;
 }

@@ -2,6 +2,7 @@ import { pageOutputPath, type PrettyUrls, type ResolvedRustdocConfig } from "../
 import type { MarkdownPage, PageHeading, PageSearchEntry } from "./markdown-loader.js";
 import { navHref, type SiteTab, type SiteNavGroup, type SiteNavItem } from "./navigation.js";
 import { runIntrospector, RustdocIntrospectorError } from "./rustdoc-introspector.js";
+import { InputReader } from "./loader.js";
 import type {
   CrateSpec,
   Doctest,
@@ -25,6 +26,8 @@ import {
   renderCodeBlock,
   renderMarkdownInline,
   stripMarkdownLinks,
+  DEFAULT_CALLOUTS,
+  type CalloutRenderOptions,
 } from "../utils/markdown.js";
 
 export interface RustdocLoaderDiagnostic {
@@ -47,6 +50,7 @@ export interface RustdocSourceLinkOptions {
   editBranch?: string;
   editBasePath?: string;
 }
+const rendered = new WeakMap<import("./rustdoc-types.js").RustdocSpec, Map<string, RustdocLoaderResult>>();
 
 /** Load a rustdoc tab from the configured manifest or snapshot. */
 export async function loadRustdocTab(
@@ -55,11 +59,13 @@ export async function loadRustdocTab(
   tabLabel: string,
   sourceLinks: RustdocSourceLinkOptions = {},
   prettyUrls: PrettyUrls = false,
+  input = new InputReader(),
+  callouts: CalloutRenderOptions = DEFAULT_CALLOUTS,
 ): Promise<RustdocLoaderResult> {
   const tab: RustTab = { slug: tabSlug, prettyUrls };
   let result;
   try {
-    result = await runIntrospector({ config });
+    result = await runIntrospector({ config, input });
   } catch (err) {
     if (err instanceof RustdocIntrospectorError) {
       const pages = new Map<string, MarkdownPage>();
@@ -82,6 +88,11 @@ export async function loadRustdocTab(
     throw err;
   }
 
+  const key = JSON.stringify([config, tabSlug, tabLabel, sourceLinks, prettyUrls, callouts]);
+  const entries = rendered.get(result.spec) ?? new Map<string, RustdocLoaderResult>();
+  const cached = entries.get(key);
+  if (cached) return { ...cached, navTab: structuredClone(cached.navTab) };
+
   const pages = new Map<string, MarkdownPage>();
   const navGroups: SiteNavGroup[] = [];
   const diagnostics: RustdocLoaderDiagnostic[] = result.diagnostics.map(toLoaderDiagnostic);
@@ -101,6 +112,7 @@ export async function loadRustdocTab(
         tabSlug,
         sourceLinks,
         renderDiagnostics,
+        callouts,
       );
       pages.set(page.slug, page);
       for (const d of renderDiagnostics) diagnostics.push(toLoaderDiagnostic(d));
@@ -147,7 +159,10 @@ export async function loadRustdocTab(
     groups: navGroups,
   };
 
-  return { pages, navTab, diagnostics };
+  const output = { pages, navTab, diagnostics };
+  entries.set(key, output); rendered.set(result.spec, entries);
+  if (entries.size > 32) entries.delete(entries.keys().next().value!);
+  return { ...output, navTab: structuredClone(navTab) };
 }
 
 function renderModulePageLoader(
@@ -158,6 +173,7 @@ function renderModulePageLoader(
   tabSlug: string,
   sourceLinks: RustdocSourceLinkOptions,
   diagnostics: RustdocDiagnostic[],
+  callouts: CalloutRenderOptions,
 ): MarkdownPage {
   const slug = rustModuleSlug(crate.name, module.path);
   const title = module.path.length === 0 ? crate.name : module.path.join("::");
@@ -168,7 +184,7 @@ function renderModulePageLoader(
 
   const headings = collectHeadings(items);
   const searchEntries = collectSearchEntries(items, title);
-  const ctx = buildRenderContext(crate, itemsById, itemPages, tabSlug, sourceLinks, diagnostics);
+  const ctx = buildRenderContext(crate, itemsById, itemPages, tabSlug, sourceLinks, diagnostics, callouts);
   const rendered = renderModulePage(module, items, ctx);
   const html = rendered.html;
 
@@ -339,6 +355,7 @@ function buildRenderContext(
   tabSlug: string,
   sourceLinks: RustdocSourceLinkOptions,
   diagnostics: RustdocDiagnostic[] = [],
+  callouts: CalloutRenderOptions = DEFAULT_CALLOUTS,
 ): RenderContext {
   const externalCrates = new Map<number, ExternalCrateRef>();
   for (const ec of crate.external_crates) externalCrates.set(ec.crate_id, ec);
@@ -348,6 +365,7 @@ function buildRenderContext(
     externalCrates,
     tabSlug,
     itemPages,
+    callouts,
     sourceLinks: {
       repo: sourceLinks.repo,
       editBranch: sourceLinks.editBranch,

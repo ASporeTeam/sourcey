@@ -24,7 +24,7 @@ export function outputPathCandidatesForRequest(
   prettyUrls: PrettyUrls,
 ): string[] {
   const requestPath = stripBaseUrl(pathname, baseUrl);
-  const clean = outputPathFromRequestPath(requestPath, "");
+  const clean = outputPathFromRequestPath(requestPath, "").replace(/\/+$/, "");
 
   if (!clean) return ["index.html"];
   if (extname(clean)) return [clean];
@@ -77,8 +77,9 @@ export function contentTypeForPath(path: string): string {
       return "image/avif";
     case ".ico":
       return "image/x-icon";
-    case ".txt":
     case ".xml":
+      return "application/xml; charset=utf-8";
+    case ".txt":
       return "text/plain; charset=utf-8";
     case ".pdf":
       return "application/pdf";

@@ -15,9 +15,11 @@ import {
   __internals,
 } from "../../src/core/rustdoc-render.js";
 import type { CrateSpec, Item, Signature } from "../../src/core/rustdoc-types.js";
-import { renderMarkdown } from "../../src/utils/markdown.js";
+import { renderMarkdown, DEFAULT_CALLOUTS } from "../../src/utils/markdown.js";
+import { messagesFor } from "../../src/core/messages.js";
 
 const baseCtx = () => ({
+  callouts: DEFAULT_CALLOUTS,
   crate: {
     name: "basic",
     version: "0.1.0",
@@ -33,6 +35,15 @@ const baseCtx = () => ({
   itemPages: new Map<string, RustItemPage>(),
   sourceLinks: {},
   diagnostics: [],
+});
+
+it("renders a module's own Markdown with its site's callouts when there is no module item", () => {
+  const ctx = baseCtx();
+  ctx.callouts = { icons: "lucide", messages: messagesFor("fr", { note: "Remarque" }) };
+  const { html } = renderModulePage({ id: "module", path: ["basic"], docs_markdown: "> [!NOTE]\n> Module detail.", doc_aliases: [], item_ids: [], sub_module_paths: [], source: null }, [], ctx);
+  expect(html).toContain("Remarque");
+  expect(html).toContain("Module detail.");
+  expect(html).toContain('stroke-width="2"');
 });
 
 function dummySig(opts: { name: string; long?: boolean }): Signature {

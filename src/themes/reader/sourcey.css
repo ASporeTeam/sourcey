@@ -26,6 +26,7 @@
   --page-max: 1248px;
   --reader-frame-width: 1440px;
   --reader-gutter: 48px;
+  --reader-header-height: 83px;
   font-family: var(--font);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
@@ -49,7 +50,17 @@
 }
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: 110px;
+}
+/* A link clears the masthead, where the page has one. */
+html:has(.site-header) {
+  scroll-padding-top: var(--reader-header-height);
+}
+/* A chapter starts this far below the masthead, and a link to a place on it lands there too. */
+#sourcey {
+  --sourcey-content-gap: 45px;
+}
+.docs-main :is([id], .sourcey-endpoint) {
+  scroll-margin-top: var(--sourcey-content-gap);
 }
 body {
   margin: 0;
@@ -186,11 +197,14 @@ p {
   letter-spacing: -1.1px;
   font-weight: 750;
   line-height: 1;
+  min-width: 0;
 }
 .home-link {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
 }
+.home-link picture { min-width: 0; }
 .site-header {
   height: 83px;
   position: sticky;
@@ -230,10 +244,18 @@ p {
   text-underline-offset: 12px;
   text-decoration-color: var(--lime);
 }
+/* Brand icons keep the nav's rhythm while their target spans the control size. */
+.desktop-nav-icon {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 36px;
+  margin-inline: -9px;
+}
 .header-actions {
   display: flex;
   align-items: center;
   gap: 25px;
+  flex-shrink: 0;
 }
 .reader-theme-toggle {
   display: inline-flex;
@@ -306,20 +328,32 @@ kbd {
   padding: 13px 0;
   font-size: 15px;
 }
+#reader-mobile-nav .mobile-cta {
+  margin-top: 12px;
+  padding: 12px 18px;
+  border: 1px solid oklch(45% 0.014 275);
+  border-radius: 40px;
+  font-weight: 650;
+}
+#reader-mobile-nav .mobile-cta:hover {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--ink);
+}
 
 .docs-shell {
   max-width: var(--reader-frame-width);
   margin: 0 auto;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--toc-width);
-  min-height: calc(100vh - 83px);
+  min-height: calc(100vh - var(--reader-header-height));
 }
 .docs-sidebar {
   border-right: 1px solid var(--line-light);
   padding: 34px calc(var(--reader-gutter) - 12px);
   position: sticky;
-  top: 83px;
-  height: calc(100vh - 83px);
+  top: var(--reader-header-height);
+  height: calc(100vh - var(--reader-header-height));
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -421,8 +455,14 @@ kbd {
   margin: 28px 0 0;
   line-height: 1.9;
 }
+/* A page drawn by its author shares the header's frame, without chapters or contents. */
+.reader-page {
+  max-width: var(--reader-frame-width);
+  margin: 0 auto;
+  padding: 45px var(--reader-gutter) 25px;
+}
 .docs-main {
-  padding: 45px 55px 25px;
+  padding: var(--sourcey-content-gap) 55px 25px;
   min-width: 0;
   max-width: 875px;
   width: 100%;
@@ -440,12 +480,23 @@ kbd {
   font-size: 8px;
   padding-block: 3px;
 }
-.doc-title h1 {
+.doc-title h1,
+.docs-main .reference-page-title {
   font-size: clamp(35px, 3.4vw, 47px);
   font-weight: 600;
   letter-spacing: -0.055em;
-  margin: 28px 0 18px;
   line-height: 1.17;
+}
+.doc-title h1 {
+  margin: 28px 0 18px;
+}
+/* A reference page's title stands under the breadcrumb as a chapter's does,
+   on the chapter's left edge. */
+.docs-main .reference-page-title {
+  margin-top: 28px;
+}
+.docs-main > #content-area {
+  padding-inline: 0;
 }
 .doc-title > p {
   color: var(--reader-muted);
@@ -499,7 +550,6 @@ kbd {
   color: var(--reader-heading);
   margin-top: 46px;
   margin-bottom: 20px;
-  scroll-margin-top: 110px;
 }
 .reader-prose h3 {
   font-size: 18px;
@@ -511,13 +561,13 @@ kbd {
   color: var(--reader-heading);
   font-weight: 700;
 }
-.reader-prose a {
+.reader-prose a:not(:where(.not-prose, .not-prose *)) {
   color: var(--blue-ink);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
-.reader-prose a:hover {
+.reader-prose a:not(:where(.not-prose, .not-prose *)):hover {
   color: var(--reader-heading);
 }
 .reader-prose ul,
@@ -557,19 +607,19 @@ kbd {
   display: inline-block;
   vertical-align: middle;
 }
-.reader-prose code {
+.reader-prose code:not(:where(.not-prose, .not-prose *)) {
   font-family: var(--mono);
   font-size: 0.9em;
   background: var(--mist);
   border-radius: 3px;
   padding: 2px 4px;
 }
-.reader-prose pre {
+.reader-prose pre:not(:where(.not-prose, .not-prose *)) {
   padding: 20px;
   overflow-x: auto;
   border-radius: 5px;
 }
-.reader-prose pre code {
+.reader-prose pre code:not(:where(.not-prose, .not-prose *)) {
   background: transparent;
   padding: 0;
 }
@@ -633,9 +683,9 @@ kbd {
 .docs-toc {
   padding: 46px 25px 30px 10px;
   position: sticky;
-  top: 83px;
+  top: var(--reader-header-height);
   align-self: start;
-  max-height: calc(100vh - 83px);
+  max-height: calc(100vh - var(--reader-header-height));
   overflow-y: auto;
 }
 .docs-toc .eyebrow {
@@ -714,17 +764,20 @@ kbd {
   }
 }
 @media (max-width: 900px) {
+  :root { --reader-header-height: 72px; }
+  #sourcey { --sourcey-content-gap: 35px; }
   .docs-sidebar {
-    top: 72px;
-    height: calc(100vh - 72px);
+    top: var(--reader-header-height);
+    height: calc(100vh - var(--reader-header-height));
   }
   .docs-shell {
-    min-height: calc(100vh - 72px);
+    min-height: calc(100vh - var(--reader-header-height));
   }
   .docs-main {
-    padding: 35px 30px;
+    padding: var(--sourcey-content-gap) 30px;
   }
-  .doc-title h1 {
+  .doc-title h1,
+  .docs-main .reference-page-title {
     font-size: 38px;
   }
   .doc-metadata {
@@ -733,6 +786,7 @@ kbd {
   }
 }
 @media (max-width: 700px) {
+  #sourcey { --sourcey-content-gap: 30px; }
   .docs-sidebar {
     display: none;
   }
@@ -761,9 +815,10 @@ kbd {
     color: var(--reader-heading);
   }
   .docs-main {
-    padding: 30px var(--reader-gutter);
+    padding: var(--sourcey-content-gap) var(--reader-gutter);
   }
-  .doc-title h1 {
+  .doc-title h1,
+  .docs-main .reference-page-title {
     font-size: 39px;
   }
   .doc-title p {
@@ -902,10 +957,10 @@ body#sourcey {
   padding-left: 20px;
   margin: 25px 0;
 }
-.sourcey-reader .reader-prose pre code {
+.sourcey-reader .reader-prose pre code:not(:where(.not-prose, .not-prose *)) {
   color: inherit;
 }
-.sourcey-reader .reader-prose pre {
+.sourcey-reader .reader-prose pre:not(:where(.not-prose, .not-prose *)) {
   margin-block: 1em;
 }
 .sourcey-reader .reader-prose hr {
@@ -919,8 +974,10 @@ body#sourcey {
 }
 .brand-logo {
   width: auto;
-  max-width: 220px;
+  max-width: min(220px, 100%);
   height: 34px;
+  object-fit: contain;
+  object-position: left center;
 }
 .docs-map-title,
 .docs-sidebar-bottom p,
@@ -985,6 +1042,11 @@ body#sourcey {
   .menu-toggle {
     display: flex;
   }
+  .search-link, .reader-theme-toggle, .menu-toggle {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
   .site-header {
     height: 72px;
   }
@@ -1013,7 +1075,7 @@ body#sourcey {
     gap: 10px;
   }
   .header-actions {
-    gap: 12px;
+    gap: 4px;
   }
   .header-cta {
     display: none;
@@ -1076,4 +1138,31 @@ body#sourcey {
   font-size: 24px;
   line-height: 1.25;
   letter-spacing: -0.04em;
+}
+
+.reader-chapters-trigger { display:none; list-style:none; }
+@media (max-width:900px) {
+  .docs-shell { display:block; }
+  details.docs-sidebar { display:block; position:static; width:auto; height:auto; max-height:60vh; top:auto; border:1px solid var(--line-light); border-radius:8px; padding:12px 16px; margin:20px var(--reader-gutter) 0; }
+  .reader-chapters-trigger { display:flex; align-items:center; justify-content:space-between; gap:1rem; cursor:pointer; font-size:.85rem; }
+  .reader-chapters-trigger svg { transform:rotate(90deg); }
+  details.docs-sidebar[open] .reader-chapters-trigger { margin-bottom:16px; }
+  details.docs-sidebar[open] .reader-chapters-trigger svg { transform:rotate(-90deg); }
+  html.sourcey-js [data-reader-chapters]:not([data-ready]) > :not(summary) { display:none; }
+}
+
+:root:has(.reader-context-row:not(:empty)) { --reader-header-height: 128px; }
+
+/* Locale and release belong to the reader's site chrome. */
+.reader-context-row:empty { display:none; }
+.reader-context-row:not(:empty) { display:flex; max-width:var(--reader-frame-width); margin-inline:auto; padding:0 var(--reader-gutter) 12px; }
+.site-header:has(.reader-context-row:not(:empty)) { height:auto; }
+.site-header:has(.reader-context-row:not(:empty)) .header-inner { height:83px; }
+.reader-context-row .sourcey-context-controls { margin:0 0 0 auto; }
+.reader-context-row .sourcey-context-menu { color:var(--text-light); }
+.reader-context-row .sourcey-context-menu summary:hover { background:var(--line-dark); }
+.reader-context-row .sourcey-context-menu ul { color:var(--reader-text); }
+@media(max-width:900px) {
+ :root:has(.reader-context-row:not(:empty)) { --reader-header-height: 129px; }
+ .site-header:has(.reader-context-row:not(:empty)) .header-inner { height:72px; }
 }

@@ -26,7 +26,15 @@ import type {
 } from "./types.js";
 
 const HTTP_METHODS: HttpMethod[] = [
-  "get", "post", "put", "delete", "patch", "options", "head", "trace", "query",
+  "get",
+  "post",
+  "put",
+  "delete",
+  "patch",
+  "options",
+  "head",
+  "trace",
+  "query",
 ];
 
 /**
@@ -36,14 +44,16 @@ const HTTP_METHODS: HttpMethod[] = [
 export function normalizeSpec(parsed: ParsedSpec): NormalizedSpec {
   const doc = parsed.document;
 
-  const schemas = normalizeSchemas(doc.components?.schemas);
+  const components = (doc.components?.schemas ?? {}) as Components;
+  const schemas = normalizeSchemas(components);
   const securitySchemes = normalizeSecuritySchemes(doc.components?.securitySchemes);
   const servers = normalizeServers(doc.servers);
-  const operations = normalizeOperations(doc.paths, doc.security);
-  const webhooks = normalizeWebhooks(doc.webhooks);
+  const operations = normalizeOperations(components, doc.paths, doc.security);
+  const webhooks = normalizeWebhooks(components, doc.webhooks);
   const tags = normalizeTags(doc.tags, operations);
 
   return {
+    sourceUrl: publicSourceUrl(parsed.source),
     info: normalizeInfo(doc),
     servers,
     tags,
@@ -53,6 +63,16 @@ export function normalizeSpec(parsed: ParsedSpec): NormalizedSpec {
     webhooks,
     externalDocs: normalizeExternalDocs(doc.externalDocs),
   };
+}
+
+function publicSourceUrl(source: string): string | undefined {
+  if (!/^https?:\/\//i.test(source)) return undefined;
+  const url = new URL(source);
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  return url.href;
 }
 
 // ── Info ───────────────────────────────────────────────────────────
@@ -85,9 +105,7 @@ function normalizeInfo(doc: OpenApiDocument) {
 
 // ── Servers ────────────────────────────────────────────────────────
 
-function normalizeServers(
-  servers?: Record<string, unknown>[],
-): ServerDefinition[] {
+function normalizeServers(servers?: Record<string, unknown>[]): ServerDefinition[] {
   if (!servers?.length) return [{ url: "/" }];
   return servers.map((s) => ({
     url: str(s.url, "/"),
@@ -164,13 +182,16 @@ function normalizeTags(
   }
 
   // Keep tags that contribute visible metadata or structure, even without operations.
-  return sortTagsByHierarchy(Array.from(tagMap.values()).filter(
-    (t) => t.operations.length > 0
-      || !!t.summary
-      || !!t.description
-      || !!t.kind
-      || referencedAsParent.has(t.name),
-  ));
+  return sortTagsByHierarchy(
+    Array.from(tagMap.values()).filter(
+      (t) =>
+        t.operations.length > 0 ||
+        !!t.summary ||
+        !!t.description ||
+        !!t.kind ||
+        referencedAsParent.has(t.name),
+    ),
+  );
 }
 
 function sortTagsByHierarchy(tags: NormalizedTag[]): NormalizedTag[] {
@@ -206,6 +227,7 @@ function sortTagsByHierarchy(tags: NormalizedTag[]): NormalizedTag[] {
 }
 
 function normalizeOperations(
+  components: Components,
   paths?: Record<string, Record<string, unknown>>,
   globalSecurity?: Record<string, string[]>[],
 ): NormalizedOperation[] {
@@ -214,6 +236,7 @@ function normalizeOperations(
 
   for (const [path, pathItem] of Object.entries(paths)) {
     const pathParams = normalizeParameters(
+      components,
       pathItem.parameters as Record<string, unknown>[] | undefined,
     );
 
@@ -222,6 +245,7 @@ function normalizeOperations(
       if (!opRaw) continue;
 
       const opParams = normalizeParameters(
+        components,
         opRaw.parameters as Record<string, unknown>[] | undefined,
       );
 
@@ -236,10 +260,9 @@ function normalizeOperations(
         path,
         tags: Array.isArray(opRaw.tags) ? opRaw.tags.map(String) : [],
         parameters: mergedParams,
-        requestBody: normalizeRequestBody(
-          opRaw.requestBody as Record<string, unknown> | undefined,
-        ),
+        requestBody: normalizeRequestBody(components, opRaw.requestBody as Record<string, unknown> | undefined),
         responses: normalizeResponses(
+          components,
           opRaw.responses as Record<string, Record<string, unknown>> | undefined,
         ),
         security: normalizeSecurityRequirements(
@@ -247,13 +270,15 @@ function normalizeOperations(
           globalSecurity,
         ),
         deprecated: opRaw.deprecated === true,
-        servers: opRaw.servers
-          ? normalizeServers(opRaw.servers as Record<string, unknown>[])
-          : undefined,
+        servers:
+          opRaw.servers || pathItem.servers
+            ? normalizeServers((opRaw.servers ?? pathItem.servers) as Record<string, unknown>[])
+            : undefined,
         externalDocs: normalizeExternalDocs(
           opRaw.externalDocs as Record<string, unknown> | undefined,
         ),
         callbacks: normalizeCallbacks(
+          components,
           opRaw.callbacks as Record<string, Record<string, unknown>> | undefined,
         ),
         hidden: opRaw["x-sourcey-hide"] === true,
@@ -284,9 +309,7 @@ function deduplicateParameters(params: NormalizedParameter[]): NormalizedParamet
   return Array.from(seen.values());
 }
 
-function normalizeParameters(
-  params?: Record<string, unknown>[],
-): NormalizedParameter[] {
+function normalizeParameters(components: Components, params?: Record<string, unknown>[]): NormalizedParameter[] {
   if (!params) return [];
   return params.map((p) => ({
     name: str(p.name, ""),
@@ -294,11 +317,12 @@ function normalizeParameters(
     description: optStr(p.description),
     required: p.required === true,
     deprecated: p.deprecated === true,
-    schema: p.schema
-      ? normalizeSchema(p.schema as Record<string, unknown>)
-      : undefined,
+    style: optStr(p.style),
+    explode: typeof p.explode === "boolean" ? p.explode : undefined,
+    allowReserved: p.allowReserved === true,
+    schema: p.schema ? normalizeSchema(p.schema as Record<string, unknown>, components) : undefined,
     content: p.content
-      ? normalizeContent(p.content as Record<string, Record<string, unknown>>)
+      ? normalizeContent(components, p.content as Record<string, Record<string, unknown>>)
       : undefined,
     example: p.example,
     examples: p.examples
@@ -307,83 +331,75 @@ function normalizeParameters(
   }));
 }
 
-function normalizeRequestBody(
-  body?: Record<string, unknown>,
-): NormalizedRequestBody | undefined {
+function normalizeRequestBody(components: Components, body?: Record<string, unknown>): NormalizedRequestBody | undefined {
   if (!body) return undefined;
   return {
     description: optStr(body.description),
     required: body.required === true,
-    content: normalizeContent(
-      body.content as Record<string, Record<string, unknown>> | undefined,
-    ),
+    content: normalizeContent(components, body.content as Record<string, Record<string, unknown>> | undefined),
   };
 }
 
 function normalizeContent(
+  components: Components,
   content?: Record<string, Record<string, unknown>>,
 ): Record<string, MediaTypeContent> {
   if (!content) return {};
   const result: Record<string, MediaTypeContent> = {};
   for (const [mediaType, value] of Object.entries(content)) {
     result[mediaType] = {
-      schema: value.schema
-        ? normalizeSchema(value.schema as Record<string, unknown>)
-        : undefined,
+      schema: value.schema ? normalizeSchema(value.schema as Record<string, unknown>, components) : undefined,
       example: value.example,
       examples: value.examples
         ? normalizeExamples(value.examples as Record<string, Record<string, unknown>>)
         : undefined,
       encoding: isRecord(value.encoding)
-        ? normalizeEncodingMap(value.encoding as Record<string, unknown>)
+        ? normalizeEncodingMap(components, value.encoding as Record<string, unknown>)
         : undefined,
       prefixEncoding: Array.isArray(value.prefixEncoding)
         ? value.prefixEncoding
-          .filter(isRecord)
-          .map((entry) => normalizeEncodingObject(entry as Record<string, unknown>))
+            .filter(isRecord)
+            .map((entry) => normalizeEncodingObject(components, entry as Record<string, unknown>))
         : undefined,
       itemEncoding: isRecord(value.itemEncoding)
-        ? normalizeEncodingObject(value.itemEncoding as Record<string, unknown>)
+        ? normalizeEncodingObject(components, value.itemEncoding as Record<string, unknown>)
         : undefined,
     };
   }
   return result;
 }
 
-function normalizeEncodingMap(
-  encodings: Record<string, unknown>,
-): Record<string, EncodingObject> {
+function normalizeEncodingMap(components: Components, encodings: Record<string, unknown>): Record<string, EncodingObject> {
   const result: Record<string, EncodingObject> = {};
   for (const [name, encoding] of Object.entries(encodings)) {
     if (!isRecord(encoding)) continue;
-    result[name] = normalizeEncodingObject(encoding);
+    result[name] = normalizeEncodingObject(components, encoding);
   }
   return result;
 }
 
-function normalizeEncodingObject(encoding: Record<string, unknown>): EncodingObject {
+function normalizeEncodingObject(components: Components, encoding: Record<string, unknown>): EncodingObject {
   return {
     contentType: optStr(encoding.contentType),
     headers: isRecord(encoding.headers)
-      ? normalizeResponseHeaders(encoding.headers as Record<string, Record<string, unknown>>)
+      ? normalizeResponseHeaders(components, encoding.headers as Record<string, Record<string, unknown>>)
       : undefined,
     style: optStr(encoding.style),
     explode: typeof encoding.explode === "boolean" ? encoding.explode : undefined,
-    allowReserved: typeof encoding.allowReserved === "boolean"
-      ? encoding.allowReserved
-      : undefined,
+    allowReserved: typeof encoding.allowReserved === "boolean" ? encoding.allowReserved : undefined,
     prefixEncoding: Array.isArray(encoding.prefixEncoding)
       ? encoding.prefixEncoding
-        .filter(isRecord)
-        .map((entry) => normalizeEncodingObject(entry as Record<string, unknown>))
+          .filter(isRecord)
+          .map((entry) => normalizeEncodingObject(components, entry as Record<string, unknown>))
       : undefined,
     itemEncoding: isRecord(encoding.itemEncoding)
-      ? normalizeEncodingObject(encoding.itemEncoding as Record<string, unknown>)
+      ? normalizeEncodingObject(components, encoding.itemEncoding as Record<string, unknown>)
       : undefined,
   };
 }
 
 function normalizeResponses(
+  components: Components,
   responses?: Record<string, Record<string, unknown>>,
 ): NormalizedResponse[] {
   if (!responses) return [];
@@ -392,18 +408,17 @@ function normalizeResponses(
     summary: optStr(r.summary),
     description: str(r.description, ""),
     content: r.content
-      ? normalizeContent(r.content as Record<string, Record<string, unknown>>)
+      ? normalizeContent(components, r.content as Record<string, Record<string, unknown>>)
       : undefined,
     headers: r.headers
-      ? normalizeResponseHeaders(r.headers as Record<string, Record<string, unknown>>)
+      ? normalizeResponseHeaders(components, r.headers as Record<string, Record<string, unknown>>)
       : undefined,
-    links: r.links
-      ? normalizeLinks(r.links as Record<string, Record<string, unknown>>)
-      : undefined,
+    links: r.links ? normalizeLinks(r.links as Record<string, Record<string, unknown>>) : undefined,
   }));
 }
 
 function normalizeResponseHeaders(
+  components: Components,
   headers: Record<string, Record<string, unknown>>,
 ): Record<string, NormalizedParameter> {
   const result: Record<string, NormalizedParameter> = {};
@@ -414,11 +429,9 @@ function normalizeResponseHeaders(
       description: optStr(h.description),
       required: h.required === true,
       deprecated: h.deprecated === true,
-      schema: h.schema
-        ? normalizeSchema(h.schema as Record<string, unknown>)
-        : undefined,
+      schema: h.schema ? normalizeSchema(h.schema as Record<string, unknown>, components) : undefined,
       content: h.content
-        ? normalizeContent(h.content as Record<string, Record<string, unknown>>)
+        ? normalizeContent(components, h.content as Record<string, Record<string, unknown>>)
         : undefined,
     };
   }
@@ -436,15 +449,14 @@ function normalizeLinks(
       description: optStr(l.description),
       parameters: l.parameters as Record<string, unknown> | undefined,
       requestBody: l.requestBody,
-      server: l.server
-        ? normalizeServers([l.server as Record<string, unknown>])[0]
-        : undefined,
+      server: l.server ? normalizeServers([l.server as Record<string, unknown>])[0] : undefined,
     };
   }
   return result;
 }
 
 function normalizeCallbacks(
+  components: Components,
   callbacks?: Record<string, Record<string, unknown>>,
 ): Record<string, NormalizedCallback> | undefined {
   if (!callbacks) return undefined;
@@ -452,7 +464,7 @@ function normalizeCallbacks(
   for (const [expression, pathItem] of Object.entries(callbacks)) {
     result[expression] = {
       expression,
-      operations: normalizeOperations({ [expression]: pathItem }),
+      operations: normalizeOperations(components, { [expression]: pathItem }),
     };
   }
   return result;
@@ -481,21 +493,32 @@ function normalizeCodeSamples(
 
 // ── Schemas ────────────────────────────────────────────────────────
 
-function normalizeSchemas(
-  schemas?: Record<string, unknown>,
-): Record<string, NormalizedSchema> {
-  if (!schemas) return {};
+/** Component schemas, for the references the parser leaves in place where a component recurs. */
+type Components = Record<string, Record<string, unknown>>;
+
+function normalizeSchemas(schemas: Components): Record<string, NormalizedSchema> {
   const result: Record<string, NormalizedSchema> = {};
   for (const [name, s] of Object.entries(schemas)) {
-    result[name] = normalizeSchema(s as Record<string, unknown>, name);
+    result[name] = normalizeSchema(s, schemas, name);
   }
   return result;
 }
 
-function normalizeSchema(
-  schema: Record<string, unknown>,
-  name?: string,
-): NormalizedSchema {
+/**
+ * `path` names the components on the way to this schema. A reference the
+ * parser left in place (a recurring component) expands like any other off
+ * that path, and stays a named link where the component would repeat.
+ */
+function normalizeSchema(schema: Record<string, unknown>, components: Components, name?: string, path: readonly string[] = name ? [name] : []): NormalizedSchema {
+  const recurring = typeof schema.$ref === "string" ? /^#\/components\/schemas\/([^/]+)$/.exec(schema.$ref)?.[1] : undefined;
+  const target = recurring && decodeURIComponent(recurring).replace(/~1/g, "/").replace(/~0/g, "~");
+  if (target && components[target] && !path.includes(target)) {
+    const expanded = normalizeSchema(components[target], components, undefined, [...path, target]);
+    return { ...expanded, description: optStr(schema.description) ?? expanded.description, refName: target };
+  }
+  const own = optStr(schema["x-ref-name"]);
+  const inner = own && !path.includes(own) ? [...path, own] : path;
+  const child = (value: unknown) => normalizeSchema(value as Record<string, unknown>, components, undefined, inner);
   // Handle nullable: OpenAPI 3.0 uses x-nullable or nullable,
   // OpenAPI 3.1 uses type: ["string", "null"]
   let type = schema.type as string | string[] | undefined;
@@ -517,6 +540,12 @@ function normalizeSchema(
     description: optStr(schema.description),
     default: schema.default,
     enum: Array.isArray(schema.enum) ? schema.enum : undefined,
+    enumNames: Array.isArray(schema["x-enumNames"] ?? schema["x-enum-varnames"])
+      ? ((schema["x-enumNames"] ?? schema["x-enum-varnames"]) as unknown[]).map(String)
+      : undefined,
+    enumDescriptions: Array.isArray(schema["x-enumDescriptions"])
+      ? (schema["x-enumDescriptions"] as unknown[]).map(String)
+      : undefined,
     const: schema.const,
     nullable,
     readOnly: schema.readOnly === true,
@@ -533,14 +562,14 @@ function normalizeSchema(
     for (const [key, val] of Object.entries(
       schema.properties as Record<string, Record<string, unknown>>,
     )) {
-      result.properties[key] = normalizeSchema(val);
+      result.properties[key] = child(val);
     }
   }
   if (schema.additionalProperties !== undefined) {
     result.additionalProperties =
       typeof schema.additionalProperties === "boolean"
         ? schema.additionalProperties
-        : normalizeSchema(schema.additionalProperties as Record<string, unknown>);
+        : child(schema.additionalProperties);
   }
   if (Array.isArray(schema.required)) {
     result.required = schema.required.map(String);
@@ -548,7 +577,7 @@ function normalizeSchema(
 
   // Array items
   if (schema.items) {
-    result.items = normalizeSchema(schema.items as Record<string, unknown>);
+    result.items = child(schema.items);
   }
   if (schema.minItems !== undefined) result.minItems = Number(schema.minItems);
   if (schema.maxItems !== undefined) result.maxItems = Number(schema.maxItems);
@@ -572,22 +601,16 @@ function normalizeSchema(
 
   // Composition
   if (Array.isArray(schema.allOf)) {
-    result.allOf = schema.allOf.map((s) =>
-      normalizeSchema(s as Record<string, unknown>),
-    );
+    result.allOf = schema.allOf.map(child);
   }
   if (Array.isArray(schema.anyOf)) {
-    result.anyOf = schema.anyOf.map((s) =>
-      normalizeSchema(s as Record<string, unknown>),
-    );
+    result.anyOf = schema.anyOf.map(child);
   }
   if (Array.isArray(schema.oneOf)) {
-    result.oneOf = schema.oneOf.map((s) =>
-      normalizeSchema(s as Record<string, unknown>),
-    );
+    result.oneOf = schema.oneOf.map(child);
   }
   if (schema.not) {
-    result.not = normalizeSchema(schema.not as Record<string, unknown>);
+    result.not = child(schema.not);
   }
   if (schema.discriminator) {
     const d = schema.discriminator as Record<string, unknown>;
@@ -599,9 +622,7 @@ function normalizeSchema(
 
   // External docs
   if (schema.externalDocs) {
-    result.externalDocs = normalizeExternalDocs(
-      schema.externalDocs as Record<string, unknown>,
-    );
+    result.externalDocs = normalizeExternalDocs(schema.externalDocs as Record<string, unknown>);
   }
 
   return result;
@@ -634,9 +655,7 @@ function normalizeSecuritySchemes(
   return result;
 }
 
-function normalizeOAuthFlows(
-  flows: Record<string, Record<string, unknown>>,
-): OAuthFlows {
+function normalizeOAuthFlows(flows: Record<string, Record<string, unknown>>): OAuthFlows {
   const result: OAuthFlows = {};
   for (const flowType of [
     "implicit",
@@ -665,17 +684,16 @@ function normalizeOAuthFlow(flow: Record<string, unknown>): OAuthFlow {
 // ── Webhooks ───────────────────────────────────────────────────────
 
 function normalizeWebhooks(
+  components: Components,
   webhooks?: Record<string, Record<string, unknown>>,
 ): NormalizedOperation[] {
   if (!webhooks) return [];
-  return normalizeOperations(webhooks);
+  return normalizeOperations(components, webhooks);
 }
 
 // ── Shared ─────────────────────────────────────────────────────────
 
-function normalizeExternalDocs(
-  docs?: Record<string, unknown>,
-): ExternalDocs | undefined {
+function normalizeExternalDocs(docs?: Record<string, unknown>): ExternalDocs | undefined {
   if (!docs?.url) return undefined;
   return {
     url: str(docs.url, ""),

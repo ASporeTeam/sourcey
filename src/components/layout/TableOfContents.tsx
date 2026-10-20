@@ -1,7 +1,7 @@
 import { useContext } from "preact/hooks";
 import type { PageHeading } from "../../core/markdown-loader.js";
-import { SiteContext } from "../../renderer/context.js";
-import { iconPath } from "../../utils/icons.js";
+import { SiteContext, OptionsContext } from "../../renderer/context.js";
+import { NativeIcon } from "../ui/Icon.js";
 
 /**
  * Right-sidebar table of contents for prose pages.
@@ -10,15 +10,20 @@ import { iconPath } from "../../utils/icons.js";
  */
 const tocLink = "toc-item break-words block hover:text-[rgb(var(--color-gray-900))] dark:hover:text-[rgb(var(--color-gray-300))] dark:text-[rgb(var(--color-gray-400))] transition-colors";
 
+function TocIcon() {
+  return <NativeIcon meaning="contents" size={16} class="shrink-0" />;
+}
+
 function TocList({ headings }: { headings: PageHeading[] }) {
   // Group by the shallowest heading present. Moxygen C++ pages often use
   // h1 for the page title and h3 for sections, with no h2 in between.
+  // A deeper heading before the first of those still opens a group.
   const rootLevel = Math.min(...headings.map((h) => h.level));
   const groups: { root: PageHeading; children: PageHeading[] }[] = [];
   for (const h of headings) {
-    if (h.level <= rootLevel) {
+    if (h.level <= rootLevel || !groups.length) {
       groups.push({ root: h, children: [] });
-    } else if (groups.length) {
+    } else {
       groups[groups.length - 1].children.push(h);
     }
   }
@@ -43,8 +48,10 @@ function TocList({ headings }: { headings: PageHeading[] }) {
   );
 }
 
-export function TableOfContents({ headings, label = "On this page" }: { headings: PageHeading[]; label?: string }) {
+export function TableOfContents({ headings, label }: { headings: PageHeading[]; label?: string }) {
   const site = useContext(SiteContext);
+  const messages = useContext(OptionsContext).messages;
+  label ??= messages.onThisPage;
   if (headings.length === 0) return null;
 
   if (site.theme.name === "api-first") {
@@ -55,7 +62,7 @@ export function TableOfContents({ headings, label = "On this page" }: { headings
         class="toc-wide hidden xl:block self-start sticky shrink-0 overflow-y-auto"
         style="max-height: calc(100vh - var(--header-height) - 2.5rem); top: calc(var(--header-height) + 2.5rem)"
       >
-        <h5 class="toc-wide-label">{label}</h5>
+        <h5 class="toc-wide-label"><TocIcon />{label}</h5>
         <nav>
           <TocList headings={headings} />
         </nav>
@@ -63,16 +70,17 @@ export function TableOfContents({ headings, label = "On this page" }: { headings
     );
   }
 
+  // It ends 1rem inside the frame, mirroring the sidebar's text 1rem inside its left.
   return (
     <aside
       id="toc"
-      class="hidden xl:flex self-start sticky xl:flex-col max-w-[28rem] z-[21]"
+      class="hidden xl:flex self-start sticky xl:flex-col max-w-[28rem] xl:mr-4 z-[21]"
       style="height: calc(100vh - var(--header-height) - 2.5rem); top: calc(var(--header-height) + 2.5rem)"
     >
       <div class="z-10 hidden xl:flex box-border max-h-full pl-10 w-[19rem]">
         <div class="text-[rgb(var(--color-gray-600))] text-sm leading-6 w-[16.5rem] overflow-y-auto space-y-2 pb-4 -mt-10 pt-10">
           <h5 class="font-medium text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))] flex items-center gap-2">
-            <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" dangerouslySetInnerHTML={{ __html: iconPath("book-open") ?? "" }} />
+            <TocIcon />
             {label}
           </h5>
 

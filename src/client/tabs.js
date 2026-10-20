@@ -216,12 +216,12 @@
         btn.classList.add("copied");
         var tooltip = btn.nextElementSibling;
         if (tooltip && tooltip.classList.contains("copy-tooltip")) {
-          tooltip.textContent = "Copied!";
+          tooltip.textContent = btn.getAttribute("data-copied-label") || "Copied";
         }
         setTimeout(function () {
           btn.classList.remove("copied");
           if (tooltip && tooltip.classList.contains("copy-tooltip")) {
-            tooltip.textContent = "Copy";
+            tooltip.textContent = btn.getAttribute("data-copy-label") || "Copy";
           }
         }, 2000);
       });
@@ -261,6 +261,21 @@
       }
     });
 
+    document.documentElement.classList.add("sourcey-tabs-ready");
+    document.addEventListener("keydown", function (e) {
+      var tab = e.target.closest(".directive-tab");
+      if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+      var list = tab.closest('[role="tablist"]');
+      if (!list) return;
+      var tabs = Array.from(list.querySelectorAll('[role="tab"]'));
+      var index = tabs.indexOf(tab);
+      var rtl = getComputedStyle(list).direction === "rtl";
+      if (e.key === "Home") index = 0;
+      else if (e.key === "End") index = tabs.length - 1;
+      else index = (index + ((e.key === "ArrowRight") !== rtl ? 1 : -1) + tabs.length) % tabs.length;
+      e.preventDefault(); tabs[index].focus(); tabs[index].click();
+    });
+
     // ── Directive Tabs (:::tabs and :::code-group) ────────────────────
 
     document.addEventListener("click", function (e) {
@@ -275,7 +290,10 @@
       document
         .querySelectorAll('.directive-tab[data-tab-group="' + group + '"]')
         .forEach(function (t) {
-          t.classList.toggle("active", t.getAttribute("data-tab-index") === index);
+          var selected = t.getAttribute("data-tab-index") === index;
+          t.classList.toggle("active", selected);
+          t.setAttribute("aria-selected", String(selected));
+          t.setAttribute("tabindex", selected ? "0" : "-1");
         });
 
       // Update panels

@@ -34,6 +34,26 @@ describe("normalizeMcpSpec", () => {
     expect(op.requestBody?.content["application/json"].schema?.properties?.filters).toBeDefined();
   });
 
+  it("keeps client configuration and callable JSON-RPC and SDK examples aligned with the snapshot", () => {
+    const spec = normalizeMcpSpec(createSpec({
+      transport: { type: "stdio", command: "npx", args: ["--yes", "fixture-server"], env: { API_URL: "https://example.test", API_KEY: "your-api-key" } },
+      tools: [{ name: "translate", inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], examples: [{ text: "Hello" }] } }],
+    }));
+    const tool = spec.operations[0];
+    expect(tool.mcpExtras?.connection?.transport?.env).toEqual({ API_URL: "https://example.test", API_KEY: "your-api-key" });
+    const rpc = JSON.parse(tool.codeSamples!.find(sample => sample.label === "JSON-RPC")!.source);
+    expect(rpc).toMatchObject({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "translate", arguments: { text: "Hello" } } });
+    const typescript = tool.codeSamples!.find(sample => sample.lang === "typescript")!.source;
+    const params = JSON.parse(typescript.slice(typescript.indexOf("(") + 1, typescript.lastIndexOf(")")));
+    expect(params).toEqual(rpc.params);
+  });
+
+  it("keeps an HTTP transport's header placeholders for the client configuration", () => {
+    const transport = { type: "streamable-http", url: "https://tasks.example/api/v2/mcp", headers: { Authorization: "Bearer YOUR_TOKEN", Retries: 3 } };
+    const spec = normalizeMcpSpec(createSpec({ transport: transport as never, tools: [{ name: "tasks_list", inputSchema: { type: "object" } }] }));
+    expect(spec.operations[0].mcpExtras?.connection?.transport).toEqual({ type: "streamable-http", url: transport.url, headers: { Authorization: "Bearer YOUR_TOKEN" } });
+  });
+
   it("renders flat tool inputs as parameters", () => {
     const spec = normalizeMcpSpec(
       createSpec({
