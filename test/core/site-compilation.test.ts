@@ -426,6 +426,39 @@ describe("native compilation", () => {
     expect(index.documents.some((entry: {url: string}) => entry.url.includes("archive"))).toBe(false);
   }));
 
+  it("indexes the home of a version, a language and an API version in its own exports, in every URL style", () => fixture(async root => {
+    await file(root, "index.md", "# Start\n\nHello.\n");
+    await file(root, "archive/index.md", "# Start\n\nBefore.\n");
+    await file(root, "fr/index.md", "# Début\n\nBonjour.\n");
+    const spec = { openapi: "3.1.0", info: { title: "Pets API", version: "1" }, paths: { "/pets": { get: { operationId: "listPets", responses: { "200": { description: "OK" } } } } } };
+    await file(root, "spec.json", JSON.stringify(spec));
+    await file(root, "v1/spec.json", JSON.stringify(spec));
+    const docs = { tab: "Docs", slug: "", source: markdown({ groups: [{ group: "Start", pages: ["index"] }] }) };
+    const sites = {
+      archive: { versions: { default: "current", items: [{ id: "current", label: "Current", content: ".", path: "" }, { id: "archive", label: "Archive", content: "archive", path: "archive" }] }, navigation: { tabs: [docs] } },
+      fr: { i18n: { defaultLocale: "en", locales: { en: { label: "English" }, fr: { label: "Français" } } }, navigation: { tabs: [docs] } },
+      "api/v1": { navigation: { tabs: [docs, { tab: "API", slug: "api", source: openapi("spec.json"), versions: { default: "v2", items: [{ id: "v2", label: "v2", content: "." }, { id: "v1", label: "v1", content: "v1" }] } }] } },
+    };
+    for (const [home, raw] of Object.entries(sites)) for (const prettyUrls of [false, "strip", "slash"] as const) {
+      const config = await resolveConfigFromRaw({ ...raw, prettyUrls, theme: { fonts: { google: false } } } as Parameters<typeof resolveConfigFromRaw>[0], root);
+      const files = await sourceyArtifacts(await buildSourceySite({ config, generateOgImages: false }));
+      // The home sits beside its directory unless URLs are directories; its Markdown is inside, where that index lists it.
+      const page = files.get(prettyUrls === "slash" ? `${home}/index.html` : `${home}.html`)!.toString();
+      expect(page).toContain(`<link rel="alternate" type="text/markdown" href="/${home}/index.md" title="Markdown"/>`);
+      expect(files.has(`${home}/index.md`)).toBe(true);
+      const own = JSON.parse(files.get(`${home}/documents.json`)!.toString()).documents.map((entry: { file: string }) => entry.file);
+      expect(own, `${home} ${prettyUrls}`).toContain("index.md");
+      const site = JSON.parse(files.get("documents.json")!.toString()).documents.map((entry: { file: string }) => entry.file);
+      expect(site).not.toContain(`${home}/index.md`);
+      expect(files.get(`${home}/llms.txt`)!.toString()).toContain(`(/${home}/index.md)`);
+      // Its pages are described by that index, not the default version's.
+      expect(page).toContain(`<link rel="describedby" type="text/plain" href="/${home}/llms.txt" title="Documentation index"/>`);
+      const headers = JSON.parse(files.get("response-headers.json")!.toString());
+      expect(headers[`/${home}/index.md`].Link).toContain(`</${home}/llms.txt>; rel="describedby"`);
+      expect(headers["/index.md"].Link).toContain('</llms.txt>; rel="describedby"');
+    }
+  }));
+
   it("retains authored section order across independent version scopes", () => fixture(async root => {
     for (const prefix of ["", "archive/"]) {
       await file(root, `${prefix}start.md`, "# Start\n");

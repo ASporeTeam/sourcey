@@ -27,6 +27,8 @@ dist/
 
 The exact page paths follow your navigation and `prettyUrls` setting. A directory-style page such as `guide/index.html` has a `guide/index.md` companion. The HTML links to its Markdown view with `rel="alternate"`; `rel="describedby"` points to the documentation index.
 
+Each [version](versions.md) and [language](languages.md) also gets its own `documents.json`, `llms.txt` and `llms-full.txt` in its directory, such as `archive/documents.json`. The root files cover the default version in the default language. A version's home page sits beside its directory as `archive.html`, so its Markdown view goes inside, at `archive/index.md`, where that version's index lists it.
+
 Guides retain code fences, tab labels, numbered steps, callouts and accordion contents. Doxygen retains its generated Markdown. Go and Rust reference exports come from the native documentation data, including declarations and examples. Text exports do not run a browser or strip the finished website back into text.
 
 `documents.json` is a versioned index of the emitted documents: IDs, titles, canonical browser URLs, Markdown URLs, relative file paths and library symbol locations. Operation documents include parameters, request and response content, declared authentication requirements and code examples. Schema documents include properties, required fields and constraints. References to named schemas remain references rather than expanding the same model indefinitely.

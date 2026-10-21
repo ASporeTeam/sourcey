@@ -2,7 +2,7 @@ import { pageMetadata } from "../core/page-metadata.js";
 import { referenceSearchText } from "../core/search-indexer.js";
 import { createHash } from "node:crypto";
 import type { NormalizedOperation, NormalizedSchema, NormalizedSpec } from "../core/types.js";
-import type { SitePage } from "../core/site-model.js";
+import type { ResolvedSiteContext, SitePage } from "../core/site-model.js";
 import type { SiteConfig } from "../renderer/context.js";
 import { htmlId } from "../utils/html-id.js";
 import { operationAnchor, definitionAnchor, referenceOperation } from "../core/reference-identity.js";
@@ -26,6 +26,22 @@ export interface ReadableDocument {
 
 export function markdownPath(outputPath: string): string {
   return outputPath.replace(/\.html$/, ".md");
+}
+
+/** The directory a version's or language's own documents.json and llms.txt index. */
+export function exportRoot(context: ResolvedSiteContext): string {
+  if (context.isDefaultVersion) return context.localePath;
+  return context.scope.startsWith("tab:") ? context.tabs[0].slug : context.prefix;
+}
+
+/**
+ * A page's Markdown view sits beside it. The home of a version or language
+ * sits beside its directory (`archive.html`), so its view goes inside
+ * (`archive/index.md`), where that version's own index can list it.
+ */
+export function pageMarkdownPath(page: Pick<SitePage, "outputPath" | "context">): string {
+  const root = page.context && exportRoot(page.context);
+  return root && page.outputPath === `${root}.html` ? `${root}/index.md` : markdownPath(page.outputPath);
 }
 
 function detailRoot(outputPath: string): string {
@@ -52,7 +68,7 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
     toPublicUrl(file, site.siteUrl, site.baseUrl, site.prettyUrls);
   for (const page of pages) {
     if (page.status === 404 || page.currentPage.kind === "not-found") continue;
-    const file = markdownPath(page.outputPath);
+    const file = pageMarkdownPath(page);
     const metadata = pageMetadata(page.currentPage, site);
     const contextMetadata = { locale: page.context?.locale, contentLocale: page.contentLocale,
       contentVersion: page.context?.version.id, versionScope: page.context?.scope };

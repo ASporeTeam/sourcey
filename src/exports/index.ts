@@ -3,10 +3,10 @@ import type { SiteAssembly } from "../site-assembly.js";
 import type { SiteNavigation } from "../core/navigation.js";
 import type { SiteConfig } from "../renderer/context.js";
 import type { AlternateLink } from "../core/site-model.js";
-import type { SitePage } from "../core/site-model.js";
+import type { ResolvedSiteContext, SitePage } from "../core/site-model.js";
 import { toPublicPath, toPublicUrl } from "../site-url.js";
 import { generateLlmsTxt, generateLlmsFullTxt } from "../renderer/llms.js";
-import { collectReadableDocuments, markdownPath } from "./documents.js";
+import { collectReadableDocuments, exportRoot, pageMarkdownPath } from "./documents.js";
 import type { DiscoveryResource } from "./config.js";
 import { parseDocumentationIndex } from "./document-index.js";
 import { createHash } from "node:crypto";
@@ -54,9 +54,7 @@ export function generateExports(
   const projections = new Map<string, typeof documents>();
   projections.set("", rootDocuments);
   for (const context of config.contexts) {
-    let prefix: string;
-    if (context.isDefaultVersion) prefix = context.localeConfig.path ?? (context.locale === context.defaultLocale ? "" : context.locale);
-    else prefix = context.scope.startsWith("tab:") ? context.tabs[0].slug : context.prefix;
+    const prefix = exportRoot(context);
     const members = documents.filter(document => {
       const owner = pageByTab.get(document.entry.tab);
       return owner && (context.isDefaultVersion ? owner.context.locale === context.locale && owner.context.isDefaultVersion : owner.context.key === context.key);
@@ -76,6 +74,8 @@ export function generateExports(
     if (enabled.llms.index) put(within("llms.txt"), generateLlmsTxt(selected, navigation, name, enabled.markdown), "text/plain; charset=utf-8");
     if (enabled.llms.full) put(within("llms-full.txt"), generateLlmsFullTxt(selected, name), "text/plain; charset=utf-8");
   }
+  /** A page is described by the index that lists it: its own version's and language's. */
+  const llmsIndex = (context: ResolvedSiteContext | undefined) => [context && exportRoot(context), "llms.txt"].filter(Boolean).join("/");
   const llmsTxt = enabled.llms.index ? generateLlmsTxt(rootDocuments, navigation, name, enabled.markdown) : "";
   const llmsFullTxt = enabled.llms.full ? generateLlmsFullTxt(rootDocuments, name) : "";
 
@@ -193,8 +193,8 @@ export function generateExports(
     const add = (rel: AlternateLink["rel"], type: string, path: string, title?: string) =>
       links.push({ rel, type, href: url(path), title });
     if (enabled.markdown)
-      add("alternate", "text/markdown", markdownPath(page.outputPath), "Markdown");
-    if (enabled.llms.index) add("describedby", "text/plain", "llms.txt", "Documentation index");
+      add("alternate", "text/markdown", pageMarkdownPath(page), "Markdown");
+    if (enabled.llms.index) add("describedby", "text/plain", llmsIndex(page.context), "Documentation index");
     if (config.discovery.ard) add("ard", "application/json", paths.ard, "Agentic resources");
     if (config.discovery.apiCatalog && linkset.length)
       add("api-catalog", "application/linkset+json", paths.apiCatalog, "API catalog");
@@ -214,7 +214,7 @@ export function generateExports(
   if (enabled.markdown)
     for (const document of documents) {
       const links = [`<${document.entry.url}>; rel="canonical"`];
-      if (enabled.llms.index) links.push(`<${url("llms.txt")}>; rel="describedby"`);
+      if (enabled.llms.index) links.push(`<${url(llmsIndex(pageByTab.get(document.entry.tab)?.context))}>; rel="describedby"`);
       responseHeaders.get(toPublicPath(document.entry.file, config.baseUrl))!.Link =
         links.join(", ");
     }
