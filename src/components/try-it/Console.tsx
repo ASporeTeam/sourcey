@@ -15,6 +15,7 @@ import { useRequest } from "./use-request.js";
 import { filterDraft } from "./values.js";
 import { Field } from "./Field.js";
 import { CopyAction, ResponseView } from "./Response.js";
+import { showRequestUrl } from "./request-url.js";
 
 interface Props {
   data: ConsoleData;
@@ -76,7 +77,7 @@ export function Console({ data, id, onClose, headingLevel = 3 }: Props) {
     if (!mount) return;
     mount.dataset.tryItUrl = safeRequest.url;
     const url = mount.closest("[data-sourcey-operation]")?.querySelector("[data-endpoint-url]");
-    if (!mount.hidden && url && safeRequest.url) url.textContent = safeRequest.url;
+    if (!mount.hidden && url && safeRequest.url) showRequestUrl(url, safeRequest.url);
   }, [safeRequest.url]);
   async function send() {
     if (sending) return;

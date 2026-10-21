@@ -1,4 +1,6 @@
 /** Delegated bootstrap only. Console code, Preact and operation data load on activation. */
+import { showRequestUrl } from "../components/try-it/request-url.js";
+
 const originalUrls = new WeakMap<Element, Node[]>();
 
 async function loadConsole(button: HTMLElement) {
@@ -43,7 +45,7 @@ document.addEventListener("click", async (event) => {
     button!.setAttribute("aria-expanded", String(open));
     button!.textContent = open ? "Done" : "Try it";
     if (url) {
-      if (open && mount!.dataset.tryItUrl) url.textContent = mount!.dataset.tryItUrl;
+      if (open && mount!.dataset.tryItUrl) showRequestUrl(url, mount!.dataset.tryItUrl);
       else if (!open)
         url.replaceChildren(...(originalUrls.get(url) ?? []).map((node) => node.cloneNode(true)));
     }

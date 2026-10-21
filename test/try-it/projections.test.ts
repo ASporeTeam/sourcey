@@ -9,6 +9,7 @@ import { requestInit, sendRequest } from "../../src/components/try-it/transport.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { generateCodeSamples } from "../../src/utils/code-samples.js";
+import { requestUrlParts } from "../../src/components/try-it/request-url.js";
 
 let server: Server, origin: string;
 beforeAll(async () => {
@@ -134,5 +135,13 @@ describe("executed request projections", () => {
     };
     for (const sample of generateRequestSamples(request, SUPPORTED_CODE_SAMPLE_LANGS))
       expect(sample.source).toContain("one, two");
+  });
+});
+
+describe("the live request URL", () => {
+  it("breaks between its origin, path segments and parameters, never inside them", () => {
+    expect(requestUrlParts("https://api.sourcey.com/v1/search?limit=3&q=postgres")).toEqual(["https://api.sourcey.com", "/v1", "/search", "?limit=3", "&q=postgres"]);
+    expect(requestUrlParts("/api/translate")).toEqual(["/api", "/translate"]);
+    expect(requestUrlParts("http://127.0.0.1:8080")).toEqual(["http://127.0.0.1:8080"]);
   });
 });
