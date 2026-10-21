@@ -179,6 +179,8 @@ export function generateExports(
       'application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"',
     );
 
+  // A not-found page has no readable document, so it names none.
+  const written = new Set(enabled.markdown ? documents.map((document) => document.entry.file) : []);
   for (const page of pages) {
     // Export generation may run again after a dev edit. Replace only its own links.
     const links = (page.alternateLinks ?? []).filter(
@@ -192,7 +194,7 @@ export function generateExports(
     );
     const add = (rel: AlternateLink["rel"], type: string, path: string, title?: string) =>
       links.push({ rel, type, href: url(path), title });
-    if (enabled.markdown)
+    if (written.has(pageMarkdownPath(page)))
       add("alternate", "text/markdown", pageMarkdownPath(page), "Markdown");
     if (enabled.llms.index) add("describedby", "text/plain", llmsIndex(page.context), "Documentation index");
     if (config.discovery.ard) add("ard", "application/json", paths.ard, "Agentic resources");

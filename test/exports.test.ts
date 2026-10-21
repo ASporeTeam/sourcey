@@ -160,6 +160,34 @@ describe("static documentation exports", () => {
     expect(site.pages[0].alternateLinks).toEqual([]);
   });
 
+  it("names a Markdown view only where one is written, so a not-found page names none", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sourcey-not-found-markdown-"));
+    try {
+      await writeFile(join(root, "guide.md"), "# Guide\n\nRead on.\n");
+      const markdownView = (page: { alternateLinks?: { type: string; href: string }[] }) =>
+        page.alternateLinks?.find((link) => link.type === "text/markdown");
+      for (const authored of [false, true]) {
+        if (authored) {
+          await mkdir(join(root, "pages"), { recursive: true });
+          await writeFile(join(root, "pages/404.md"), "# Lost\n\nThis page moved.\n");
+        }
+        const resolved = await resolveConfigFromRaw({
+          siteUrl: "https://docs.example.com",
+          ...(authored ? { pages: "pages" } : {}),
+          navigation: { tabs: [{ tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["guide"] }] }] },
+        }, root);
+        const site = await buildSourceySite({ config: resolved, generateOgImages: false });
+        const notFound = site.pages.filter((page) => page.status === 404);
+        expect(notFound).toHaveLength(1);
+        expect(markdownView(notFound[0])).toBeUndefined();
+        const guide = site.pages.find((page) => page.outputPath === "guide.html")!;
+        expect(markdownView(guide)?.href).toBe("https://docs.example.com/guide.md");
+        expect(site.extraFiles.has("guide.md")).toBe(true);
+        expect(site.extraFiles.has("404.md")).toBe(false);
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("does not expose source contracts by default", async () => {
     const site = await buildSourceySite({
       config: await config({ exports: undefined, discovery: false }),
