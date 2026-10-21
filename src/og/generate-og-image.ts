@@ -117,17 +117,21 @@ function rgbaCss(triplet: string, alpha: number): string {
   return `rgba(${triplet.replace(/ /g, ", ")}, ${alpha})`;
 }
 
+/** A title or summary too long for the card ends at the last whole word that fits. */
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const fits = text.slice(0, max - 1);
+  const end = /\s/.test(text[max - 1]) ? fits.length : fits.search(/\s\S*$/);
+  return `${(end > 0 ? fits.slice(0, end) : fits).replace(/[\s,;:.\u2013\u2014-]+$/, "")}\u2026`;
+}
+
 type OgCardInput = Omit<OgImageOptions, "theme"> & { primary: string };
 function ogCard({ title, description, siteName, primary: color, logo, logoMark }: OgCardInput) {
   const primary = rgbCss(color);
   const primaryGlow = rgbaCss(color, 0.18);
 
-  const displayTitle = title.length > 90 ? title.slice(0, 87) + "..." : title;
-  const displayDesc = description
-    ? description.length > 160
-      ? description.slice(0, 157) + "..."
-      : description
-    : undefined;
+  const displayTitle = clip(title, 90);
+  const displayDesc = description ? clip(description, 160) : undefined;
 
   return {
     type: "div",

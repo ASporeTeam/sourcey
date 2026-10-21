@@ -84,6 +84,32 @@ describe("social image rendering", () => {
     }
   });
 
+  it("ends a title or summary too long for the card at a whole word", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sourcey-og-clip-"));
+    try {
+      const config = await resolveConfigFromRaw({ navigation: { tabs: [] } }, root);
+      const description = "The Tommy API is organized around the REST methodology, and it uses resource-oriented URLs, and common HTTP response codes to indicate API errors. All requests are authenticated.";
+      const title = `${"Reference ".repeat(9)}overview`;
+      const texts = (node: unknown): string[] => {
+        if (typeof node === "string") return [node];
+        if (!node || typeof node !== "object") return [];
+        const children = (node as { props?: { children?: unknown } }).props?.children;
+        return (Array.isArray(children) ? children : [children]).flatMap(texts);
+      };
+      vi.mocked(satori).mockClear();
+      await generateOgImage({ title, description, siteName: `Clip ${root.split("-").at(-1)}`, theme: config.theme });
+      const drawn = texts(vi.mocked(satori).mock.calls[0][0]);
+      expect(drawn).toContain("The Tommy API is organized around the REST methodology, and it uses resource-oriented URLs, and common HTTP response codes to indicate API errors. All requests\u2026");
+      expect(drawn).toContain(`${"Reference ".repeat(8)}Reference\u2026`);
+      expect(drawn.every((text) => text.length <= 160)).toBe(true);
+      // A title with no space to end at is cut where it fits.
+      await generateOgImage({ title: "x".repeat(120), siteName: `Clip ${root.split("-").at(-1)}`, theme: config.theme });
+      expect(texts(vi.mocked(satori).mock.calls[1][0])).toContain(`${"x".repeat(89)}\u2026`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("draws a logo named by URL, as served with a charset, and leaves the mark when it cannot load", async () => {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="red"/></svg>';
     const server = createServer((request, response) => {
