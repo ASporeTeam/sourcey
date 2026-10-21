@@ -1,5 +1,5 @@
 import { useContext } from "preact/hooks";
-import { OptionsContext } from "../../renderer/context.js";
+import { NavigationContext, OptionsContext, SiteContext } from "../../renderer/context.js";
 import type { EquivalentPageLink } from "../../core/site-model.js";
 import { NativeIcon } from "../ui/Icon.js";
 
@@ -39,3 +39,21 @@ export function ContextNotice() {
   return notice ? <aside class="sourcey-context-notice" role="note">{notice}</aside> : null;
 }
 
+/** The default and full-width themes list a tab's pages in a rail beside the page from 1024px. */
+export function useSidebarRail(): boolean {
+  const site = useContext(SiteContext);
+  const nav = useContext(NavigationContext);
+  return (site.theme.name === "default" || site.theme.name === "api-first") && nav.tabs.some((tab) => tab.slug === nav.activeTabSlug);
+}
+
+/**
+ * A version's or language's notice is about the page, so it stands over the
+ * page wherever no sidebar rail is on screen to carry it: on a phone, and in
+ * a layout without a rail. The reader theme states it under its masthead.
+ */
+export function PageNotice({ rail = true }: { rail?: boolean }) {
+  const { notice } = useContext(OptionsContext);
+  const onRail = useSidebarRail() && rail;
+  if (useContext(SiteContext).theme.name === "reader") return null;
+  return notice ? <aside class="sourcey-context-notice sourcey-page-notice" role="note" data-rail={onRail || undefined}>{notice}</aside> : null;
+}

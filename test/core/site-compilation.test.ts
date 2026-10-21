@@ -561,6 +561,37 @@ describe("native compilation", () => {
     }
   }));
 
+  it("shows a version's or language's notice over the page wherever no sidebar rail carries it", () => fixture(async root => {
+    await file(root, "docs/install.md", "# Install\n\nRun it.\n");
+    await file(root, "v2/docs/install.md", "# Install\n\nRan it.\n");
+    const notice = "v2 is maintained for existing projects.";
+    for (const theme of ["default", "api-first", "minimal", "reader"] as const) {
+      const config = await resolveConfigFromRaw({
+        theme: { name: theme, fonts: { google: false } },
+        i18n: { defaultLocale: "en", locales: { en: { label: "English" }, fr: { label: "Français" } } },
+        versions: { default: "v3", items: [{ id: "v3", label: "v3", content: "." }, { id: "v2", label: "v2", content: "v2", notice }] },
+        navigation: { tabs: [{ tab: "Docs", slug: "", source: markdown({ root: "docs", groups: [{ group: "Start", pages: ["install"] }] }) }] },
+      }, root);
+      const files = await sourceyArtifacts(await buildSourceySite({ config, generateOgImages: false }));
+      const notices = (path: string) => [...files.get(path)!.toString().matchAll(/<aside class="sourcey-context-notice([^"]*)" role="note"( data-rail="true")?>([^<]*)<\/aside>/g)].map(([, place, rail, text]) => `${place.trim() || "sidebar"}${rail ? " on rail" : ""}: ${text}`);
+      const fallback = "Cette page n’est pas encore traduite. La version originale est affichée.";
+      if (theme === "reader") {
+        // The reader theme states it once, under its masthead.
+        expect(notices("v2/install.html")).toEqual([`sidebar: ${notice}`]);
+        expect(notices("fr/install.html")).toEqual([`sidebar: ${fallback}`]);
+      } else if (theme === "minimal") {
+        // No rail ever carries it, so the page does, at every width; the drawer does not repeat it.
+        expect(notices("v2/install.html")).toEqual([`sourcey-page-notice: ${notice}`]);
+        expect(notices("fr/install.html")).toEqual([`sourcey-page-notice: ${fallback}`]);
+      } else {
+        // The rail carries it from 1024px; below that the page does.
+        expect(notices("v2/install.html")).toEqual([`sidebar: ${notice}`, `sourcey-page-notice on rail: ${notice}`]);
+        expect(notices("fr/install.html")).toEqual([`sidebar: ${fallback}`, `sourcey-page-notice on rail: ${fallback}`]);
+      }
+      expect(notices("install.html")).toEqual([]);
+    }
+  }));
+
   it("retains authored section order across independent version scopes", () => fixture(async root => {
     for (const prefix of ["", "archive/"]) {
       await file(root, `${prefix}start.md`, "# Start\n");

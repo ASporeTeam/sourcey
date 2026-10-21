@@ -190,7 +190,8 @@ export function Sidebar({ mobileOnly = false }: { mobileOnly?: boolean }) {
         )}
 
         {/* Sidebar content for the active tab */}
-        <div class="sourcey-nav-context"><ContextNotice /></div>
+        {/* The page carries the notice wherever this is a drawer rather than a rail. */}
+        {!mobileOnly && <div class="sourcey-nav-context"><ContextNotice /></div>}
         {activeTab ? (
           <nav id="nav" class="sourcey-nav-scroll pt-5 pb-3 px-4 flex-1 overflow-y-auto" aria-label={activeTab.label} data-sourcey-sidebar-scroll data-sourcey-sidebar-tab={nav.activeTabSlug || "default"}>
             <NavGroups groups={groups} activePageSlug={activePageSlug} base={base} />

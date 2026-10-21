@@ -18,6 +18,7 @@ import { Markdown } from "../ui/Markdown.js";
 import { joinHref } from "../../site-url.js";
 import { linkTarget } from "../../utils/html.js";
 import { Header } from "./Header.js";
+import { PageNotice } from "./ContextControls.js";
 import { Sidebar } from "./Sidebar.js";
 import { TableOfContents } from "./TableOfContents.js";
 import { Introduction } from "../openapi/Introduction.js";
@@ -80,6 +81,7 @@ function MarkdownPageContent({ page, className = "" }: { page: MarkdownPage; cla
       class={`relative grow box-border flex-col w-full mx-auto px-1 min-w-0 ${className}`}
       id="content-area"
     >
+      <PageNotice />
       <header class="relative leading-none">
         <div class="mt-0.5 space-y-2.5">
           <PagePlace />
@@ -123,6 +125,7 @@ function ChangelogPageContent({
       class={`relative grow box-border flex-col w-full mx-auto px-1 min-w-0 ${className}`}
       id="content-area"
     >
+      <PageNotice />
       <ChangelogPage page={page} />
       <PageNavigation />
       <ContentFooter />
@@ -147,7 +150,7 @@ function SpecPageContent({ className = "", bare = false }: { className?: string;
   const connection = mcpConnection(spec);
   const view = current.kind === "spec" ? current.view : undefined;
   const mcpOverview = connection && view?.kind === "overview";
-  const place = !bare && <PagePlace spacing="mt-0.5 mb-2.5" />;
+  const place = !bare && <><PageNotice /><PagePlace spacing="mt-0.5 mb-2.5" /></>;
   // A split reference's pages read in order, as guides do.
   const end = !bare && <>{view && <PageNavigation />}<ContentFooter /></>;
   // Every page of a reference shares a guide's column, and so its edges.
@@ -443,6 +446,7 @@ function OwnPage({ page }: { page: MarkdownPage }) {
       <span class="fixed inset-0 bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))] -z-10 pointer-events-none" />
       <Sidebar mobileOnly />
       <main id="main" class="sourcey-page">
+        <PageNotice rail={false} />
         <div id="content-area" class="prose prose-gray dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: page.html }} />
         <ContentFooter />
       </main>
