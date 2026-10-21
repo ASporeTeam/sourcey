@@ -716,6 +716,10 @@ describe("native compilation", () => {
     await expect(writeArtifacts(output, new Map([["other.html", "Changed"], ["guide/index.html", "Overwrite"]]))).rejects.toThrow(/symbolic link/);
     expect(await readFile(join(root, "outside/index.html"), "utf8")).toBe("Source file");
     expect(await readFile(join(output, "other.html"), "utf8")).toBe("Other original");
+    // A directory an earlier version built has no inventory; the refusal says how to move on.
+    await file(root, "earlier/index.html", "Built before 3.8");
+    await expect(writeArtifacts(join(root, "earlier"), new Map([["index.html", "New"]]))).rejects.toThrow(/before 3\.8 kept no record of its files, so delete a directory one built once/);
+    expect(await readFile(join(root, "earlier/index.html"), "utf8")).toBe("Built before 3.8");
   }));
 
   it("writes only changed artifacts and leaves source files and a failed snapshot intact", () => fixture(async root => {

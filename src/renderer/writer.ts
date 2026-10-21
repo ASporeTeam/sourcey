@@ -87,7 +87,8 @@ export async function writeArtifacts(
     });
     if (entries.length)
       throw new Error(
-        `Output directory is not owned by Sourcey: ${root}. Choose an empty build directory.`,
+        `Output directory is not owned by Sourcey: ${root}. Choose an empty build directory. ` +
+          "Sourcey before 3.8 kept no record of its files, so delete a directory one built once.",
       );
   }
 
