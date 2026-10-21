@@ -80,10 +80,11 @@ describe("native compilation", () => {
     const { default: sharp } = await import("sharp");
     const png = [...cold.ogImages.values()][0];
     expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    // The social image is dark, so it draws the logo the site shows in dark mode.
     const pixels = await sharp(png).extract({ left: 80, top: 80, width: 24, height: 24 }).removeAlpha().raw().toBuffer();
-    expect(pixels[0]).toBeGreaterThan(240);
+    expect(pixels[0]).toBeLessThan(20);
     expect(pixels[1]).toBeLessThan(20);
-    expect(pixels[2]).toBeLessThan(20);
+    expect(pixels[2]).toBeGreaterThan(240);
     await writeSourceySite(cold);
     const untouched = await updateSourceySite(cold, []);
     expect(untouched.site.logo!.light).toBe(beforeUrl);

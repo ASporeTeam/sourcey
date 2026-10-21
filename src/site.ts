@@ -258,9 +258,11 @@ async function attachOgImages(
   }
 
   pages = pages.filter(page => page.status !== 404);
-  const { generateOgImage } = await import("./og/generate-og-image.js");
-  let logo = site.logo?.light;
-  if (logo && !/^(?:data:|https?:\/\/)/.test(logo)) {
+  const { embedRemoteLogo, generateOgImage } = await import("./og/generate-og-image.js");
+  // The card is dark, so it draws the logo the site shows in dark mode.
+  let logo = site.logo?.dark ?? site.logo?.light;
+  if (logo && /^https?:\/\//.test(logo)) logo = await embedRemoteLogo(logo);
+  else if (logo && !logo.startsWith("data:")) {
     const path = outputPathFromRequestPath(logo, config.baseUrl);
     const body = extraFiles.get(path);
     if (body === undefined) throw new Error(`Missing compiled logo asset: ${path}`);
@@ -283,6 +285,7 @@ async function attachOgImages(
             siteName: config.name,
             theme: config.theme,
             logo,
+            logoMark: site.logo?.mark,
           });
 
           page.ogImagePath = ogPath;
