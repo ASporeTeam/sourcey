@@ -35,6 +35,13 @@ Session type documented in a different group from [PacketStream](demo-PacketStre
     );
   });
 
+  it("passes over the source location line to the lead paragraph", () => {
+    const description = "The API returned by [make()]({#ref group__demo_1ga5c79 #}).";
+    const markdown = "# demo_api\n\n```cpp\nstruct demo_api\n```\n\nDefined in src/demo/api.h:50\n\nThe API returned by [make()](demo.html#make).\n\n## Public Attributes";
+
+    expect(normalizeDoxygenDescription(description, markdown)).toBe("The API returned by make().");
+  });
+
   it("returns plain-text descriptions when no placeholder refs remain", () => {
     const description = "Packet pipeline primitive owned by the [base](base.html) module.";
 

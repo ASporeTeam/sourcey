@@ -26,7 +26,8 @@ export function normalizeDoxygenDescription(description: string, markdown: strin
   if (!description) return "";
   if (!description.includes("{#ref ")) return stripMarkdownLinks(description);
 
-  const firstParagraph = extractFirstParagraph(markdown);
+  // The source location line is metadata above the prose, never its summary.
+  const firstParagraph = extractFirstParagraph(markdown.replace(/^Defined in [^\n]+$/gm, ""));
   return stripMarkdownLinks(firstParagraph || description);
 }
 
