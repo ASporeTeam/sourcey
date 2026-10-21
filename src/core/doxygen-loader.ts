@@ -66,26 +66,9 @@ export function rewriteGeneratedDoxygenMarkdown(markdown: string): string {
   );
 }
 
-export function rewriteGeneratedDoxygenHref(href: string): string {
-  const [path, hash] = href.split("#", 2);
-  if (!path.startsWith("api_") || !path.endsWith(".md")) return href;
-
-  const slug = path.slice("api_".length, -".md".length).replace(/--/g, "-");
-
-  return `${slug}.html${hash ? `#${hash}` : ""}`;
-}
-
+/** C++ written as prose, such as a lambda in a usage note, can read as a link; it is code. */
 export function rewriteGeneratedDoxygenHtmlLinks(html: string): string {
   return html
-    .replace(/href="(api_[^"]+?\.md(?:#[^"]*)?)"/g, (_match, href: string) => {
-      return `href="${rewriteGeneratedDoxygenHref(href)}"`;
-    })
-    .replace(
-      /<code>\[([^\]]+)\]\((api_[^)]+?\.md(?:#[^)]+)?)\)<\/code>/g,
-      (_match, label: string, href: string) => {
-        return `<a href="${rewriteGeneratedDoxygenHref(href)}"><code>${label}</code></a>`;
-      },
-    )
     .replace(/<a href="\[([^\]"]+)\]\([^"]+"><\/a>/g, (_match, label: string) => {
       return `<code>${label}</code>`;
     })
