@@ -278,8 +278,8 @@ export type DoxygenSourceUrlResolver =
 export interface DoxygenConfig {
   /** Path to Doxygen XML output directory */
   xml: string;
-  /** Programming language (default: "cpp") */
-  language?: string;
+  /** Template language: "cpp" (the default, for C as well as C++) or "java" */
+  language?: "cpp" | "java";
   /** Use Doxygen groups for navigation grouping */
   groups?: boolean;
   /**
@@ -564,7 +564,7 @@ export interface ResolvedConfig {
 
 export interface ResolvedDoxygenConfig {
   xml: string;
-  language: string;
+  language: "cpp" | "java";
   groups: boolean;
   index: DoxygenIndexStyle;
   sourceUrl?: DoxygenSourceUrlResolver;

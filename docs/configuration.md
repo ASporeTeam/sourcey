@@ -105,6 +105,8 @@ after the matched prefix, `{fullPath}` expands to the original Doxygen path,
 and `{line}` expands to the source line. A route without `url` suppresses the
 public link while generated pages still show `Defined in path:line`.
 
+`doxygen().language` is `"cpp"`, the default, for C and C++, or `"java"`.
+
 ## Logo and favicon
 
 ```ts

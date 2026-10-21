@@ -380,6 +380,19 @@ describe("resolveConfigFromRaw – godoc tabs", () => {
     });
   });
 
+  it("names the Doxygen languages moxygen has templates for", async () => {
+    await withTempDir(async (dir) => {
+      await mkdir(join(dir, "xml"), { recursive: true });
+      const config = (language: string) => baseConfig({
+        navigation: { tabs: [{ tab: "API", source: doxygen({ xml: "./xml", language: language as "cpp" }) }] },
+      });
+
+      await expect(resolveConfigFromRaw(config("c"), dir)).rejects.toThrow('Doxygen language must be "cpp" or "java", not "c"; C uses "cpp"');
+      const java = await resolveConfigFromRaw(config("java"), dir);
+      expect(java.contexts[0].tabs[0].source.config.language).toBe("java");
+    });
+  });
+
   it("includes godoc in the no-source error message", async () => {
     await withTempDir(async (dir) => {
       const raw = baseConfig({

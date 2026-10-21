@@ -72,6 +72,7 @@ export function doxygen(options: DoxygenSourceOptions): SourceAdapter {
   return {
     name: "doxygen",
     async resolve(ctx) {
+      if (options.language !== undefined && options.language !== "cpp" && options.language !== "java") throw new Error(`Doxygen language must be "cpp" or "java", not ${JSON.stringify(options.language)}; C uses "cpp"`);
       const absXml = assertLocalPath(ctx, options.xml, "Doxygen XML directory");
       await ctx.assertExists(
         absXml,
