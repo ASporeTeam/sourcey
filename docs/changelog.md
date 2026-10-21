@@ -5,6 +5,10 @@ description: Recent Sourcey releases.
 
 # Changelog
 
+## 3.8.3
+
+A not-found page no longer names a Markdown view that is never written. Social images draw the site's logo as its header does: a logo named by URL loads, a wordmark keeps its proportions and stands without the name, and the dark logo is used on the dark image. Go and C++ reference indexes have summaries of their own, and a reference's header tab leads to its overview. A C or C++ reference documents global scope, with a page for each type outside every namespace and a Globals page for the functions, variables and macros no group claims, so a C library documented without groups builds; a page is never summarised by its source location. A build directory an earlier Sourcey wrote says how to move on.
+
 ## 3.8.2
 
 Under Astro, a page search engines are not to index, such as the documentation's missing-page page, is no longer listed in the host's sitemap. The build no longer reports a Rust, Go or C++ reference page's section links as missing fragments. `sourcey dev` shows the code-language icons on code samples, as a build does.

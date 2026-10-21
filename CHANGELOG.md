@@ -1,13 +1,18 @@
 # Changelog
 
-## Unreleased
+## 3.8.3 - 2026-10-21
 
 ### Fixed
 
 - A not-found page no longer names a Markdown view that is never written: its alternate link and `Link` header pointed every 3.8 site at a missing `404.md`. A page names a Markdown view only where one is written.
-- Social images draw the site's logo as its header does. A logo named by URL is fetched once and embedded, so an SVG served as `image/svg+xml; charset=utf-8` is no longer dropped from every image; one that cannot be loaded leaves the coloured mark, with one warning. The logo keeps its own proportions rather than a 48px square, the image draws the logo the site shows in dark mode, as the image is dark, and the site's name stands beside a mark (`logo.mark`) and never beside a wordmark.
-- A Go reference index is summarised by what it covers, "Go API for example.com/module across 12 packages.", and a Doxygen index by its modules or types, rather than by a bare module path or nothing, which `sourcey build` then reported as a missing or one-word summary.
+- Social images draw the site's logo as its header does. A logo named by URL is fetched once and embedded, so an SVG served as `image/svg+xml; charset=utf-8` is no longer dropped from every image; one that cannot be loaded leaves the coloured mark, with one warning. The logo keeps its own proportions rather than a 48px square, the image draws the logo the site shows in dark mode, as the image is dark, and the site's name stands beside a mark (`logo.mark`) and never beside a wordmark. A title or summary too long for the image ends at a whole word with an ellipsis, rather than inside one.
+- A Go reference index is summarised by what it covers, "Go API for example.com/module across 12 packages." or, for the standard library, which has no module, "Go API across 12 packages.", and a Doxygen index by its modules, types or namespaces, rather than by a bare module path or nothing, which `sourcey build` then reported as a missing or one-word summary.
 - A Doxygen page whose summary links a symbol Moxygen cannot resolve is summarised by its first paragraph of prose, never by the "Defined in" source location above it.
+- A Doxygen, Go or Rust reference's header tab leads to the reference's overview, rather than to the first module, package or crate page it builds, or to its doctests.
+- The previous and next links at the foot of a page name a page by its section where the tab repeats the label that opens it, so a C++ module's or Rust crate's first page reads "AV module" rather than "Overview".
+- A Doxygen reference documents global scope. A class, struct or union outside every namespace has a page of its own, and the functions, variables and macros no group claims share a Globals page beside the overview, so a C library documented without groups no longer builds an empty tab. A namespace that only wraps others has no page of its own, a namespace page lists the namespaces in it, and a union is listed with its namespace's types. This comes with Moxygen 2.2.2.
+- A Doxygen tab whose XML documents nothing fails the build and says so, rather than publishing a header tab that leads to no page.
+- `doxygen().language` is checked: `"cpp"`, for C and C++, or `"java"`, the languages Moxygen has templates for. Another value fails with that list rather than with a missing Moxygen template folder.
 - Building into a directory that a Sourcey release before 3.8 wrote says how to move on: those releases kept no record of their files, so delete such a directory once. Sourcey 3.8 writes only into a directory it owns, which 3.8.0 did not note.
 
 ## 3.8.2 - 2026-10-21
