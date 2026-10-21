@@ -281,6 +281,7 @@ function navigationIndex(tab: SiteTab): NavigationIndex {
   let index = navigationIndexes.get(tab);
   if (index) return index;
   index = { count: 0, pages: 0, ancestors: new Map(), positions: new Map(), adjacent: new Map() };
+  const sections = new Map<string, SiteNavGroup>();
   function visit(groups: readonly SiteNavGroup[], parents: SiteNavGroup[] = []) {
     for (const group of groups) {
       const ancestors = [...parents, group], positions = new Map<string, number>();
@@ -291,6 +292,7 @@ function navigationIndex(tab: SiteTab): NavigationIndex {
         if (isNavGroup(item)) visit([item], ancestors);
         else {
           index!.count++; positions.set(item.id, position);
+          if (!sections.has(item.id)) sections.set(item.id, group);
           const existing = index!.ancestors.get(item.id) ?? new Set<SiteNavGroup>();
           for (const ancestor of ancestors) existing.add(ancestor);
           index!.ancestors.set(item.id, existing);
@@ -307,7 +309,15 @@ function navigationIndex(tab: SiteTab): NavigationIndex {
     seen.add(item.id); pages.add(page); return true;
   });
   index.pages = pages.size;
-  for (const [position, item] of ordered.entries()) index.adjacent.set(item.id, { previous: ordered[position - 1], next: ordered[position + 1] });
+  // Away from its section, a label the tab repeats, such as each module's "Overview", names the
+  // section the page opens.
+  const repeats = new Map<string, number>();
+  for (const item of ordered) repeats.set(item.label, (repeats.get(item.label) ?? 0) + 1);
+  const neighbour = (item: SiteNavItem | undefined) => {
+    const section = item && sections.get(item.id);
+    return item && section?.label && section.items[0] === item && repeats.get(item.label)! > 1 ? { ...item, label: section.label } : item;
+  };
+  for (const [position, item] of ordered.entries()) index.adjacent.set(item.id, { previous: neighbour(ordered[position - 1]), next: neighbour(ordered[position + 1]) });
   navigationIndexes.set(tab, index); return index;
 }
 

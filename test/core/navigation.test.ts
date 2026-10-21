@@ -108,4 +108,17 @@ describe("withActivePage", () => {
     expect(withActivePage(nav, "api", "introduction").adjacentPages).toEqual({ previous: undefined, next: expect.objectContaining({ label: "List cheeses" }) });
     expect(withActivePage(nav, "api", "list").adjacentPages).toEqual({ previous: expect.objectContaining({ label: "Introduction", href: "/api/" }), next: expect.objectContaining({ label: "Get a cheese" }) });
   });
+
+  it("names a page by its section where the tab repeats the label it opens that section with", () => {
+    const module = (name: string) => ({ label: `${name} module`, items: [{ label: "Overview", href: `api/${name}.html`, id: name }, { label: `${name}::Stream`, href: `api/${name}-Stream.html`, id: `${name}-Stream` }] });
+    const tab = { label: "API", slug: "api", href: "api/index.html", kind: "docs" as const, groups: [
+      { label: "API", items: [{ label: "Overview", href: "api/index.html", id: "index" }, { label: "Globals", href: "api/globals.html", id: "globals" }] },
+      module("av"), module("net"),
+    ] };
+    const nav = { tabs: [tab], activeTabSlug: "api", activePageSlug: "" };
+    expect(withActivePage(nav, "api", "globals").adjacentPages).toEqual({ previous: expect.objectContaining({ label: "API" }), next: expect.objectContaining({ label: "av module", href: "api/av.html" }) });
+    expect(withActivePage(nav, "api", "av-Stream").adjacentPages).toEqual({ previous: expect.objectContaining({ label: "av module" }), next: expect.objectContaining({ label: "net module" }) });
+    // A label of its own stays as the navigation shows it.
+    expect(withActivePage(nav, "api", "av").adjacentPages!.next).toEqual(expect.objectContaining({ label: "av::Stream" }));
+  });
 });
