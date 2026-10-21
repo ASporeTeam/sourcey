@@ -112,9 +112,9 @@ logo: { light: "./brand/light.svg", dark: "./brand/dark.svg" },
 favicon: "./brand/favicon.svg",
 ```
 
-Local images are published once as content-addressed files shared across pages. Browsers can cache them while readers move through the site; the HTML contains their URLs. Editing an image updates its URL and live preview automatically. The same frozen bytes feed generated social images. HTTP URLs and explicitly authored data URLs remain supported.
+Local images are published once as content-addressed files shared across pages. Browsers can cache them while readers move through the site; the HTML contains their URLs. Editing an image updates its URL and live preview automatically. The same frozen bytes feed generated social images. HTTP URLs and explicitly authored data URLs remain supported; a social image fetches a logo named by URL once per build. Social images are dark, so they draw the `dark` logo when one is set, at its own proportions.
 
-The logo is taken as a full wordmark, so the site's `name` is not repeated beside it. For a mark without the name, set `logo: { light: "./brand/mark.svg", mark: true }` and the name shows beside it in every theme.
+The logo is taken as a full wordmark, so the site's `name` is not repeated beside it. For a mark without the name, set `logo: { light: "./brand/mark.svg", mark: true }` and the name shows beside it in every theme and in social images.
 
 ## Footer
 
