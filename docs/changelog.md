@@ -5,6 +5,12 @@ description: Recent Sourcey releases.
 
 # Changelog
 
+## 3.8.2
+
+Under Astro, a page search engines are not to index, such as the documentation's missing-page page, is no longer listed in the host's sitemap. The build no longer reports a Rust, Go or C++ reference page's section links as missing fragments. `sourcey dev` shows the code-language icons on code samples, as a build does.
+
+Reference pages meet WCAG AA contrast in every theme, light and dark, keep their headings in order, and name every landmark in the site's language. A site that sets only its primary colour gets link and accent shades that read in both schemes. Rust reference pages show their signature, stability and doctest colours. A version or language with its own home page builds with `.html` URLs, and its pages point agents at its own `llms.txt`. A version's notice, and the notice that a page is not yet translated, now show over the page in the minimal theme and on phones. C++ reference links reach the page that documents each symbol, and request samples show JSON bodies over several lines in every language.
+
 ## 3.8.1
 
 Pages without code samples no longer wait on the code-language icons before they paint: the icons are a stylesheet of their own, linked by the reference pages that draw them.

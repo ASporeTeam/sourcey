@@ -1,10 +1,24 @@
 # Changelog
 
-## Unreleased
+## 3.8.2 - 2026-10-21
 
 ### Fixed
 
 - Under Astro, a page search engines are not to index, such as the documentation's missing-page page, is written into the output as a file rather than registered as an Astro page, so a host sitemap no longer lists it.
+- `sourcey build` and `sourcey check` count the anchors a Rust, Go or C++ reference page draws, so their section links are no longer reported as missing fragments, and a section page composed from navigation is not reported for lacking a summary of its own.
+- `sourcey dev` serves the code-language icons stylesheet that reference pages link, so code-sample tabs show their language icons in development as they do in a build.
+- Reference pages meet WCAG AA text contrast in every theme, light and dark: required, deprecated and MCP annotation badges, field ranges and defaults, example labels, secondary text, method names in reference listings and search results, the search dialog's labels and hints, and the missing-page page.
+- Headings keep their order: on an operation's own page its sections, Try it's included, sit one level below its title; a card is titled one level below the heading it sits under; Rust, Go and C++ reference pages nest items, implementations and members in order; and "On this page" and a Go package's index label their navigation rather than heading the page. The Rust doctests page carries its title once.
+- A site that sets only `colors.primary` gets text that reads in both schemes: an unset `light` or `dark` is the primary where it reads at 4.5:1, and otherwise the nearest shade of its hue that does. Shades a site sets are used as given.
+- The site header is a banner landmark, and every navigation is named in the site's language, with built-in French, Spanish and Italian names. A navbar with no links no longer leaves an empty navigation behind, the reader theme's chapters are a landmark of their own, and a callout is a note within the page rather than a landmark beside it.
+- The header search button is named by the placeholder it shows, a scrolling table, field example or request preview can be reached from the keyboard, the code-language and example menus are named, and an endpoint's path parameters are 24px targets.
+- Rust reference pages show their signature, source-link, stability and doctest colours, and the code-language menu has its background in dark mode. A generated reference index's counts and import paths read as text rather than at half opacity.
+- A version or language with a home page builds with `.html` URLs (the default) and `prettyUrls: "strip"`. Its home's Markdown view is written inside its directory, as `archive/index.md` beside `archive.html`, so that version's own `documents.json` and `llms.txt` list it; each version's API reference builds the same way. A versioned or translated page's `describedby` link now names its own version's and language's `llms.txt` rather than the default version's.
+- Request samples read as code again. A JSON body is pretty-printed and declared before the request in the language's own multi-line form: a single-quoted block in cURL, a template literal in JavaScript, `'''` in Python, raw strings in Go and Rust, a text block in Java, a nowdoc in PHP, a heredoc in Ruby and a raw string in C#. JavaScript headers and a Python call's arguments sit one to a line. Samples and Try it still send the same bytes: Try it sends the JSON body as the samples show it.
+- On a narrow screen, the live request URL that Try it shows in the endpoint's place wraps between its host, path segments and parameters rather than inside a word.
+- C++ reference links lead to the page that documents each symbol, including a type declared in a namespace that several groups share and an enum's values, and a symbol named in inline code is a linked name rather than its Markdown printed as code. A link to something no page documents reads as its name. This comes with Moxygen 2.2.1.
+- A Markdown table's empty top-left cell is a plain cell rather than a header with no name, and the reader theme keeps its header band across it.
+- A version's notice, and the notice that a page is not yet translated, stand over the page wherever no sidebar rail carries them: in the minimal theme and on pages drawn by their author at every width, and in the default and API-first themes on a phone, where the sidebar is a drawer. Readers there saw neither. Desktop pages in those two themes keep the notice at the top of the sidebar.
 
 ## 3.8.1 - 2026-10-20
 
