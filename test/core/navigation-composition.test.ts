@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { markdown, openapi } from "../../src/adapters/index.js";
+import { godoc, markdown, openapi, rustdoc } from "../../src/adapters/index.js";
 import { loadConfig, resolveConfigFromRaw } from "../../src/config.js";
 import { buildSourceySite, sourceyArtifacts, updateSourceySite } from "../../src/site.js";
 import { walkNavItems } from "../../src/core/navigation.js";
+import { GODOC_SCHEMA_VERSION } from "../../src/core/godoc-types.js";
 
 function api(title = "List your pets") {
   return { openapi: "3.1.0", info: { title: "Pet API", version: "fixture" }, paths: {
@@ -175,6 +176,28 @@ export default {theme:{fonts:{google:false}}, navigation:{tabs:[{id:'rest',tab:'
     // On its own page, the section is open and its heading current.
     const nav = (await sourceyArtifacts(site)).get("start/index.html")!.toString().match(/<nav id="nav"[\s\S]*?<\/nav>/)![0];
     expect(nav).toMatch(/<div class="sourcey-nav-group-linked"><a href="[^"]*start\/" class="nav-group-label nav-group-link active">Getting started<\/a><details open class="sourcey-nav-group"><summary aria-label="Getting started"><\/summary>/);
+  }));
+
+  it("leads a generated reference's tab to the overview its navigation opens with", () => fixture(async root => {
+    const pkg = (importPath: string, name: string) => ({ importPath, name, synopsis: `Package ${name}.`, doc: `Package ${name}.`, dir: ".", files: [], consts: [], vars: [], funcs: [], types: [], examples: [] });
+    await file(root, "guide.md", "# Guide\n");
+    await file(root, "go.json", JSON.stringify({ schema_version: GODOC_SCHEMA_VERSION, source: "sourcey-godoc", module_path: "example.test/fixture", generated_at: "2026-10-21T00:00:00Z",
+      packages: [pkg("example.test/fixture", "fixture"), pkg("example.test/fixture/sub", "sub")] }));
+    const config = await resolveConfigFromRaw({ baseUrl: "/manual", prettyUrls: "strip", theme: { fonts: { google: false } }, navigation: { tabs: [
+      { tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["guide"] }] },
+      { tab: "Go", slug: "go", source: godoc({ module: root, mode: "snapshot", snapshot: "go.json" }) },
+      { tab: "Rust", slug: "rust", source: rustdoc({ manifest: new URL("../fixtures/rustdoc/basic/Cargo.toml", import.meta.url).pathname, mode: "snapshot", snapshot: new URL("../fixtures/rustdoc/basic/snapshots/rustdoc.json", import.meta.url).pathname }) },
+    ] } }, root);
+    const site = await buildSourceySite({ config, generateOgImages: false });
+    // The generated navigation names output paths; the tab still finds the overview it lists first.
+    const [overview] = walkNavItems(site.navigation.tabs[1].groups);
+    expect(overview.label).toBe("Overview");
+    expect(site.navigation.tabs[1].href).toBe(overview.href);
+    // A Rust tab's navigation opens with its doctests, but the tab leads to the workspace overview.
+    expect(site.navigation.tabs[2].groups[0].label).toBe("Examples");
+    const page = (await sourceyArtifacts(site)).get("guide.html")!.toString();
+    expect(page).toContain('href="/manual/go" class="group relative');
+    expect(page).toContain('href="/manual/rust" class="group relative');
   }));
 
   it("fails on an operation link that no reference, or more than one, publishes until it names one", () => fixture(async root => {

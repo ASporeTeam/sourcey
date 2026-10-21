@@ -4,6 +4,7 @@ import type { ReferenceTargets, ResolvedSiteContext, RouteRecord, RouteTable } f
 import { definitionAnchor, operationAnchor, referenceOperation } from "./reference-identity.js";
 import { isNavGroup, readingOrder, walkNavGroups, walkNavItems, type SiteNavGroup, type SiteNavItem, type SiteTab } from "./navigation.js";
 import { markdownPages } from "../adapters/shared.js";
+import { toPublicPath } from "../site-url.js";
 
 /** Resolve authored browsing edges against the one completed document graph. */
 export function navigationResolver(config: ResolvedConfig, routes: RouteTable, references: ReadonlyMap<string, NormalizedSpec>, targets: ReadonlyMap<string, ReferenceTargets>) {
@@ -34,6 +35,12 @@ export function navigationResolver(config: ResolvedConfig, routes: RouteTable, r
       if (route) add(page.slug, route);
     }
     names.set(tab.slug, result); return result;
+  }
+  // A source's generated navigation names output paths, which become links as pages are drawn.
+  function pageAt(href: string) {
+    if (href.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(href)) return undefined;
+    const path = href.split(/[?#]/)[0];
+    return routes.match(path.startsWith("/") ? path : toPublicPath(path, config.baseUrl, config.prettyUrls))?.page;
   }
   return (nav: SiteTab, tab: ResolvedTab, context: ResolvedSiteContext): void => {
     const members = config.contexts.filter(candidate => candidate.locale === context.locale && (candidate.scope === context.scope ? candidate.version.id === context.version.id : candidate.isDefaultVersion));
@@ -118,16 +125,18 @@ export function navigationResolver(config: ResolvedConfig, routes: RouteTable, r
     // A section that links a whole page of this tab is current on that page; one linking a
     // section of a page (an API tag) is matched by its ID.
     for (const value of walkNavGroups(nav.groups)) {
-      const page = value.href?.startsWith("/") && !value.href.startsWith("//") && !value.href.includes("#") ? routes.match(value.href.split("?")[0])?.page : undefined;
+      const page = value.href && !value.href.includes("#") ? pageAt(value.href) : undefined;
       if (page?.tabSlug === tab.slug) value.page = page.pageSlug;
     }
-    // A reference leads to its overview. Other tabs lead to their first destination, a
+    // A reference leads to its overview, and a generated reference without authored navigation
+    // to the overview its source declares. Other tabs lead to their first destination, a
     // section's own page before those it holds; a cross-source link, or an index the
     // build generated for a long section, never makes a header tab land elsewhere.
+    const declared = !tab.navigation && ["doxygen", "godoc", "rustdoc"].includes(tab.source.kind) && pageAt(nav.href)?.tabSlug === tab.slug ? nav.href : undefined;
     const first = [...readingOrder(nav.groups)].find(href => {
-      const page = href.startsWith("/") && !href.startsWith("//") ? routes.match(href.split(/[?#]/)[0])?.page : undefined;
+      const page = pageAt(href);
       return page?.tabSlug === tab.slug && !page.identity.document.startsWith("section");
     });
-    nav.href = overview ? overview.publicPath : first ?? (byOwner.get(tab.slug) ?? [])[0]?.publicPath ?? nav.href;
+    nav.href = overview ? overview.publicPath : declared ?? first ?? (byOwner.get(tab.slug) ?? [])[0]?.publicPath ?? nav.href;
   };
 }
