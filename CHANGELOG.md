@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A not-found page no longer names a Markdown view that is never written: its alternate link and `Link` header pointed every 3.8 site at a missing `404.md`. A page names a Markdown view only where one is written.
+- Social images draw the site's logo as its header does. A logo named by URL is fetched once and embedded, so an SVG served as `image/svg+xml; charset=utf-8` is no longer dropped from every image; one that cannot be loaded leaves the coloured mark, with one warning. The logo keeps its own proportions rather than a 48px square, the image draws the logo the site shows in dark mode, as the image is dark, and the site's name stands beside a mark (`logo.mark`) and never beside a wordmark.
+- A Go reference index is summarised by what it covers, "Go API for example.com/module across 12 packages.", and a Doxygen index by its modules or types, rather than by a bare module path or nothing, which `sourcey build` then reported as a missing or one-word summary.
+- A Doxygen page whose summary links a symbol Moxygen cannot resolve is summarised by its first paragraph of prose, never by the "Defined in" source location above it.
+- Building into a directory that a Sourcey release before 3.8 wrote says how to move on: those releases kept no record of their files, so delete such a directory once. Sourcey 3.8 writes only into a directory it owns, which 3.8.0 did not note.
+
 ## 3.8.2 - 2026-10-21
 
 ### Fixed
