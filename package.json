@@ -72,7 +72,7 @@
     "micromark-extension-mdx-jsx": "3.0.2",
     "micromark-extension-mdxjs-esm": "3.0.0",
     "minisearch": "7.2.0",
-    "moxygen": "^2.2.1",
+    "moxygen": "^2.2.2",
     "parse-srcset": "1.0.2",
     "preact": "^10.29.8",
     "preact-render-to-string": "^6.7.0",

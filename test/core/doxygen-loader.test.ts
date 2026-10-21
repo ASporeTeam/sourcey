@@ -11,6 +11,7 @@ import {
   rewriteGeneratedDoxygenMarkdown,
   rewriteGeneratedDoxygenHtmlLinks,
 } from "../../src/core/doxygen-loader.js";
+import type { ResolvedDoxygenConfig } from "../../src/config.js";
 
 describe("normalizeDoxygenDescription", () => {
   it("falls back to the resolved lead paragraph when the summary still contains Doxygen ref placeholders", () => {
@@ -160,23 +161,73 @@ Defined in src/turn/client.h:166
 });
 
 describe("loadDoxygenTab", () => {
-  it("summarises the reference index by what it documents", async () => {
-    const xml = await mkdtemp(join(tmpdir(), "sourcey-doxygen-index-"));
-    const compound = (id: string, kind: string, name: string, brief: string, inner = "") =>
-      `<?xml version="1.0" encoding="UTF-8"?><doxygen version="1.9.8"><compounddef id="${id}" kind="${kind}" language="C++">` +
-      `<compoundname>${name}</compoundname>${inner}<briefdescription><para>${brief}</para></briefdescription>` +
-      `<detaileddescription></detaileddescription><location file="widget.h" line="1"/></compounddef></doxygen>`;
+  const compound = (id: string, kind: string, name: string, brief: string, inner = "") =>
+    `<?xml version="1.0" encoding="UTF-8"?><doxygen version="1.9.8"><compounddef id="${id}" kind="${kind}" language="C++">` +
+    `<compoundname>${name}</compoundname>${inner}<briefdescription><para>${brief}</para></briefdescription>` +
+    `<detaileddescription></detaileddescription><location file="widget.h" line="1"/></compounddef></doxygen>`;
+  const fn = (id: string, name: string, brief: string) =>
+    `<sectiondef kind="func"><memberdef kind="function" id="${id}" prot="public" static="no"><type>int</type>` +
+    `<definition>int ${name}</definition><argsstring>()</argsstring><name>${name}</name>` +
+    `<briefdescription><para>${brief}</para></briefdescription><detaileddescription></detaileddescription>` +
+    `<location file="widget.h" line="2"/></memberdef></sectiondef>`;
+  // Writes Doxygen XML for one test: index.xml lists the compounds, and each named file is a compound.
+  async function load(index: string, files: Record<string, string>, options: Partial<ResolvedDoxygenConfig> = {}) {
+    const xml = await mkdtemp(join(tmpdir(), "sourcey-doxygen-"));
     try {
-      await writeFile(join(xml, "index.xml"), '<?xml version="1.0" encoding="UTF-8"?><doxygenindex version="1.9.8">' +
-        '<compound refid="namespacedemo" kind="namespace"><name>demo</name></compound>' +
-        '<compound refid="classdemo_1_1Widget" kind="class"><name>demo::Widget</name></compound></doxygenindex>');
-      await writeFile(join(xml, "namespacedemo.xml"), compound("namespacedemo", "namespace", "demo", "Demonstration types.", '<innerclass refid="classdemo_1_1Widget" prot="public">demo::Widget</innerclass>'));
-      await writeFile(join(xml, "classdemo_1_1Widget.xml"), compound("classdemo_1_1Widget", "class", "demo::Widget", "A widget."));
-      const result = await loadDoxygenTab({ xml, language: "cpp", groups: false, index: "flat" }, "api", "API Reference", " · ");
-      expect(result.pages.get("index")!.description).toBe("API reference across 1 type.");
-      expect(result.pages.get("demo-Widget")!.description).toBe("A widget.");
+      await writeFile(join(xml, "index.xml"), `<?xml version="1.0" encoding="UTF-8"?><doxygenindex version="1.9.8">${index}</doxygenindex>`);
+      for (const [name, body] of Object.entries(files)) await writeFile(join(xml, name), body);
+      return await loadDoxygenTab({ xml, language: "cpp", groups: false, index: "flat", ...options }, "api", "API Reference", " · ");
     } finally {
       await rm(xml, { recursive: true, force: true });
     }
+  }
+  const widgetIndex = '<compound refid="namespacedemo" kind="namespace"><name>demo</name></compound>' +
+    '<compound refid="classdemo_1_1Widget" kind="class"><name>demo::Widget</name></compound>';
+  const widgetFiles = {
+    "namespacedemo.xml": compound("namespacedemo", "namespace", "demo", "Demonstration types.", '<innerclass refid="classdemo_1_1Widget" prot="public">demo::Widget</innerclass>'),
+    "classdemo_1_1Widget.xml": compound("classdemo_1_1Widget", "class", "demo::Widget", "A widget."),
+  };
+
+  it("summarises the reference index by what it documents", async () => {
+    const result = await load(widgetIndex, widgetFiles);
+    expect(result.pages.get("index")!.description).toBe("API reference across 1 type.");
+    expect(result.pages.get("demo-Widget")!.description).toBe("A widget.");
+
+    const namespaces = await load('<compound refid="namespacedemo" kind="namespace"><name>demo</name></compound>', {
+      "namespacedemo.xml": compound("namespacedemo", "namespace", "demo", "Demonstration types."),
+    });
+    expect(namespaces.pages.get("index")!.description).toBe("API reference across 1 namespace.");
+  });
+
+  it("puts members at global scope on a page beside the overview", async () => {
+    const index = widgetIndex + '<compound refid="widget_8h" kind="file"><name>widget.h</name>' +
+      '<member refid="widget_8h_1a1" kind="function"><name>widget_count</name></member></compound>';
+    const files = { ...widgetFiles, "widget_8h.xml": compound("widget_8h", "file", "widget.h", "", fn("widget_8h_1a1", "widget_count", "Counts the widgets.")) };
+
+    for (const style of ["flat", "structured", "rich"] as const) {
+      const result = await load(index, files, { index: style });
+      const globals = result.pages.get("globals")!;
+      expect(globals.title).toBe("Globals");
+      expect(globals.description).toBe("Functions at global scope.");
+      expect(globals.html).toContain("Counts the widgets.");
+      expect(result.navTab.groups[0].items.map((item) => item.label)).toEqual(["Overview", "Globals"]);
+      // No module holds it, and the index links it once, under its own name.
+      expect(result.navTab.groups.slice(1).flatMap((group) => group.items).map((item) => item.label)).not.toContain("Globals");
+      const overview = result.pages.get("index")!.html;
+      expect(overview.match(/href="globals\.html"/g), style).toHaveLength(1);
+      expect(overview, style).toContain("Functions at global scope.");
+      // It is not counted among the types, nor listed under a module named for the fallback group.
+      expect(overview, style).not.toMatch(/>API<|Globalss|2 types/);
+    }
+
+    // Without an index, it leads the navigation alone.
+    const bare = await load(index, files, { index: "none" });
+    expect(bare.navTab.groups[0]).toEqual({ label: "API Reference", items: [{ label: "Globals", href: "api/globals.html", id: "globals" }] });
+  });
+
+  it("refuses XML that documents nothing to publish", async () => {
+    await expect(load('<compound refid="widget_8h" kind="file"><name>widget.h</name></compound>', {
+      "widget_8h.xml": compound("widget_8h", "file", "widget.h", ""),
+    })).rejects.toThrow(/has nothing to publish: it documents no group, namespace, type or global member/);
   });
 });

@@ -106,6 +106,9 @@ and `{line}` expands to the source line. A route without `url` suppresses the
 public link while generated pages still show `Defined in path:line`.
 
 `doxygen().language` is `"cpp"`, the default, for C and C++, or `"java"`.
+Each group, namespace and type gets a page, and the functions, variables and
+macros at global scope that no group claims share a Globals page beside the
+overview. A namespace that only wraps others gets no page of its own.
 
 ## Logo and favicon
 

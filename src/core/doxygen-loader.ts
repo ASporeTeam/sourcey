@@ -193,6 +193,7 @@ export async function loadDoxygenTab(
 
   const pages = new Map<string, MarkdownPage>();
   const groupMap = new Map<string, GroupEntry[]>();
+  let globals: GroupEntry | undefined;
 
   for (const page of generated) {
     if (!page.markdown.trim()) continue;
@@ -217,6 +218,12 @@ export async function loadDoxygenTab(
       editPath: page.kind === "group" ? `api/${page.slug}.md` : null,
       searchEntries: page.searchEntries,
     });
+
+    // Members at global scope belong to no module; their page sits beside the overview.
+    if (page.kind === "globals") {
+      globals = { slug: page.slug, title: page.title, kind: page.kind };
+      continue;
+    }
 
     // Group by the last segment of namespace (e.g. "icy::http" -> "http")
     const groupKey = page.module ?? lastSegment(page.namespace) ?? "API";
@@ -250,12 +257,19 @@ export async function loadDoxygenTab(
     });
   }
 
+  if (!pages.size) {
+    throw new Error(`Doxygen XML at ${config.xml} has nothing to publish: it documents no group, namespace, type or global member.`);
+  }
+
   // Generate index page
   const indexStyle = resolveIndexStyle(config.index, groupMap, pages);
+  const globalsItem: SiteNavItem[] = globals
+    ? [{ label: globals.title, href: `${tabSlug}/${globals.slug}.html`, id: globals.slug }]
+    : [];
 
   if (indexStyle !== "none") {
     const indexSlug = "index";
-    const indexHtml = buildIndexHtml(indexStyle, tabSlug, tabLabel, groupMap, pages, markdownOptions);
+    const indexHtml = buildIndexHtml(indexStyle, tabSlug, tabLabel, groupMap, pages, markdownOptions, globals);
     const indexHeadings = indexStyle === "rich" ? [] : extractHeadings(indexHtml);
     // The index names the largest unit the reference is organised by. C and C++ share
     // moxygen's templates, so it names no language.
@@ -285,8 +299,10 @@ export async function loadDoxygenTab(
 
     groups.unshift({
       label: tabLabel,
-      items: [{ label: "Overview", href: `${tabSlug}/${indexSlug}.html`, id: indexSlug }],
+      items: [{ label: "Overview", href: `${tabSlug}/${indexSlug}.html`, id: indexSlug }, ...globalsItem],
     });
+  } else if (globalsItem.length) {
+    groups.unshift({ label: tabLabel, items: globalsItem });
   }
 
   const firstItem = groups[0]?.items[0];
@@ -350,10 +366,12 @@ function buildIndexHtml(
   groupMap: Map<string, GroupEntry[]>,
   pages: Map<string, MarkdownPage>,
   markdown: MarkdownRenderOptions,
+  globals?: GroupEntry,
 ): string {
-  if (style === "rich") return buildRichIndex(groupMap, pages);
-  if (style === "structured") return buildStructuredIndex(groupMap, pages, markdown);
-  return buildFlatIndex(groupMap, markdown);
+  if (style === "rich") return buildRichIndex(groupMap, pages, globals);
+  const lead = globals ? `### ${globals.title}\n\n- [${globals.title}](${globals.slug}.html): ${stripMarkdownLinks(pages.get(globals.slug)?.description ?? "")}\n\n` : "";
+  if (style === "structured") return buildStructuredIndex(groupMap, pages, markdown, lead);
+  return buildFlatIndex(groupMap, markdown, lead);
 }
 
 /**
@@ -363,8 +381,20 @@ function buildIndexHtml(
 function buildRichIndex(
   groupMap: Map<string, GroupEntry[]>,
   pages: Map<string, MarkdownPage>,
+  globals?: GroupEntry,
 ): string {
   const cards: string[] = [];
+
+  const globalsPage = globals && pages.get(globals.slug);
+  if (globals && globalsPage) {
+    cards.push(
+      `<a href="${globals.slug}.html" class="card-item">` +
+        `<div class="card-item-inner">` +
+        `<h2 class="card-item-title">${escHtml(globalsPage.title)}</h2>` +
+        `<div class="card-item-content"><p>${inlineCode(escHtml(stripMarkdownLinks(globalsPage.description || "")))}</p></div>` +
+        `</div></a>`,
+    );
+  }
 
   for (const [, items] of groupMap) {
     const groupEntry = items.find((i) => i.kind === "group");
@@ -425,6 +455,7 @@ function buildStructuredIndex(
   groupMap: Map<string, GroupEntry[]>,
   pages: Map<string, MarkdownPage>,
   markdown: MarkdownRenderOptions,
+  lead: string,
 ): string {
   const sections: string[] = [];
 
@@ -445,13 +476,13 @@ function buildStructuredIndex(
     sections.push(`### ${title}\n\n${links.join("\n")}`);
   }
 
-  return renderMarkdown(sections.join("\n\n"), markdown);
+  return renderMarkdown(lead + sections.join("\n\n"), markdown);
 }
 
 /**
  * Flat: alphabetical list categorized by kind.
  */
-function buildFlatIndex(groupMap: Map<string, GroupEntry[]>, markdown: MarkdownRenderOptions): string {
+function buildFlatIndex(groupMap: Map<string, GroupEntry[]>, markdown: MarkdownRenderOptions, lead: string): string {
   const byKind = new Map<string, GroupEntry[]>();
 
   for (const [, items] of groupMap) {
@@ -470,7 +501,7 @@ function buildFlatIndex(groupMap: Map<string, GroupEntry[]>, markdown: MarkdownR
     sections.push(`### ${label}\n\n${links}`);
   }
 
-  return renderMarkdown(sections.join("\n\n"), markdown);
+  return renderMarkdown(lead + sections.join("\n\n"), markdown);
 }
 
 // ---------------------------------------------------------------------------
