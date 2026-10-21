@@ -60,7 +60,7 @@ describe("executed request projections", () => {
   });
 
   it("executes curl text samples without treating @ as a file or losing NUL and Unicode bytes", async () => {
-    for (const text of ["@a-file-that-must-not-be-read", "before\0after\n雪\b\f"]) {
+    for (const text of ["@a-file-that-must-not-be-read", "before\0after\n雪\b\f", '{\n  "name": "it\'s `ready` ${now}"\n}']) {
       const request: RequestDescription = { url: origin, method: "POST", credentials: "omit", issues: [], headers: [["Content-Type", "text/plain"]], body: { kind: "text", text } };
       const [sample] = generateRequestSamples(request, ["curl"]);
       const { stdout } = await promisify(execFile)("sh", ["-c", sample.source]);
@@ -71,7 +71,8 @@ describe("executed request projections", () => {
   it.each(["omit", "same-origin", "include"] as const)(
     "keeps live and copied JS/TS requests consistent with credentials=%s",
     async (credentials) => {
-      for (const multipart of [false, true]) {
+      for (const body of ['{"__proto__":{"own":true},"name":"O\'Brien","count":0}', '{\n  "__proto__": {\n    "own": true\n  },\n  "name": "O\'Brien \\\\ `${x}`",\n  "count": 0\n}', undefined]) {
+        const multipart = body === undefined;
         const request: RequestDescription = {
           url: origin,
           method: "POST",
@@ -90,7 +91,7 @@ describe("executed request projections", () => {
                   ["tag", "second"],
                 ],
               }
-            : { kind: "text", text: '{"__proto__":{"own":true},"name":"O\'Brien","count":0}' },
+            : { kind: "text", text: body },
         };
         const actual = JSON.parse(
           await (await sendRequest(request, new AbortController().signal)).blob.text(),

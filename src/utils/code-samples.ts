@@ -2,7 +2,7 @@ import type { NormalizedOperation, SecurityScheme, ServerDefinition } from "../c
 import type { CodeSample } from "../core/types.js";
 import { describeRequest, initialDraft, normalizeRequestHeaders, type RequestDescription } from "../core/request.js";
 import { multipartSamples } from "./multipart-samples.js";
-import { codeString, sampleUrl, sampleOrigin } from "./code-literals.js";
+import { codeBlockString, codeString, sampleUrl, sampleOrigin } from "./code-literals.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,14 +28,15 @@ const generators: Record<string, CodeSampleGenerator> = {
   },
 
   javascript({ url, method, headers, body, credentials, originVariable }: RequestInfo): CodeSample {
-    const lines = [...(originVariable ? [sampleOrigin("javascript")] : []), `const response = await fetch(${sampleUrl(url, "javascript", originVariable)}, {`];
+    const block = body !== undefined ? codeBlockString(body, "javascript") : undefined;
+    const lines = [...(originVariable ? [sampleOrigin("javascript")] : []), ...(block ? [`const body = ${block};`, ""] : []), `const response = await fetch(${sampleUrl(url, "javascript", originVariable)}, {`];
     lines.push(`  method: '${method}',`);
     if (headers.length)
-      lines.push("  headers: " + JSON.stringify(Object.fromEntries(headers)) + ",");
+      lines.push("  headers: {", ...Object.entries(Object.fromEntries(headers)).map(([name, value]) => `    ${codeString(name, "javascript")}: ${codeString(value, "javascript")},`), "  },");
     if (credentials !== "same-origin")
       lines.push("  credentials: " + singleLiteral(credentials) + ",");
     if (body !== undefined)
-      lines.push("  body: " + JSON.stringify(body) + ",");
+      lines.push(block ? "  body," : "  body: " + codeString(body, "javascript") + ",");
     lines.push(`});`, ``, `const data = await response.text();`);
     return { lang: "javascript", label: "JavaScript", source: lines.join("\n") };
   },
@@ -48,13 +49,15 @@ const generators: Record<string, CodeSampleGenerator> = {
   python({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
     const lines = ["import requests", ""];
     if (originVariable) lines.push(sampleOrigin("python"));
-    const args = [sampleUrl(url, "python", originVariable)];
-    if (body !== undefined) args.push("data=" + singleLiteral(body) + ".encode('utf-8')");
-    if (headers.length) args.push("headers=" + JSON.stringify(Object.fromEntries(headers)));
-    const request = pythonShortcutMethod(method)
-      ? "requests." + method.toLowerCase() + "(" + args.join(", ") + ")"
-      : "requests.request(" + singleLiteral(method) + ", " + args.join(", ") + ")";
-    lines.push("response = " + request, "print(response.text)");
+    const block = body !== undefined ? codeBlockString(body, "python") : undefined;
+    if (block) lines.push("body = " + block, "");
+    const args = [...(pythonShortcutMethod(method) ? [] : [singleLiteral(method)]), sampleUrl(url, "python", originVariable)];
+    if (body !== undefined) args.push("data=" + (block ? "body" : singleLiteral(body)) + ".encode('utf-8')");
+    if (headers.length)
+      args.push(["headers={", ...Object.entries(Object.fromEntries(headers)).map(([name, value]) => `    ${codeString(name, "python")}: ${codeString(value, "python")},`), "}"].join("\n    "));
+    const call = pythonShortcutMethod(method) ? "requests." + method.toLowerCase() : "requests.request";
+    // A call with more than an address takes one argument a line.
+    lines.push("response = " + call + (args.length > (pythonShortcutMethod(method) ? 1 : 2) ? "(\n    " + args.join(",\n    ") + ",\n)" : "(" + args.join(", ") + ")"), "print(response.text)");
     return { lang: "python", label: "Python", source: lines.join("\n") };
   },
 
@@ -65,7 +68,7 @@ const generators: Record<string, CodeSampleGenerator> = {
     lines.push("func main() {");
     if (originVariable) lines.push("  " + sampleOrigin("go"));
     if (body !== undefined) {
-      lines.push("  body := strings.NewReader(" + JSON.stringify(body) + ")");
+      lines.push("  body := strings.NewReader(" + (codeBlockString(body, "go") ?? JSON.stringify(body)) + ")");
       lines.push(`  req, _ := http.NewRequest(${codeString(method, "go")}, ${sampleUrl(url, "go", originVariable)}, body)`);
     } else {
       lines.push(`  req, _ := http.NewRequest(${codeString(method, "go")}, ${sampleUrl(url, "go", originVariable)}, nil)`);
@@ -91,12 +94,12 @@ const generators: Record<string, CodeSampleGenerator> = {
     const methodClass = rubyShortcutMethod(method);
     if (methodClass) {
       lines.push(`request = Net::HTTP::${methodClass}.new(uri)`);
-      if (body !== undefined) lines.push(`request.body = ${codeString(body, "ruby")}`);
+      if (body !== undefined) lines.push(`request.body = ${codeBlockString(body, "ruby") ?? codeString(body, "ruby")}`);
     } else {
       lines.push(
         `request = Net::HTTPGenericRequest.new('${method}', ${body ? "true" : "false"}, true, uri.request_uri, {})`,
       );
-      if (body !== undefined) lines.push(`request.body = ${codeString(body, "ruby")}`);
+      if (body !== undefined) lines.push(`request.body = ${codeBlockString(body, "ruby") ?? codeString(body, "ruby")}`);
     }
     for (const [name, value] of headers)
       lines.push("request[" + codeString(name, "ruby") + "] = " + codeString(value, "ruby"));
@@ -117,7 +120,7 @@ const generators: Record<string, CodeSampleGenerator> = {
     ];
     if (originVariable) lines.push(sampleOrigin("java"));
     if (body !== undefined) {
-      lines.push("String body = " + codeString(body, "java") + ";", "");
+      lines.push("String body = " + (codeBlockString(body, "java") ?? codeString(body, "java")) + ";", "");
       lines.push(`HttpRequest request = HttpRequest.newBuilder()`);
       lines.push(`    .uri(URI.create(${sampleUrl(url, "java", originVariable)}))`);
       lines.push(`    .method("${method}", HttpRequest.BodyPublishers.ofString(body))`);
@@ -137,7 +140,8 @@ const generators: Record<string, CodeSampleGenerator> = {
   },
 
   php({ url, method, headers, body, originVariable }: RequestInfo): CodeSample {
-    const lines = [`<?php`, ...(originVariable ? [sampleOrigin("php")] : []), `$ch = curl_init(${sampleUrl(url, "php", originVariable)});`];
+    const block = body !== undefined ? codeBlockString(body, "php") : undefined;
+    const lines = [`<?php`, ...(originVariable ? [sampleOrigin("php")] : []), ...(block ? [`$body = ${block};`, ``] : []), `$ch = curl_init(${sampleUrl(url, "php", originVariable)});`];
     lines.push(`curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);`);
     if (method !== "GET") {
       lines.push(`curl_setopt($ch, CURLOPT_CUSTOMREQUEST, '${phpSingleQuoted(method)}');`);
@@ -150,7 +154,7 @@ const generators: Record<string, CodeSampleGenerator> = {
       );
     }
     if (body !== undefined) {
-      lines.push(`curl_setopt($ch, CURLOPT_POSTFIELDS, ${codeString(body, "php")});`);
+      lines.push(`curl_setopt($ch, CURLOPT_POSTFIELDS, ${block ? "$body" : codeString(body, "php")});`);
     }
     lines.push(``, `$response = curl_exec($ch);`, `curl_close($ch);`);
     lines.push(`$data = json_decode($response, true);`);
@@ -170,7 +174,7 @@ const generators: Record<string, CodeSampleGenerator> = {
       ? `client.${method.toLowerCase()}(${sampleUrl(url, "rust", originVariable)})`
       : `client.request(reqwest::Method::from_bytes(b"${method}").unwrap(), ${sampleUrl(url, "rust", originVariable)})`;
     if (body !== undefined) {
-      lines.push("    let body = " + codeString(body, "rust") + ";");
+      lines.push("    let body = " + (codeBlockString(body, "rust") ?? codeString(body, "rust")) + ";");
       lines.push(`    let response = ${requestBuilder}`);
       lines.push(`        .body(body)`);
     } else {
@@ -195,8 +199,10 @@ const generators: Record<string, CodeSampleGenerator> = {
       ? `HttpMethod.${method[0] + method.slice(1).toLowerCase()}`
       : `new HttpMethod("${method}")`;
     if (body !== undefined) {
+      const block = codeBlockString(body, "csharp");
+      if (block) lines.push("var body = " + block + ";");
       lines.push(
-        'var content = new StringContent(' + codeString(body, "csharp") + ', System.Text.Encoding.UTF8);',
+        "var content = new StringContent(" + (block ? "body" : codeString(body, "csharp")) + ", System.Text.Encoding.UTF8);",
       );
       lines.push(
         `var request = new HttpRequestMessage(${httpMethod}, ${sampleUrl(url, "csharp", originVariable)}) { Content = content };`,

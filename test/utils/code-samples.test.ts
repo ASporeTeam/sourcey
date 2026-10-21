@@ -75,8 +75,18 @@ describe("generateCodeSamples", () => {
     );
 
     expect(samples.find((sample) => sample.label === "cURL")?.source).toContain("it'\\''s ready");
-    expect(samples.find((sample) => sample.label === "Ruby")?.source).toContain("it\\'s ready");
-    expect(samples.find((sample) => sample.label === "PHP")?.source).toContain("it\\'s ready");
+    // A JSON body is several lines, written raw where the language has a raw form.
+    expect(samples.find((sample) => sample.label === "Ruby")?.source).toContain(`request.body = <<-'BODY'.chomp\n{\n  "message": "it's ready"\n}\nBODY`);
+    expect(samples.find((sample) => sample.label === "PHP")?.source).toContain(`$body = <<<'BODY'\n{\n  "message": "it's ready"\n}\nBODY;`);
+
+    // A one-line body stays a single-quoted string.
+    const text = generateCodeSamples(
+      createOperation({ method: "post", requestBody: { required: true, content: { "text/plain": { example: "it's ready" } } } }),
+      [{ url: "https://api.example.com" }],
+      ["ruby", "php"],
+    );
+    expect(text.find((sample) => sample.label === "Ruby")?.source).toContain("request.body = 'it\\'s ready'");
+    expect(text.find((sample) => sample.label === "PHP")?.source).toContain("CURLOPT_POSTFIELDS, 'it\\'s ready'");
   });
 
   it("keeps the request body in JavaScript samples for OpenAPI request bodies", async () => {

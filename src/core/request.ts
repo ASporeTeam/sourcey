@@ -349,7 +349,8 @@ export function describeRequest(context: RequestContext, draft: RequestDraft): R
         bodyValue instanceof Blob
           ? undefined
           : draft.mediaType.includes("json")
-            ? JSON.stringify(bodyValue)
+            ? // Sent as the samples show it, so a reader can read the body they copy.
+              JSON.stringify(bodyValue, null, 2)
             : draft.mediaType === "application/x-www-form-urlencoded" && isRecord(bodyValue)
               ? Object.entries(bodyValue)
                   .flatMap(([name, value]) =>

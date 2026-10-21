@@ -16,6 +16,52 @@ export function codeString(value: string, language: string): string {
   return result + quote;
 }
 
+/**
+ * Text over several lines, such as a pretty-printed JSON body, as the
+ * language's raw or multi-line string, so it reads as it is sent: its lines
+ * start at the margin and keep their bytes. Undefined where that form cannot
+ * carry the text exactly; the caller then writes it as one escaped string.
+ */
+export function codeBlockString(value: string, language: string): string | undefined {
+  const control = Array.from(value).some((char) => {
+    const point = char.charCodeAt(0);
+    return point < 32 && point !== 10 || point === 127;
+  });
+  if (!value.includes("\n") || control) return undefined;
+  const lines = value.split("\n");
+  switch (language) {
+    case "curl":
+      return codeString(value, language);
+    case "javascript":
+    case "typescript":
+      return "`" + value.replace(/[\\`]|\$\{/g, (match) => "\\" + match) + "`";
+    case "python":
+      return "'''" + value.replace(/[\\']/g, (match) => "\\" + match) + "'''";
+    case "go":
+      return value.includes("`") ? undefined : "`" + value + "`";
+    case "rust": {
+      let hashes = "#";
+      while (value.includes('"' + hashes)) hashes += "#";
+      return "r" + hashes + '"' + value + '"' + hashes;
+    }
+    case "java": {
+      // A text block strips each line's trailing blanks and the lines' common indent.
+      if (lines.some((line) => / $/.test(line)) || lines.every((line) => !line || line.startsWith(" "))) return undefined;
+      const escaped = value.replace(/\\/g, "\\\\").replace(/"{3,}/g, (run) => run.replace(/"/g, '\\"')).replace(/"{1,2}$/, (run) => run.replace(/"/g, '\\"'));
+      return '"""\n' + escaped + '"""';
+    }
+    case "php":
+      return lines.some((line) => /^\s*BODY\b/.test(line)) ? undefined : "<<<'BODY'\n" + value + "\nBODY";
+    case "ruby":
+      return lines.some((line) => /^\s*BODY$/.test(line)) ? undefined : "<<-'BODY'.chomp\n" + value + "\nBODY";
+    case "csharp": {
+      const quotes = '"'.repeat(Math.max(3, ...(value.match(/"+/g) ?? []).map((run) => run.length + 1)));
+      return quotes + "\n" + value + "\n" + quotes;
+    }
+  }
+  return undefined;
+}
+
 const originNames: Record<string, string> = { curl: "BASE_URL", javascript: "baseUrl", typescript: "baseUrl", python: "base_url", go: "baseURL", ruby: "base_url", java: "baseUrl", php: "$baseUrl", rust: "base_url", csharp: "baseUrl" };
 export function sampleUrl(url: string, language: string, originVariable = false): string {
   const literal = codeString(url, language);

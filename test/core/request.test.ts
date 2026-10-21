@@ -275,7 +275,7 @@ describe("canonical request serialization", () => {
     draft.body = { ok: false };
     expect(describeRequest(context(op), draft).body).toEqual({
       kind: "text",
-      text: '{"ok":false}',
+      text: '{\n  "ok": false\n}',
     });
     draft.mediaType = "application/x-www-form-urlencoded";
     draft.body = { tag: ["a b", "c"], count: 0 };
@@ -411,7 +411,7 @@ describe("the real HTTP boundary", () => {
       method: "POST",
       url: "/echo/a%2Fb?tag=one&tag=two",
       headers: { authorization: "Bearer test-token", "content-type": "application/json" },
-      body: '{"name":"O\'Brien","count":0}',
+      body: '{\n  "name": "O\'Brien",\n  "count": 0\n}',
     });
     const curl = generateRequestSamples(request, ["curl"])[0].source;
     const result = await promisify(execFile)("/bin/sh", ["-c", curl]);
