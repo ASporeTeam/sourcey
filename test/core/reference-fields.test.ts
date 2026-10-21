@@ -110,6 +110,53 @@ describe("reference field destinations", () => {
     expect(definitionAnchors("Fields", spec)).toEqual(expect.arrayContaining([`${model}/id`, `${model}/secret`, `${model}/audit/properties/createdBy`]));
   });
 
+  it.each(["single", "split"] as const)("in %s mode, draws a type once inside itself and once in a schema too large to draw each time, linking its other rows there", async mode => {
+    const leaf = { type: "object", properties: Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`field${index}`, { type: "string" }])) };
+    // Forty branches of a thirty-field leaf come to more rows than a schema draws in full.
+    const branch = { type: "object", properties: Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`leaf${index}`, { $ref: "#/components/schemas/Leaf" }])) };
+    const trees = {
+      openapi: "3.1.0", info: { title: "Plans", version: "fixture" },
+      components: { schemas: {
+        Leaf: leaf, Branch: branch,
+        Node: { type: "object", properties: { label: { type: "string" }, children: { type: "array", items: { $ref: "#/components/schemas/Node" } }, parent: { $ref: "#/components/schemas/Node" } } },
+        Forest: { type: "object", properties: { branch: { $ref: "#/components/schemas/Branch" }, leaf: { $ref: "#/components/schemas/Leaf" }, tree: { $ref: "#/components/schemas/Node" } } },
+      } },
+      paths: { "/forests": { post: { summary: "Plant a forest", requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/Forest" } } } }, responses: { "201": { description: "Planted", content: { "application/json": { schema: { $ref: "#/components/schemas/Node" } } } } } } } },
+    };
+    const root = await mkdtemp(join(tmpdir(), "sourcey-schema-plans-"));
+    try {
+      await writeFile(join(root, "api.json"), JSON.stringify(trees));
+      const config = await resolveConfigFromRaw({ theme: { fonts: { google: false } }, navigation: { tabs: [{ tab: "API", source: openapi("api.json"), reference: mode === "split" ? { split: "operations" } : {} }] } }, root);
+      const site = await buildSourceySite({ config, generateOgImages: false });
+      const page = site.pages.find(entry => entry.currentPage.kind === "spec" && (mode === "single" || entry.currentPage.view?.kind === "operation"))!;
+      if (page.currentPage.kind !== "spec") throw new Error("no reference page");
+      const operation = page.currentPage.spec.operations[0];
+      const html = renderPage(page.currentPage.spec, createRenderOptions(page, site.site), projectNavigation(page.navigation ?? site.navigation, page.tabSlug, page.pageSlug), page.currentPage, site.site);
+      const ids = [...html.matchAll(/\bid="([^"]*)"/g)].map(match => match[1]);
+      const expected = operationFieldAnchors(operation);
+      for (const id of expected) expect(ids.filter(value => value === id), id).toHaveLength(1);
+      // Every link to where a type is drawn lands on this page.
+      const drawnAt = [...html.matchAll(/<p class="schema-drawn-at">[^<]*<a href="#([^"]+)"/g)].map(match => match[1]);
+      expect(drawnAt.length).toBeGreaterThan(0);
+      for (const target of drawnAt) expect(ids, target).toContain(target);
+      const body = referenceFieldPath(operationFieldRoot(operation), "request-body", "application/json");
+      const field = (...path: string[]) => referenceFieldPath(body, ...path.flatMap(name => ["properties", name]));
+      // Leaf is drawn at forest.leaf, its shallowest place, and each branch links there.
+      expect(expected).toContain(field("leaf", "field0"));
+      expect(expected).toContain(field("branch", "leaf0"));
+      expect(expected).not.toContain(field("branch", "leaf0", "field0"));
+      expect(drawnAt).toContain(field("leaf"));
+      // A node's children and parent link back to the node that holds them.
+      expect(drawnAt).toContain(field("tree"));
+      expect(expected).not.toContain(referenceFieldPath(field("tree", "children"), "items", "properties", "label"));
+      // The response is a node: its own rows link to the schema itself, which marks where it starts.
+      const response = referenceFieldPath(operationFieldRoot(operation), "responses", "201", "content", "application/json");
+      expect(expected).toContain(response);
+      expect(drawnAt).toContain(response);
+      expect(html).not.toContain("Max depth reached");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("keeps semantic path segments distinct without lossy slugging", () => {
     const values = ["a/b", "a~002fb", "a b", "a-b", "Name", "name", "名字", "", "#", "\ud800", "\ud801"];
     expect(new Set(values.map(value => referenceFieldPath("root", value))).size).toBe(values.length);

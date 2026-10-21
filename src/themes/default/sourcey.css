@@ -647,6 +647,28 @@
   transform: rotate(90deg);
 }
 
+/* A field whose type the schema draws elsewhere links there in place of its child attributes. */
+#sourcey .schema-drawn-at {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: rgb(var(--color-gray-600));
+}
+.dark #sourcey .schema-drawn-at {
+  color: rgb(var(--color-gray-300));
+}
+#sourcey .schema-drawn-at a {
+  color: rgb(var(--color-primary-ink));
+  text-decoration: none;
+}
+.dark #sourcey .schema-drawn-at a {
+  color: rgb(var(--color-primary-light));
+}
+#sourcey .schema-drawn-at a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 #sourcey .schema-expandable-content {
   padding: 0 1rem 0.5rem;
   border-top: 1px solid rgb(var(--color-gray-100));

@@ -17,7 +17,7 @@
  * fragments exist only once a reader picks it, so no link reaches them. The
  * response is the first the operation lists, and a body its first media type.
  */
-import { REFERENCE_SCHEMA_MAX_DEPTH, operationFieldRoot, parameterFieldAnchor, referenceFieldPath } from "../../core/reference-identity.js";
+import { operationFieldRoot, parameterFieldAnchor, referenceFieldPath } from "../../core/reference-identity.js";
 import type { NormalizedSchema, SecurityScheme } from "../../core/types.js";
 import { htmlId } from "../../utils/html-id.js";
 import type { ReferenceOperation } from "../openapi.js";
@@ -72,6 +72,9 @@ export function operationAliases(operation: ReferenceOperation, schemes: Readonl
 
 type Emit = (key: string[], target: string) => void;
 
+/** How deep the walk follows fields, which bounds it on a schema that contains itself; a deeper fragment is not matched. */
+const FIELD_DEPTH = 10;
+
 /**
  * A schema's alternatives as Mintlify lists them, each with the native path
  * its fields hang from: nested unions flattened, and null last for a nullable
@@ -94,7 +97,7 @@ const isObject = (schema: NormalizedSchema) => schema.type === "object" || Boole
  * the alternative picked; any other union's row is the alternative it shows.
  */
 function fields(schema: NormalizedSchema, key: string[], path: string, emit: Emit, depth: number, row = false): void {
-  if (depth >= REFERENCE_SCHEMA_MAX_DEPTH) return;
+  if (depth >= FIELD_DEPTH) return;
   const choices = alternatives(schema, path);
   const at = choices.length > 1 ? [...key, "oneOf", "0"] : key;
   if (row) emit(choices.every((choice) => isObject(choice.schema)) ? key : at, path);

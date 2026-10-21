@@ -1,30 +1,53 @@
 import type { NormalizedSchema } from "../core/types.js";
 import { omittedField, type SchemaUsage } from "../core/schema.js";
 
+/** Lines a generated example may take before it shows each named object type once. */
+export const EXAMPLE_FULL_LINES = 400;
+
 /**
- * Generate an example value from a JSON Schema definition.
- *
- * Improvements over legacy:
- * - Handles anyOf/oneOf (picks first option)
- * - Uses default values and first enum value
- * - Returns "[circular]" instead of raw $ref string on cycles
- * - Cycle detection via Set<string> instead of array linear scan
+ * Generate an example value from a JSON Schema definition: its own example,
+ * default, first enum value or const where it has one, the first alternative
+ * of a union, and otherwise a value of its type, with every property.
  *
  * A request example leaves out read-only properties and a response example
  * write-only ones, as OpenAPI defines them; with no usage, both stay.
+ *
+ * A named object type is never filled in inside itself: an optional property
+ * that would repeat it is left out, and a required one is empty. An example
+ * longer than EXAMPLE_FULL_LINES shows each named object type once, at its
+ * shallowest place, the same way, as the reference draws a schema that size.
  */
-export function generateExample(
-  schema: NormalizedSchema,
-  usage?: SchemaUsage,
-  seen: Set<string> = new Set(),
-): unknown {
-  // Cycle detection using schema name
-  if (schema.name) {
-    if (seen.has(schema.name)) return "[circular]";
-    seen = new Set(seen);
-    seen.add(schema.name);
-  }
+export function generateExample(schema: NormalizedSchema, usage?: SchemaUsage): unknown {
+  const full = build(schema, { usage, path: "", ancestors: new Set() });
+  if (full === undefined || JSON.stringify(full, null, 2).split("\n").length <= EXAMPLE_FULL_LINES) return full;
+  return build(schema, { usage, path: "", ancestors: new Set(), homes: exampleHomes(schema, usage) });
+}
 
+interface Walk {
+  usage?: SchemaUsage;
+  /** Where the value sits in the example: property names, with `[]` for an array's items. */
+  path: string;
+  /** Named types of the objects this value is inside. */
+  ancestors: ReadonlySet<string>;
+  /** Where each named object type is shown, when the example shows each once. */
+  homes?: ReadonlyMap<string, string>;
+}
+
+const namedType = (schema: NormalizedSchema) => schema.refName ?? schema.name;
+
+/** Whether the schema's example is an object built from fields, rather than a value of its own. */
+function objectLike(schema: NormalizedSchema): boolean {
+  if (ownValue(schema)) return false;
+  if (schema.allOf?.length || schema.properties) return true;
+  const variant = schema.oneOf?.[0] ?? schema.anyOf?.[0];
+  return variant ? objectLike(variant) : schema.type === "object";
+}
+
+/** An example, default, enum or const: a value the schema states rather than one built from its type. */
+const ownValue = (schema: NormalizedSchema) =>
+  schema.example !== undefined || !!schema.examples?.length || schema.default !== undefined || !!schema.enum?.length || schema.const !== undefined;
+
+function build(schema: NormalizedSchema, walk: Walk): unknown {
   // Use explicit example first
   if (schema.example !== undefined) return schema.example;
   if (schema.examples?.length) return schema.examples[0];
@@ -38,24 +61,25 @@ export function generateExample(
   // Use const
   if (schema.const !== undefined) return schema.const;
 
+  const type = namedType(schema);
+  if (type && objectLike(schema)) walk = { ...walk, ancestors: new Set(walk.ancestors).add(type) };
+
   // Handle composition — pick first option
   if (schema.allOf?.length) {
-    return mergeAllOfExamples(schema.allOf, usage, seen);
+    return mergeAllOfExamples(schema.allOf, walk);
   }
   if (schema.oneOf?.length) {
-    return generateExample(schema.oneOf[0], usage, seen);
+    return build(schema.oneOf[0], walk);
   }
   if (schema.anyOf?.length) {
-    return generateExample(schema.anyOf[0], usage, seen);
+    return build(schema.anyOf[0], walk);
   }
 
-  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
-
-  switch (type) {
+  switch (Array.isArray(schema.type) ? schema.type[0] : schema.type) {
     case "object":
-      return generateObjectExample(schema, usage, seen);
+      return generateObjectExample(schema, walk);
     case "array":
-      return generateArrayExample(schema, usage, seen);
+      return generateArrayExample(schema, walk);
     case "string":
       return generateStringExample(schema);
     case "integer":
@@ -68,39 +92,75 @@ export function generateExample(
       return null;
     default:
       // If it has properties, treat as object
-      if (schema.properties) return generateObjectExample(schema, usage, seen);
+      if (schema.properties) return generateObjectExample(schema, walk);
       return undefined;
   }
 }
 
-function generateObjectExample(
-  schema: NormalizedSchema,
-  usage: SchemaUsage | undefined,
-  seen: Set<string>,
-): Record<string, unknown> {
+/** Whether a value at `path` of this schema is shown elsewhere: around it, or at its type's shallower place. */
+function shownElsewhere(schema: NormalizedSchema, path: string, walk: Walk): boolean {
+  const type = namedType(schema);
+  if (!type || !objectLike(schema)) return false;
+  return walk.ancestors.has(type) || (walk.homes !== undefined && walk.homes.get(type) !== path);
+}
+
+function generateObjectExample(schema: NormalizedSchema, walk: Walk): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
-  if (schema.properties) {
-    for (const [key, prop] of Object.entries(schema.properties)) {
-      if (omittedField(prop, usage)) continue;
-      const val = generateExample(prop, usage, seen);
-      if (val !== undefined) {
-        obj[key] = val;
-      }
+  for (const [key, prop] of Object.entries(schema.properties ?? {})) {
+    if (omittedField(prop, walk.usage)) continue;
+    const path = `${walk.path}.${key}`;
+    const array = prop.type === "array" && prop.items;
+    if (shownElsewhere(array ? prop.items! : prop, array ? `${path}[]` : path, walk)) {
+      // A property that would repeat a type shown elsewhere is left out, or empty where it is required.
+      if (schema.required?.includes(key)) obj[key] = array ? [] : {};
+      continue;
     }
+    const val = build(prop, { ...walk, path });
+    if (val !== undefined) obj[key] = val;
   }
   return obj;
 }
 
-function generateArrayExample(
-  schema: NormalizedSchema,
-  usage: SchemaUsage | undefined,
-  seen: Set<string>,
-): unknown[] {
-  if (schema.items) {
-    const item = generateExample(schema.items, usage, seen);
-    return item !== undefined ? [item] : [];
+function generateArrayExample(schema: NormalizedSchema, walk: Walk): unknown[] {
+  if (!schema.items) return [];
+  const path = `${walk.path}[]`;
+  if (shownElsewhere(schema.items, path, walk)) return [];
+  const item = build(schema.items, { ...walk, path });
+  return item !== undefined ? [item] : [];
+}
+
+/**
+ * Where an example shows each named object type: the first place a breadth
+ * first walk of the fields it is built from reaches it, so its shallowest.
+ */
+function exampleHomes(schema: NormalizedSchema, usage: SchemaUsage | undefined): Map<string, string> {
+  const homes = new Map<string, string>();
+  const queue: { schema: NormalizedSchema; path: string }[] = [{ schema, path: "" }];
+  const rootType = namedType(schema);
+  if (rootType && objectLike(schema)) homes.set(rootType, "");
+  for (let next = 0; next < queue.length; next++) {
+    for (const child of exampleChildren(queue[next].schema, queue[next].path, usage)) {
+      const type = namedType(child.schema);
+      if (type && objectLike(child.schema)) {
+        if (homes.has(type)) continue;
+        homes.set(type, child.path);
+      }
+      queue.push(child);
+    }
   }
-  return [];
+  return homes;
+}
+
+/** The values an example is built from directly beneath a schema's own, with their paths, as build visits them. */
+function exampleChildren(schema: NormalizedSchema, path: string, usage: SchemaUsage | undefined): { schema: NormalizedSchema; path: string }[] {
+  if (ownValue(schema)) return [];
+  if (schema.allOf?.length) return schema.allOf.flatMap((part) => exampleChildren(part, path, usage));
+  const variant = schema.oneOf?.[0] ?? schema.anyOf?.[0];
+  if (variant) return exampleChildren(variant, path, usage);
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  if (type === "array") return schema.items ? [{ schema: schema.items, path: `${path}[]` }] : [];
+  if (type !== "object" && !(type === undefined && schema.properties)) return [];
+  return Object.entries(schema.properties ?? {}).filter(([, prop]) => !omittedField(prop, usage)).map(([key, prop]) => ({ schema: prop, path: `${path}.${key}` }));
 }
 
 function generateStringExample(schema: NormalizedSchema): string {
@@ -135,14 +195,10 @@ function generateStringExample(schema: NormalizedSchema): string {
   }
 }
 
-function mergeAllOfExamples(
-  schemas: NormalizedSchema[],
-  usage: SchemaUsage | undefined,
-  seen: Set<string>,
-): unknown {
+function mergeAllOfExamples(schemas: NormalizedSchema[], walk: Walk): unknown {
   const merged: Record<string, unknown> = {};
   for (const sub of schemas) {
-    const example = generateExample(sub, usage, seen);
+    const example = build(sub, walk);
     if (example && typeof example === "object" && !Array.isArray(example)) {
       Object.assign(merged, example);
     }

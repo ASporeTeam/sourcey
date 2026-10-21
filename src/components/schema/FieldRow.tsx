@@ -21,12 +21,14 @@ export interface FieldRowProps {
   description?: ComponentChildren;
   /** Shown after the description, such as a property's examples. */
   examples?: ComponentChildren;
+  /** Where the field's own fields are drawn, when they are drawn elsewhere rather than beneath it. */
+  drawnAt?: ComponentChildren;
   /** Child fields, each group behind its own disclosure; an unlabelled group shows "Show child attributes". */
   nested?: { label?: string; content: ComponentChildren }[];
 }
 
 /** One named field: an API parameter, a schema property or an authored `<Field>`. */
-export function FieldRow({ name, id, schema, type, required, readOnly, writeOnly, deprecated, location, description, examples, nested }: FieldRowProps) {
+export function FieldRow({ name, id, schema, type, required, readOnly, writeOnly, deprecated, location, description, examples, drawnAt, nested }: FieldRowProps) {
   return (
     <div class="param-item" id={id}>
       <div class="param-header not-prose">
@@ -41,6 +43,7 @@ export function FieldRow({ name, id, schema, type, required, readOnly, writeOnly
       </div>
       {description && <div class="param-description">{description}</div>}
       {examples}
+      {drawnAt}
       {nested?.map((group) => (
         <details class="schema-expandable">
           <summary class="schema-expandable-toggle">

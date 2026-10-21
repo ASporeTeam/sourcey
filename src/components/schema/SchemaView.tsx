@@ -9,7 +9,7 @@ import { DisclosureIcon } from "../ui/DisclosureIcon.js";
 import { FieldRow } from "./FieldRow.js";
 import { AnchorAliases } from "../ui/AnchorAliases.js";
 import { Select } from "../ui/Select.js";
-import { referenceFieldPath, hasObjectFields, hasReferenceFields, innerSchema, objectFields, REFERENCE_SCHEMA_MAX_DEPTH } from "../../core/reference-identity.js";
+import { referenceFieldPath, hasObjectFields, hasReferenceFields, innerSchema, objectFields, onlyFields, schemaPlan, REFERENCE_SCHEMA_MAX_DEPTH, type SchemaHome, type SchemaPlan } from "../../core/reference-identity.js";
 
 interface SchemaViewProps {
   schema: NormalizedSchema;
@@ -17,32 +17,50 @@ interface SchemaViewProps {
   depth?: number;
   maxDepth?: number;
   showDescription?: boolean;
+  /** The anchor of the schema this view is part of; each field's is this followed by its path. */
   anchorRoot?: string;
+  /** This view's path below that schema. */
+  at?: string;
   /** The way the schema travels; fields that never travel that way are left out. */
   usage?: SchemaUsage;
+  /** How the whole schema is drawn: which rows link to where their type is drawn. */
+  plan?: SchemaPlan;
+  /** A view drawing more of the view at the same path, which marks where it starts. */
+  continued?: boolean;
 }
 
 /**
  * Recursive schema renderer — stacked property layout.
  * Each property: name + type on one line, description below, children indented.
  */
-export function SchemaView({
+export function SchemaView(props: SchemaViewProps) {
+  const plan = props.plan ?? schemaPlan(props.schema, props.usage);
+  const at = props.at ?? "";
+  const view = <SchemaParts {...props} plan={plan} at={at} />;
+  // A row elsewhere links here, so the view marks where it starts.
+  return plan.views.has(at) && !props.continued && props.anchorRoot !== undefined ? <div id={props.anchorRoot + at}>{view}</div> : view;
+}
+
+function SchemaParts({
   schema,
   requiredFields,
   depth = 0,
   maxDepth = REFERENCE_SCHEMA_MAX_DEPTH,
   showDescription = true,
   anchorRoot,
+  at,
   usage,
-}: SchemaViewProps) {
+  plan,
+}: SchemaViewProps & { at: string; plan: SchemaPlan }) {
   const { messages } = useContext(OptionsContext);
   if (depth >= maxDepth) {
     return <div class="schema-max-depth">Max depth reached</div>;
   }
+  const field = { anchorRoot, usage, plan, maxDepth };
 
   // Handle allOf composition
   if (schema.allOf?.length) {
-    const { fields, parts } = compositionFields(schema, anchorRoot, requiredFields, usage, depth, maxDepth);
+    const { fields, parts } = compositionFields(schema, at, requiredFields, usage, depth, maxDepth);
     return (
       <div class="schema-composition">
         {showDescription && schema.description && (
@@ -50,9 +68,9 @@ export function SchemaView({
             <Markdown content={schema.description} />
           </div>
         )}
-        {fields.length > 0 && <FieldList fields={fields} maxDepth={maxDepth} usage={usage} />}
+        {fields.length > 0 && <FieldList fields={fields} {...field} />}
         {parts.map((part, index) => (
-          <SchemaView key={index} schema={part.schema} requiredFields={part.required} depth={part.depth} maxDepth={maxDepth} anchorRoot={part.anchorRoot} usage={usage} />
+          <SchemaView key={index} schema={part.schema} requiredFields={part.required} depth={part.depth} maxDepth={maxDepth} anchorRoot={anchorRoot} at={part.at} usage={usage} plan={plan} />
         ))}
         <SchemaExamples schema={schema} />
       </div>
@@ -75,7 +93,7 @@ export function SchemaView({
           </div>
         )}
         <div class="schema-variant-label" data-schema-fallback>{label}</div>
-        {hasObjectFields(schema) && <SchemaView schema={{ ...schema, oneOf: undefined, anyOf: undefined, description: undefined, example: undefined, examples: undefined }} depth={depth + 1} maxDepth={maxDepth} anchorRoot={anchorRoot} usage={usage} />}
+        {hasObjectFields(schema) && <SchemaView schema={{ ...schema, oneOf: undefined, anyOf: undefined, description: undefined, example: undefined, examples: undefined }} depth={depth + 1} maxDepth={maxDepth} anchorRoot={anchorRoot} at={at} usage={usage} plan={plan} continued />}
         <label class="schema-variant-control not-prose" hidden>
           <span class="schema-variant-label">{label}</span>
           <Select data-schema-picker>
@@ -84,7 +102,7 @@ export function SchemaView({
         </label>
         {variants.map((sub, i) => (
           <div key={i} class="schema-variant-option" data-schema-variant={String(i)}>
-            <SchemaView schema={sub} depth={depth + 1} maxDepth={maxDepth} anchorRoot={anchorRoot && referenceFieldPath(anchorRoot, schema.oneOf ? "oneOf" : "anyOf", String(i))} usage={usage} />
+            <SchemaView schema={sub} depth={depth + 1} maxDepth={maxDepth} anchorRoot={anchorRoot} at={referenceFieldPath(at, schema.oneOf ? "oneOf" : "anyOf", String(i))} usage={usage} plan={plan} />
           </div>
         ))}
         <SchemaExamples schema={schema} />
@@ -94,7 +112,7 @@ export function SchemaView({
 
   // Named properties and typed map values use the same field presentation.
   if (hasObjectFields(schema)) {
-    const fields = fieldRows(schema, anchorRoot, requiredFields, usage, depth);
+    const fields = fieldRows(schema, at, requiredFields, usage, depth);
     return (
       <>
         {showDescription && schema.description && (
@@ -102,7 +120,7 @@ export function SchemaView({
             <Markdown content={schema.description} />
           </div>
         )}
-        {fields.length > 0 && <FieldList fields={fields} maxDepth={maxDepth} usage={usage} />}
+        {fields.length > 0 && <FieldList fields={fields} {...field} />}
         <SchemaExamples schema={schema} />
       </>
     );
@@ -131,8 +149,10 @@ export function SchemaView({
                 schema={schema.items}
                 depth={depth + 1}
                 maxDepth={maxDepth}
-                anchorRoot={anchorRoot && referenceFieldPath(anchorRoot, "items")}
+                anchorRoot={anchorRoot}
+                at={referenceFieldPath(at, "items")}
                 usage={usage}
+                plan={plan}
               />
             </div>
           </details>
@@ -156,27 +176,27 @@ export function SchemaView({
   );
 }
 
-/** A field list row, anchored where its declaration sits. */
+/** A field list row, by its path below the schema. */
 interface FieldEntry {
   name: string;
   schema: NormalizedSchema;
   required: boolean;
   depth: number;
-  id?: string;
+  at: string;
 }
 
 /** A composition part shown as a view of its own. */
 interface CompositionPart {
   schema: NormalizedSchema;
-  anchorRoot?: string;
+  at: string;
   required: string[];
   depth: number;
 }
 
 /** An object's rows. A field is required by the object or by a composition it is part of. */
-function fieldRows(schema: NormalizedSchema, anchorRoot: string | undefined, inherited: string[] | undefined, usage: SchemaUsage | undefined, depth: number): FieldEntry[] {
+function fieldRows(schema: NormalizedSchema, at: string, inherited: string[] | undefined, usage: SchemaUsage | undefined, depth: number): FieldEntry[] {
   const required = new Set([...inherited ?? [], ...schema.required ?? []]);
-  return objectFields(schema, usage, required).map(({ name, schema, required, path }) => ({ name, schema, required, depth, id: anchorRoot && referenceFieldPath(anchorRoot, ...path) }));
+  return objectFields(schema, usage, required).map(({ name, schema, required, path }) => ({ name, schema, required, depth, at: referenceFieldPath(at, ...path) }));
 }
 
 /**
@@ -187,38 +207,33 @@ function fieldRows(schema: NormalizedSchema, anchorRoot: string | undefined, inh
  */
 function compositionFields(
   schema: NormalizedSchema,
-  anchorRoot: string | undefined,
+  at: string,
   inherited: string[] | undefined,
   usage: SchemaUsage | undefined,
   depth: number,
   maxDepth: number,
 ): { fields: FieldEntry[]; parts: CompositionPart[] } {
   const required = [...inherited ?? [], ...schema.required ?? []];
-  const fields = depth + 1 < maxDepth ? fieldRows(schema, anchorRoot, required, usage, depth + 1) : [];
+  const fields = depth + 1 < maxDepth ? fieldRows(schema, at, required, usage, depth + 1) : [];
   const parts: CompositionPart[] = [];
   schema.allOf!.forEach((part, index) => {
-    const root = anchorRoot && referenceFieldPath(anchorRoot, "allOf", String(index));
-    if (depth + 1 >= maxDepth || !onlyFields(part)) parts.push({ schema: part, anchorRoot: root, required, depth: depth + 1 });
+    const path = referenceFieldPath(at, "allOf", String(index));
+    if (depth + 1 >= maxDepth || !onlyFields(part)) parts.push({ schema: part, at: path, required, depth: depth + 1 });
     else if (part.allOf?.length) {
-      const nested = compositionFields(part, root, required, usage, depth + 1, maxDepth);
+      const nested = compositionFields(part, path, required, usage, depth + 1, maxDepth);
       fields.push(...nested.fields);
       parts.push(...nested.parts);
-    } else fields.push(...fieldRows(part, root, required, usage, depth + 1));
+    } else fields.push(...fieldRows(part, path, required, usage, depth + 1));
   });
   return { fields, parts };
 }
 
-/** A part that adds fields and nothing else to read. */
-function onlyFields(schema: NormalizedSchema): boolean {
-  return (hasObjectFields(schema) || !!schema.allOf?.length)
-    && !schema.oneOf?.length && !schema.anyOf?.length
-    && !schema.description && schema.example === undefined && !schema.examples?.length;
-}
+interface FieldContext { anchorRoot?: string; usage?: SchemaUsage; plan: SchemaPlan; maxDepth: number }
 
-function FieldList({ fields, maxDepth, usage }: { fields: FieldEntry[]; maxDepth: number; usage?: SchemaUsage }) {
+function FieldList({ fields, ...context }: { fields: FieldEntry[] } & FieldContext) {
   return (
     <div class="params-list">
-      {fields.map((field, index) => <PropertyRow key={field.id ?? index} {...field} maxDepth={maxDepth} usage={usage} />)}
+      {fields.map((field, index) => <PropertyRow key={field.at || index} {...field} {...context} />)}
     </div>
   );
 }
@@ -235,9 +250,12 @@ function discriminantLabel(schema: NormalizedSchema | undefined): string | undef
   return value === null || ["string", "number", "boolean"].includes(typeof value) ? String(value) : undefined;
 }
 
-function PropertyRow({ id, name, schema, required, depth, maxDepth, usage }: FieldEntry & { maxDepth: number; usage?: SchemaUsage }) {
+function PropertyRow({ at, name, schema, required, depth, maxDepth, usage, anchorRoot, plan }: FieldEntry & FieldContext) {
   const inner = innerSchema(schema);
   const hasInner = hasReferenceFields(inner, usage);
+  const id = anchorRoot === undefined ? undefined : anchorRoot + at;
+  // Its type is drawn elsewhere in this schema: above it, or at a shallower place in a schema too large to draw each time.
+  const home = plan.links.get(at);
 
   return (
     <>
@@ -252,19 +270,29 @@ function PropertyRow({ id, name, schema, required, depth, maxDepth, usage }: Fie
       deprecated={schema.deprecated}
       description={schema.description && <Markdown content={schema.description} class="prose-sm" />}
       examples={!hasInner && <SchemaExamples schema={schema} />}
-      nested={hasInner ? [{
+      drawnAt={home && <DrawnAt home={home} anchorRoot={anchorRoot} />}
+      nested={hasInner && !home ? [{
         content: (
           <SchemaView
             schema={inner}
             depth={depth + 1}
             maxDepth={maxDepth}
             showDescription={inner !== schema}
-            anchorRoot={id && (inner === schema ? id : referenceFieldPath(id, "items"))}
+            anchorRoot={anchorRoot}
+            at={inner === schema ? at : referenceFieldPath(at, "items")}
             usage={usage}
+            plan={plan}
           />
         ),
       }] : undefined}
     />
     </>
   );
+}
+
+/** Where a row's fields are drawn: the field there, or the schema's own type. */
+function DrawnAt({ home, anchorRoot }: { home: SchemaHome; anchorRoot?: string }) {
+  const { messages } = useContext(OptionsContext);
+  const label = <code>{home.label}</code>;
+  return <p class="schema-drawn-at">{messages.sameFieldsAs} {anchorRoot === undefined ? label : <a href={`#${anchorRoot + home.at}`}>{label}</a>}</p>;
 }

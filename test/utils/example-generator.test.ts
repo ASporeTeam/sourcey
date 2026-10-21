@@ -74,16 +74,24 @@ describe("generateExample", () => {
     expect(generateExample({ type: "null" })).toBe(null);
   });
 
-  it("detects circular references", () => {
-    const schema: NormalizedSchema = {
-      name: "Node",
-      type: "object",
-      properties: {
-        child: { name: "Node", type: "object" },
-      },
-    };
-    const result = generateExample(schema) as Record<string, unknown>;
-    expect(result.child).toBe("[circular]");
+  it("never fills in a named type inside itself", () => {
+    const node: NormalizedSchema = { name: "Node", type: "object", properties: { label: { type: "string" } } };
+    node.properties!.child = node;
+    node.properties!.children = { type: "array", items: node };
+    expect(generateExample(node)).toEqual({ label: "string" });
+    // A required property keeps its place, empty.
+    expect(generateExample({ ...node, required: ["child", "children"] })).toEqual({ label: "string", child: {}, children: [] });
+  });
+
+  it("shows each named object type once in an example too long to read", () => {
+    const leaf: NormalizedSchema = { refName: "Leaf", type: "object", properties: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`f${i}`, { type: "string" }])) };
+    const branch: NormalizedSchema = { refName: "Branch", type: "object", properties: { first: leaf, second: leaf, third: leaf, fourth: leaf, fifth: leaf, sixth: leaf, seventh: leaf, eighth: leaf, ninth: leaf, tenth: leaf } };
+    const example = generateExample({ type: "object", properties: { deep: { type: "object", properties: { branch } }, leaf } }) as { deep: { branch: unknown }; leaf: Record<string, string> };
+    // Leaf is shown where it is shallowest; the branch's ten optional copies are left out.
+    expect(Object.keys(example.leaf)).toHaveLength(40);
+    expect(example.deep.branch).toEqual({});
+    // A short example still shows every property.
+    expect(generateExample({ type: "object", properties: { a: leaf, b: leaf } })).toEqual({ a: generateExample(leaf), b: generateExample(leaf) });
   });
 
   it("handles anyOf by picking first", () => {
