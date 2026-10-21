@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { extractHeadings, renderMarkdown } from "../../src/utils/markdown.js";
 import {
+  loadDoxygenTab,
   normalizeDoxygenDescription,
   polishGeneratedDoxygenHtml,
   rewriteGeneratedDoxygenIncludePath,
@@ -145,5 +149,27 @@ Defined in src/turn/client.h:166
     const heading = extractHeadings(classPage).find((h) => h.text.startsWith("Inherited"));
     expect(heading).toEqual({ level: 2, text: "Inherited from Stateful", id: "inherited-from-stateful" });
     expect(html).toContain('<h2 id="inherited-from-stateful">');
+  });
+});
+
+describe("loadDoxygenTab", () => {
+  it("summarises the reference index by what it documents", async () => {
+    const xml = await mkdtemp(join(tmpdir(), "sourcey-doxygen-index-"));
+    const compound = (id: string, kind: string, name: string, brief: string, inner = "") =>
+      `<?xml version="1.0" encoding="UTF-8"?><doxygen version="1.9.8"><compounddef id="${id}" kind="${kind}" language="C++">` +
+      `<compoundname>${name}</compoundname>${inner}<briefdescription><para>${brief}</para></briefdescription>` +
+      `<detaileddescription></detaileddescription><location file="widget.h" line="1"/></compounddef></doxygen>`;
+    try {
+      await writeFile(join(xml, "index.xml"), '<?xml version="1.0" encoding="UTF-8"?><doxygenindex version="1.9.8">' +
+        '<compound refid="namespacedemo" kind="namespace"><name>demo</name></compound>' +
+        '<compound refid="classdemo_1_1Widget" kind="class"><name>demo::Widget</name></compound></doxygenindex>');
+      await writeFile(join(xml, "namespacedemo.xml"), compound("namespacedemo", "namespace", "demo", "Demonstration types.", '<innerclass refid="classdemo_1_1Widget" prot="public">demo::Widget</innerclass>'));
+      await writeFile(join(xml, "classdemo_1_1Widget.xml"), compound("classdemo_1_1Widget", "class", "demo::Widget", "A widget."));
+      const result = await loadDoxygenTab({ xml, language: "cpp", groups: false, index: "flat" }, "api", "API Reference", " · ");
+      expect(result.pages.get("index")!.description).toBe("API reference across 1 type.");
+      expect(result.pages.get("demo-Widget")!.description).toBe("A widget.");
+    } finally {
+      await rm(xml, { recursive: true, force: true });
+    }
   });
 });

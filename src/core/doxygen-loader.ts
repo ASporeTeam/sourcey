@@ -256,11 +256,19 @@ export async function loadDoxygenTab(
     const indexSlug = "index";
     const indexHtml = buildIndexHtml(indexStyle, tabSlug, tabLabel, groupMap, pages, markdownOptions);
     const indexHeadings = indexStyle === "rich" ? [] : extractHeadings(indexHtml);
+    // The index names the largest unit the reference is organised by. C and C++ share
+    // moxygen's templates, so it names no language.
+    const entries = [...groupMap.values()].flat();
+    const extent = ([["module", ["group"]], ["type", ["class", "struct", "union", "interface"]], ["namespace", ["namespace"]]] as const)
+      .map(([noun, kinds]) => ({ noun, count: entries.filter((entry) => (kinds as readonly string[]).includes(entry.kind)).length }))
+      .find(({ count }) => count > 0);
 
     pages.set(indexSlug, {
       kind: "markdown",
       title: tabLabel,
-      description: "",
+      description: extent
+        ? `API reference across ${extent.count} ${extent.noun}${extent.count === 1 ? "" : "s"}.`
+        : "API reference.",
       slug: indexSlug,
       html: indexHtml,
       markdown: [...pages.values()]
