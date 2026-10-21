@@ -135,7 +135,7 @@
           opt.className = opt.className.replace(/(dark:)?text-\[rgb\([^\]]+\)\]/g, "").trim();
           if (isActive) {
             opt.classList.add(
-              "text-[rgb(var(--color-primary))]",
+              "text-[rgb(var(--color-primary-ink))]",
               "dark:text-[rgb(var(--color-primary-light))]",
             );
             if (label) label.textContent = opt.textContent.trim();

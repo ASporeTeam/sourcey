@@ -41,7 +41,7 @@ describe("site pages", () => {
     // No section is current, and the sections are in the drawer.
     if (theme !== "reader") {
       expect(home).not.toMatch(/\[text-shadow:[^"]*"[^>]*>Documentation/);
-      expect(home).toMatch(/<nav class="sourcey-nav-scroll[^"]*" aria-label="Documentation sections"><ul class="space-y-px"><li><a href="\/docs\/start\/" class="nav-link">/);
+      expect(home).toMatch(/<nav class="sourcey-nav-scroll[^"]*" aria-label="All sections"><ul class="space-y-px"><li><a href="\/docs\/start\/" class="nav-link">/);
       expect(home).toContain('<span class="font-semibold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] truncate min-w-0">Pets for everyone</span>');
     }
     // The site's home is where the logo leads.

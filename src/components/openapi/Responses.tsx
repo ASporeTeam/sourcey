@@ -116,7 +116,7 @@ export function ResponsesExamples({ responses }: ResponsesProps) {
               class={`response-tab group relative my-1 mb-1.5 flex items-center gap-1.5 whitespace-nowrap font-medium outline-0${i === 0 ? " active" : ""}`}
               data-response-index={String(i)}
             >
-              <div class="z-10 flex items-center gap-1.5 rounded-lg px-1.5 group-hover:bg-[rgb(var(--color-stone-200)/0.5)] group-hover:text-[rgb(var(--color-primary))] dark:group-hover:bg-[rgb(var(--color-stone-700)/0.7)] dark:group-hover:text-[rgb(var(--color-primary-light))]">
+              <div class="z-10 flex items-center gap-1.5 rounded-lg px-1.5 group-hover:bg-[rgb(var(--color-stone-200)/0.5)] group-hover:text-[rgb(var(--color-primary-ink))] dark:group-hover:bg-[rgb(var(--color-stone-700)/0.7)] dark:group-hover:text-[rgb(var(--color-primary-light))]">
                 {g.statusCode}
               </div>
             </button>

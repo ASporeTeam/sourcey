@@ -59,11 +59,12 @@ export function TableOfContents({ headings, label }: { headings: PageHeading[]; 
     return (
       <aside
         id="toc"
+        aria-labelledby="sourcey-toc-label"
         class="toc-wide hidden xl:block self-start sticky shrink-0 overflow-y-auto"
         style="max-height: calc(100vh - var(--header-height) - 2.5rem); top: calc(var(--header-height) + 2.5rem)"
       >
-        <h5 class="toc-wide-label"><TocIcon />{label}</h5>
-        <nav>
+        <p id="sourcey-toc-label" class="toc-wide-label"><TocIcon />{label}</p>
+        <nav aria-labelledby="sourcey-toc-label">
           <TocList headings={headings} />
         </nav>
       </aside>
@@ -74,17 +75,19 @@ export function TableOfContents({ headings, label }: { headings: PageHeading[]; 
   return (
     <aside
       id="toc"
+      aria-labelledby="sourcey-toc-label"
       class="hidden xl:flex self-start sticky xl:flex-col max-w-[28rem] xl:mr-4 z-[21]"
       style="height: calc(100vh - var(--header-height) - 2.5rem); top: calc(var(--header-height) + 2.5rem)"
     >
       <div class="z-10 hidden xl:flex box-border max-h-full pl-10 w-[19rem]">
         <div class="text-[rgb(var(--color-gray-600))] text-sm leading-6 w-[16.5rem] overflow-y-auto space-y-2 pb-4 -mt-10 pt-10">
-          <h5 class="font-medium text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))] flex items-center gap-2">
+          {/* The label names the navigation; it is not a heading of the page. */}
+          <p id="sourcey-toc-label" class="font-medium text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))] flex items-center gap-2">
             <TocIcon />
             {label}
-          </h5>
+          </p>
 
-          <nav>
+          <nav aria-labelledby="sourcey-toc-label">
             <TocList headings={headings} />
           </nav>
         </div>

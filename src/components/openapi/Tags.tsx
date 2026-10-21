@@ -46,7 +46,7 @@ export function Tags({ tags, showOperations = true }: TagsProps) {
               >
                 <AnchorAliases target={tagAnchor(tag.name, spec)} />
                 {parents.length > 0 && (
-                  <div class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-[rgb(var(--color-gray-500))]">
+                  <div class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
                     {parents.map(displayLabel).join(" / ")}
                   </div>
                 )}

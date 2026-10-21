@@ -2,6 +2,8 @@ import type { NormalizedSchema } from "../../core/types.js";
 import type { ExampleVariant } from "../../utils/example-variants.js";
 import { variantFromSchema } from "../../utils/example-variants.js";
 import { CopyButton } from "../ui/CopyButton.js";
+import { useContext } from "preact/hooks";
+import { OptionsContext } from "../../renderer/context.js";
 
 const BODY_WRAP =
   "relative w-full px-4 py-3.5 text-sm leading-6 bg-[rgb(var(--color-code-block-light))] dark:bg-[rgb(var(--color-code-block-dark))] overflow-x-auto";
@@ -23,12 +25,12 @@ export function VariantBody({ variant, showCopy }: { variant: ExampleVariant; sh
       )}
       {variant.externalValue ? (
         <p class="text-xs">
-          <span class="text-[rgb(var(--color-gray-500))]">External example: </span>
+          <span class="text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">External example: </span>
           <a
             href={variant.externalValue}
             target="_blank"
             rel="noopener"
-            class="break-all text-[rgb(var(--color-primary))] hover:underline"
+            class="break-all text-[rgb(var(--color-primary-ink))] dark:text-[rgb(var(--color-primary-light))] hover:underline"
           >
             {variant.externalValue}
           </a>
@@ -46,6 +48,7 @@ export function VariantBody({ variant, showCopy }: { variant: ExampleVariant; sh
  * to the left of the copy button, identical to the language select.
  */
 export function VariantDropdown({ variants }: { variants: ExampleVariant[] }) {
+  const { messages } = useContext(OptionsContext);
   return (
     <div class="code-lang-dropdown relative">
       <button
@@ -54,7 +57,7 @@ export function VariantDropdown({ variants }: { variants: ExampleVariant[] }) {
         aria-expanded="false"
         aria-haspopup="listbox"
       >
-        <div class="z-10 flex items-center gap-1 rounded-lg px-1.5 group-hover:bg-[rgb(var(--color-stone-200)/0.5)] group-hover:text-[rgb(var(--color-primary))] dark:group-hover:bg-[rgb(var(--color-stone-700)/0.7)] dark:group-hover:text-[rgb(var(--color-primary-light))]">
+        <div class="z-10 flex items-center gap-1 rounded-lg px-1.5 group-hover:bg-[rgb(var(--color-stone-200)/0.5)] group-hover:text-[rgb(var(--color-primary-ink))] dark:group-hover:bg-[rgb(var(--color-stone-700)/0.7)] dark:group-hover:text-[rgb(var(--color-primary-light))]">
           <span class="code-lang-label truncate">{variants[0].label}</span>
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" class="size-3.5 shrink-0">
             <path d="m7 15 5 5 5-5" />
@@ -62,13 +65,13 @@ export function VariantDropdown({ variants }: { variants: ExampleVariant[] }) {
           </svg>
         </div>
       </button>
-      <div class="code-lang-menu hidden absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg border border-[rgb(var(--color-stone-200))] dark:border-[rgb(255_255_255/0.1)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-stone-900))] shadow-lg py-1" role="listbox">
+      <div class="code-lang-menu hidden absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg border border-[rgb(var(--color-stone-200))] dark:border-[rgb(255_255_255/0.1)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))] shadow-lg py-1" role="listbox" aria-label={messages.example}>
         {variants.map((v, i) => (
           <button
             key={i}
             role="option"
             aria-selected={i === 0 ? "true" : "false"}
-            class={`code-lang-option w-full text-left px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 hover:bg-[rgb(var(--color-stone-100))] dark:hover:bg-[rgb(255_255_255/0.05)] ${i === 0 ? "text-[rgb(var(--color-primary))] dark:text-[rgb(var(--color-primary-light))]" : "text-[rgb(var(--color-stone-600))] dark:text-[rgb(var(--color-stone-400))]"}`}
+            class={`code-lang-option w-full text-left px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 hover:bg-[rgb(var(--color-stone-100))] dark:hover:bg-[rgb(255_255_255/0.05)] ${i === 0 ? "text-[rgb(var(--color-primary-ink))] dark:text-[rgb(var(--color-primary-light))]" : "text-[rgb(var(--color-stone-600))] dark:text-[rgb(var(--color-stone-400))]"}`}
             data-lang-index={String(i)}
           >
             {v.label}

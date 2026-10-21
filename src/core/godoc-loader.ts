@@ -506,9 +506,9 @@ function renderIndexPage(spec: GodocSpec, packages: GodocPackage[]): string {
     cards.push(
       `<a href="${slug}.html" class="card-item">` +
         `<div class="card-item-inner">` +
-        `<h3 class="card-item-title">${escHtml(title)}</h3>` +
+        `<h2 class="card-item-title">${escHtml(title)}</h2>` +
         `<div class="card-item-content">${synopsis}` +
-        `<p style="margin:0.5rem 0 0;font-size:0.8rem;opacity:0.5"><code>${escHtml(pkg.importPath)}</code></p>` +
+        `<p class="card-item-meta"><code>${escHtml(pkg.importPath)}</code></p>` +
         `</div></div></a>`,
     );
   }
@@ -594,7 +594,8 @@ function renderTableOfContents(pkg: GodocPackage): string {
   if (pkg.examples.length > 0) items.push(`<li><a href="#examples">Examples</a></li>`);
 
   if (items.length === 0) return "";
-  return `<nav class="godoc-toc not-prose"><h4>Index</h4><ul>${items.join("")}</ul></nav>`;
+  // "Index" names the navigation; the page's own sections are its headings.
+  return `<nav class="godoc-toc not-prose" aria-labelledby="godoc-index"><p id="godoc-index" class="godoc-toc-label">Index</p><ul>${items.join("")}</ul></nav>`;
 }
 
 function renderValueGroup(

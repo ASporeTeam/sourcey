@@ -322,8 +322,9 @@ function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
         return `<h${level} id="${escapeAttr(id)}">${this.parser.parseInline(tokens)}</h${level}>\n`;
       },
       table(token: Tokens.Table): string {
+        // A header row's empty corner heads nothing, so it is a plain cell.
         const header = token.header
-          .map((cell) => `<th>${this.parser.parseInline(cell.tokens)}</th>`)
+          .map((cell) => cell.text.trim() ? `<th>${this.parser.parseInline(cell.tokens)}</th>` : "<td></td>")
           .join("");
         const body = token.rows
           .map(
@@ -331,7 +332,7 @@ function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
               `<tr>${row.map((cell) => `<td>${this.parser.parseInline(cell.tokens)}</td>`).join("")}</tr>`,
           )
           .join("\n");
-        return `<div class="table-wrap"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
+        return `<div class="table-wrap" tabindex="0"><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`;
       },
       link({ href, title, tokens }: Tokens.Link): string {
         const text = this.parser.parseInline(tokens);

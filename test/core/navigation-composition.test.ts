@@ -174,7 +174,7 @@ export default {theme:{fonts:{google:false}}, navigation:{tabs:[{id:'rest',tab:'
     expect(site.navigation.tabs.map(tab => tab.href)).toEqual(["/start/", "/api/"]);
     // On its own page, the section is open and its heading current.
     const nav = (await sourceyArtifacts(site)).get("start/index.html")!.toString().match(/<nav id="nav"[\s\S]*?<\/nav>/)![0];
-    expect(nav).toMatch(/<details open class="sourcey-nav-group"><summary><a href="[^"]*start\/" class="nav-group-label nav-group-link active">Getting started<\/a><\/summary>/);
+    expect(nav).toMatch(/<div class="sourcey-nav-group-linked"><a href="[^"]*start\/" class="nav-group-label nav-group-link active">Getting started<\/a><details open class="sourcey-nav-group"><summary aria-label="Getting started"><\/summary>/);
   }));
 
   it("fails on an operation link that no reference, or more than one, publishes until it names one", () => fixture(async root => {

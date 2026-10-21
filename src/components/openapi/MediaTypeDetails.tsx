@@ -67,7 +67,7 @@ function EncodingDetails({ content }: { content: MediaTypeContent }) {
 
   return (
     <div class="mt-4">
-      <div class="text-xs font-semibold uppercase tracking-[0.14em] text-[rgb(var(--color-gray-500))]">
+      <div class="text-xs font-semibold uppercase tracking-[0.14em] text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
         Encoding
       </div>
 
@@ -80,7 +80,7 @@ function EncodingDetails({ content }: { content: MediaTypeContent }) {
 
       {positionalEntries.length > 0 && (
         <div class={namedEntries.length > 0 ? "mt-4" : "mt-2"}>
-          <div class="text-xs font-medium text-[rgb(var(--color-gray-500))]">
+          <div class="text-xs font-medium text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
             Ordered Parts
           </div>
           <EncodingList
@@ -138,7 +138,7 @@ function EncodingItem({ name, encoding }: { name: string; encoding: EncodingObje
 
       {headerEntries.length > 0 && (
         <div class="mt-3">
-          <div class="text-xs font-medium text-[rgb(var(--color-gray-500))]">
+          <div class="text-xs font-medium text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
             Headers
           </div>
           <div class="params-list mt-2">
@@ -151,7 +151,7 @@ function EncodingItem({ name, encoding }: { name: string; encoding: EncodingObje
 
       {nestedEntries.length > 0 && (
         <div class="mt-3">
-          <div class="text-xs font-medium text-[rgb(var(--color-gray-500))]">
+          <div class="text-xs font-medium text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
             Nested Encoding
           </div>
           <EncodingList className="params-list mt-2" entries={nestedEntries} />

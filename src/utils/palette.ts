@@ -51,6 +51,69 @@ export function shadedNeutrals(primary: string): ShadedNeutrals {
   };
 }
 
+/** Text reads at this contrast or more (WCAG AA for body text). */
+const TEXT_CONTRAST = 4.5;
+const READER_HUE = (286 * Math.PI) / 180;
+/** The light pages that primary-coloured text sits on: the page and the reader theme's paper. */
+const LIGHT_PAGES: readonly Rgb[] = [[255, 255, 255], [247, 248, 251]];
+/** The dark pages for the same text: the dark page and the reader theme's dark paper. */
+const DARK_PAGES: readonly Rgb[] = [[11, 12, 16], [20, 22, 28]];
+/** The reader theme's selection, behind its current chapter, in each scheme. */
+const LIGHT_SELECTION = oklchToRgb(0.93, 0.025, READER_HUE);
+const DARK_SELECTION = oklchToRgb(0.27, 0.04, READER_HUE);
+/** The strongest tint of the colour itself laid on a page behind text in it, an active item's background. */
+const LIGHT_TINT = 0.12;
+const DARK_TINT = 0.14;
+
+export interface TextShades {
+  /** For text on light surfaces, and fills behind white text. */
+  ink: string;
+  /** For text on dark surfaces. */
+  light: string;
+}
+
+/**
+ * The primary colour as text in each scheme: the colour itself where it
+ * reads, otherwise the nearest OKLCH lightness of its hue and chroma that
+ * does, darker for light surfaces and lighter for dark ones.
+ */
+export function textShades(primary: string): TextShades {
+  const colour = parseRgb(primary);
+  return {
+    ink: readableShade(colour, LIGHT_PAGES, LIGHT_SELECTION, LIGHT_TINT, -1),
+    light: readableShade(colour, DARK_PAGES, DARK_SELECTION, DARK_TINT, 1),
+  };
+}
+
+function readableShade(colour: Rgb, pages: readonly Rgb[], selection: Rgb, tint: number, direction: 1 | -1): string {
+  const reads = (candidate: Rgb) =>
+    contrast(candidate, selection) >= TEXT_CONTRAST &&
+    pages.every((page) => contrast(candidate, page) >= TEXT_CONTRAST && contrast(candidate, blend(candidate, page, tint)) >= TEXT_CONTRAST);
+  if (reads(colour)) return colour.join(" ");
+  const [lightness, chroma, hue] = rgbToOklch(colour);
+  for (let next = lightness; next >= 0 && next <= 1; next += direction * 0.005) {
+    const candidate = oklchToRgb(next, chroma, hue);
+    if (reads(candidate)) return candidate.join(" ");
+  }
+  return direction < 0 ? "0 0 0" : "255 255 255";
+}
+
+/** WCAG contrast ratio of two colours. */
+export function contrast(a: Rgb, b: Rgb): number {
+  const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (high + 0.05) / (low + 0.05);
+}
+
+function luminance([r, g, b]: Rgb): number {
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+/** `colour` at `alpha` over `base`, composited as CSS composites a translucent fill. */
+function blend(colour: Rgb, base: Rgb, alpha: number): Rgb {
+  const channel = (i: 0 | 1 | 2) => Math.round(colour[i] * alpha + base[i] * (1 - alpha));
+  return [channel(0), channel(1), channel(2)];
+}
+
 function parseRgb(triplet: string): Rgb {
   const parts = triplet.trim().split(/\s+/).map(Number);
   if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) {

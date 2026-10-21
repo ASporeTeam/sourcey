@@ -142,7 +142,7 @@ export function SecurityDefinitions() {
                         <dl class="mt-2 text-sm">
                           {flow?.authorizationUrl && (
                             <>
-                              <dt class="text-[rgb(var(--color-gray-500))] mt-2">
+                              <dt class="text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] mt-2">
                                 Authorization URL
                               </dt>
                               <dd>
@@ -152,7 +152,7 @@ export function SecurityDefinitions() {
                           )}
                           {flow?.deviceAuthorizationUrl && (
                             <>
-                              <dt class="text-[rgb(var(--color-gray-500))] mt-2">
+                              <dt class="text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] mt-2">
                                 Device Authorization URL
                               </dt>
                               <dd>
@@ -162,7 +162,7 @@ export function SecurityDefinitions() {
                           )}
                           {flow?.tokenUrl && (
                             <>
-                              <dt class="text-[rgb(var(--color-gray-500))] mt-2">Token URL</dt>
+                              <dt class="text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] mt-2">Token URL</dt>
                               <dd>
                                 <code class="text-xs">{flow.tokenUrl}</code>
                               </dd>
@@ -171,14 +171,14 @@ export function SecurityDefinitions() {
                         </dl>
                         {flow?.scopes && Object.keys(flow.scopes).length > 0 && (
                           <div class="mt-3">
-                            <span class="text-sm text-[rgb(var(--color-gray-500))]">Scopes</span>
+                            <span class="text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">Scopes</span>
                             <ul class="mt-1 space-y-1">
                               {Object.entries(flow.scopes).map(([s, desc]) => (
                                 <li key={s} class="text-sm">
                                   <code class="text-xs font-medium text-[rgb(var(--color-gray-800))] dark:text-[rgb(var(--color-gray-200))]">
                                     {s}
                                   </code>
-                                  <span class="text-[rgb(var(--color-gray-500))] ml-2">
+                                  <span class="text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] ml-2">
                                     - {desc}
                                   </span>
                                 </li>

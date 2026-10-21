@@ -2,7 +2,7 @@ import { useContext } from "preact/hooks";
 import type { NormalizedOperation, NormalizedRequestBody } from "../../core/types.js";
 import { operationAnchor, operationFieldRoot, referenceFieldPath, operationSectionAnchor, operationSections, type OperationSection } from "../../core/reference-identity.js";
 import { SECTION_LABELS } from "./outline.js";
-import { PageContext, SiteContext, SpecContext } from "../../renderer/context.js";
+import { PageContext, SiteContext, SpecContext, isOperationPage } from "../../renderer/context.js";
 import { AnchorAliases } from "../ui/AnchorAliases.js";
 import { Markdown } from "../ui/Markdown.js";
 import { DeprecatedBadge } from "../ui/Badge.js";
@@ -35,7 +35,7 @@ export function Operation({ operation: op }: OperationProps) {
   const spec = useContext(SpecContext);
   const page = useContext(PageContext);
   const id = operationAnchor(op, spec);
-  const standalone = page.kind === "spec" && page.view?.kind === "operation";
+  const standalone = isOperationPage(page);
   return (
     // One console per operation on a page, named by the operation.
     <ConsoleIdentity.Provider value={`tryit-${id}`}>
@@ -64,7 +64,7 @@ export function Operation({ operation: op }: OperationProps) {
 
 function OperationIdentity({ operation: op }: OperationProps) {
   const page = useContext(PageContext);
-  const standalone = page.kind === "spec" && page.view?.kind === "operation";
+  const standalone = isOperationPage(page);
   const Heading = standalone ? "h1" : "h2";
   const mcp = op.mcpExtras;
   return (
@@ -116,7 +116,7 @@ function DefaultOperationDetail({ operation: op }: OperationProps) {
  */
 function SplitOperationIdentity({ operation: op }: OperationProps) {
   const page = useContext(PageContext);
-  const standalone = page.kind === "spec" && page.view?.kind === "operation";
+  const standalone = isOperationPage(page);
   const Heading = standalone ? "h1" : "h2";
   const mcp = op.mcpExtras;
   return (

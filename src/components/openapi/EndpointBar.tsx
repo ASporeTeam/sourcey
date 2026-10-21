@@ -43,10 +43,10 @@ export function EndpointBar({ operation }: { operation: NormalizedOperation }) {
       {/* URL display: the whole endpoint, wrapping between path segments on a narrow screen. */}
       <div
         data-endpoint-url
-        class="flex flex-wrap items-center flex-1 min-w-0 gap-x-0.5 font-mono text-sm"
+        class="flex flex-wrap items-center flex-1 min-w-0 gap-x-0.5 gap-y-1 font-mono text-sm"
       >
         {base && (
-          <span class="text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-500))] min-w-0 break-all">
+          <span class="text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] min-w-0 break-all">
             {base}
           </span>
         )}

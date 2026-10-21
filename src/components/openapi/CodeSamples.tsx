@@ -4,7 +4,7 @@ import { highlightCode } from "../../utils/highlighter.js";
 import { langIcon } from "../../utils/lang-icons.js";
 import { CopyButton } from "../ui/CopyButton.js";
 import { useContext } from "preact/hooks";
-import { SiteContext, SpecContext } from "../../renderer/context.js";
+import { OptionsContext, SiteContext, SpecContext } from "../../renderer/context.js";
 
 interface CodeSamplesProps {
   operation: NormalizedOperation;
@@ -18,6 +18,7 @@ interface CodeSamplesProps {
 export function CodeSamplesExamples({ operation, codeSampleLangs }: CodeSamplesProps) {
   const spec = useContext(SpecContext);
   const site = useContext(SiteContext);
+  const { messages } = useContext(OptionsContext);
   const samples = generateCodeSamples(operation, spec.servers, codeSampleLangs, spec.securitySchemes, spec.sourceUrl ?? site?.siteUrl);
   if (!samples.length) return null;
 
@@ -42,7 +43,7 @@ export function CodeSamplesExamples({ operation, codeSampleLangs }: CodeSamplesP
               aria-expanded="false"
               aria-haspopup="listbox"
             >
-              <div class="z-10 flex items-center gap-1 rounded-lg px-1.5 group-hover:bg-[rgb(var(--color-stone-200)/0.5)] group-hover:text-[rgb(var(--color-primary))] dark:group-hover:bg-[rgb(var(--color-stone-700)/0.7)] dark:group-hover:text-[rgb(var(--color-primary-light))]">
+              <div class="z-10 flex items-center gap-1 rounded-lg px-1.5 group-hover:bg-[rgb(var(--color-stone-200)/0.5)] group-hover:text-[rgb(var(--color-primary-ink))] dark:group-hover:bg-[rgb(var(--color-stone-700)/0.7)] dark:group-hover:text-[rgb(var(--color-primary-light))]">
                 <span
                   class="code-lang-icon"
                   dangerouslySetInnerHTML={{ __html: langIcon(samples[0].lang) }}
@@ -67,15 +68,16 @@ export function CodeSamplesExamples({ operation, codeSampleLangs }: CodeSamplesP
             </button>
             {/* Dropdown menu (hidden by default, toggled by JS) */}
             <div
-              class="code-lang-menu hidden absolute right-0 top-full mt-1 z-20 min-w-[120px] rounded-lg border border-[rgb(var(--color-stone-200))] dark:border-[rgb(255_255_255/0.1)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-stone-900))] shadow-lg py-1"
+              class="code-lang-menu hidden absolute right-0 top-full mt-1 z-20 min-w-[120px] rounded-lg border border-[rgb(var(--color-stone-200))] dark:border-[rgb(255_255_255/0.1)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))] shadow-lg py-1"
               role="listbox"
+              aria-label={messages.codeLanguage}
             >
               {samples.map((sample, i) => (
                 <button
                   key={i}
                   role="option"
                   aria-selected={i === 0 ? "true" : "false"}
-                  class={`code-lang-option w-full text-left px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 hover:bg-[rgb(var(--color-stone-100))] dark:hover:bg-[rgb(255_255_255/0.05)] ${i === 0 ? "text-[rgb(var(--color-primary))] dark:text-[rgb(var(--color-primary-light))]" : "text-[rgb(var(--color-stone-600))] dark:text-[rgb(var(--color-stone-400))]"}`}
+                  class={`code-lang-option w-full text-left px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 hover:bg-[rgb(var(--color-stone-100))] dark:hover:bg-[rgb(255_255_255/0.05)] ${i === 0 ? "text-[rgb(var(--color-primary-ink))] dark:text-[rgb(var(--color-primary-light))]" : "text-[rgb(var(--color-stone-600))] dark:text-[rgb(var(--color-stone-400))]"}`}
                   data-lang-index={String(i)}
                 >
                   <span dangerouslySetInnerHTML={{ __html: langIcon(sample.lang) }} />

@@ -20,8 +20,12 @@ interface Props {
   data: ConsoleData;
   id: string;
   onClose(): void;
+  /** The level of the operation's own sections, which the console's sit beside. */
+  headingLevel?: 2 | 3;
 }
-export function Console({ data, id, onClose }: Props) {
+export function Console({ data, id, onClose, headingLevel = 3 }: Props) {
+  const Heading = headingLevel === 2 ? "h2" : "h3";
+  const Subheading = headingLevel === 2 ? "h3" : "h4";
   const { draft, update, saving, clearSaved } = useDraft(data);
   const execution = useRequest(id);
   const { sending, message, response, sentDraft, setMessage, abort } = execution;
@@ -140,7 +144,7 @@ export function Console({ data, id, onClose }: Props) {
         }}
       >
         <div class="tryit-heading">
-          <h3>Request</h3>
+          <Heading>Request</Heading>
           <button
             type="button"
             class="sourcey-button sourcey-button-quiet"
@@ -356,7 +360,7 @@ export function Console({ data, id, onClose }: Props) {
           {data.operation.requestBody && (
             <section class="tryit-body">
               <div class="tryit-heading">
-                <h4>Body{data.operation.requestBody.required ? " · required" : ""}</h4>
+                <Subheading>Body{data.operation.requestBody.required ? " · required" : ""}</Subheading>
                 {draft.mediaType.includes("json") && (
                   <button
                     type="button"
@@ -507,7 +511,7 @@ export function Console({ data, id, onClose }: Props) {
             </label>
             {sample && <CopyAction text={sample.source} />}
           </div>
-          <pre class="tryit-code">
+          <pre class="tryit-code" tabIndex={0}>
             <code>{sample?.source}</code>
           </pre>
           <label class="tryit-include">
@@ -520,7 +524,7 @@ export function Console({ data, id, onClose }: Props) {
           </label>
         </details>
       </form>
-      {response && <ResponseView response={response} stale={sentDraft !== draft} id={id} />}
+      {response && <ResponseView response={response} stale={sentDraft !== draft} id={id} headingLevel={headingLevel} />}
     </div>
   );
 }

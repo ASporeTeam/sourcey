@@ -101,7 +101,7 @@ export function Header() {
   const wide = site.theme.name === "api-first";
 
   return (
-    <div id="navbar" class="z-30 fixed lg:sticky top-0 w-full">
+    <header id="navbar" class="z-30 fixed lg:sticky top-0 w-full">
       <div class="navbar-band absolute w-full h-full flex-none border-b border-[rgb(var(--color-gray-200)/0.7)] dark:border-[rgb(var(--color-gray-300)/0.06)] bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))]" />
 
       <div class={wide ? "relative w-full" : "max-w-[92rem] mx-auto relative"}>
@@ -118,17 +118,18 @@ export function Header() {
 
               {/* Search bar (desktop) */}
               <div class="sourcey-header-search relative hidden lg:flex items-center flex-1 z-20 gap-2">
+                {/* Named by its visible placeholder, so a voice command that reads it reaches it. */}
                 <button
                   id="search-open"
                   type="button"
-                  aria-label={messages.search}
+                  aria-keyshortcuts="/"
                   class="sourcey-search-control group flex pointer-events-auto rounded-[var(--sourcey-control-radius)] w-full items-center text-sm leading-6 h-[var(--sourcey-control-height)] pl-3.5 pr-3 text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] ring-1 ring-[rgb(var(--color-gray-400)/0.3)] hover:ring-[rgb(var(--color-gray-600)/0.3)] dark:ring-[rgb(var(--color-gray-600)/0.3)] dark:hover:ring-[rgb(var(--color-gray-500)/0.3)] justify-between truncate gap-2 min-w-[43px] cursor-pointer bg-[rgb(var(--color-background-light))] dark:bg-[rgb(var(--color-background-dark))] dark:brightness-110 dark:hover:brightness-125"
                 >
                   <div class="flex items-center gap-2 min-w-[42px]">
                     <SearchIcon />
                     <div class="truncate min-w-0">{messages.searchPlaceholder}</div>
                   </div>
-                  <kbd>/</kbd>
+                  <kbd aria-hidden="true">/</kbd>
                 </button>
               </div>
 
@@ -137,7 +138,7 @@ export function Header() {
               <div class="sourcey-header-end contents">
                 {/* Right actions (desktop): navbar links + CTA. Network links are icons in control-sized targets. */}
                 <div class="sourcey-header-actions flex-1 relative hidden lg:flex items-center ml-auto justify-end">
-                  <nav class="text-sm">
+                  {(site.navbar.links.length > 0 || site.navbar.primary) && <nav class="text-sm" aria-label={messages.siteLinks}>
                     <ul class="flex gap-x-1 items-center">
                       {site.navbar.links.map((link) => (
                         <li key={link.href}>
@@ -157,7 +158,7 @@ export function Header() {
                         </li>
                       )}
                     </ul>
-                  </nav>
+                  </nav>}
 
                 </div>
 
@@ -190,7 +191,7 @@ export function Header() {
 
         <div class="sourcey-header-navigation" data-desktop={nav.tabs.length > 1 || hasContextChoices(options.equivalents)}>
           <MobileBreadcrumbs nav={nav} />
-          {nav.tabs.length > 1 && <nav class="sourcey-section-tabs" aria-label="Documentation sections">
+          {nav.tabs.length > 1 && <nav class="sourcey-section-tabs" aria-label={messages.sectionsNavigation}>
             {nav.tabs.map((tab) => {
               const isActive = tab.slug === nav.activeTabSlug;
               return (
@@ -216,6 +217,6 @@ export function Header() {
           <ContextControls />
         </div>
       </div>
-    </div>
+    </header>
   );
 }

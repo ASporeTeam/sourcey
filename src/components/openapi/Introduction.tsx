@@ -32,7 +32,7 @@ export function Introduction() {
     <div id="introduction" data-traverse-target="introduction" class="mb-8">
       <AnchorAliases target="introduction" />
       {termsUrl && (
-        <p class="mt-4 text-sm text-[rgb(var(--color-gray-500))]">
+        <p class="mt-4 text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
           <a
             href={termsUrl}
             class="text-[rgb(var(--color-primary-ink))] dark:text-[rgb(var(--color-primary-light))]"
@@ -43,7 +43,7 @@ export function Introduction() {
       )}
 
       {info.contact?.email && contactEmailUrl && (
-        <p class="mt-2 text-sm text-[rgb(var(--color-gray-500))]">
+        <p class="mt-2 text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
           Contact:{" "}
           <a
             href={contactEmailUrl}
@@ -70,12 +70,12 @@ export function Introduction() {
                   {s.url}
                 </code>
                 {s.description && (
-                  <span class="text-xs text-[rgb(var(--color-gray-500))]">{s.description}</span>
+                  <span class="text-xs text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">{s.description}</span>
                 )}
               </div>
               {/* A templated URL names what each placeholder takes. */}
               {s.variables && Object.keys(s.variables).length > 0 && (
-                <dl class="mt-1.5 space-y-0.5 text-xs text-[rgb(var(--color-gray-500))]">
+                <dl class="mt-1.5 space-y-0.5 text-xs text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
                   {Object.entries(s.variables).map(([name, variable]) => (
                     <div key={name} class="flex flex-wrap items-baseline gap-x-1.5">
                       <dt><code class="font-mono text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))]">{name}</code></dt>

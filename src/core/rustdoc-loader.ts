@@ -218,9 +218,9 @@ function renderWorkspaceIndexPage(
     const modules = c.modules.length;
     const summary = `${items} item${items === 1 ? "" : "s"} across ${modules} module${modules === 1 ? "" : "s"}.`;
     const version = c.version
-      ? `<p style="margin:0.5rem 0 0;font-size:0.8rem;opacity:0.5">v${escapeHtml(c.version)}</p>`
+      ? `<p class="card-item-meta">v${escapeHtml(c.version)}</p>`
       : "";
-    headings.push({ id: crateIndexSlug(c.name), text: c.name, level: 3 });
+    headings.push({ id: crateIndexSlug(c.name), text: c.name, level: 2 });
     searchEntries.push({
       title: c.name,
       content: summary,
@@ -231,7 +231,7 @@ function renderWorkspaceIndexPage(
     return (
       `<a class="card-item" href="${escapeHtml(href)}" id="${crateIndexSlug(c.name)}">` +
       `<div class="card-item-inner">` +
-      `<h3 class="card-item-title">${escapeHtml(c.name)}</h3>` +
+      `<h2 class="card-item-title">${escapeHtml(c.name)}</h2>` +
       `<div class="card-item-content"><p>${escapeHtml(summary)}</p>${version}</div>` +
       `</div></a>`
     );
@@ -269,12 +269,12 @@ function renderCrateIndexPage(crate: CrateSpec, tab: RustTab): MarkdownPage {
       const label = m.path.length === 0 ? `${crate.name} (root)` : m.path.join("::");
       const count = m.item_ids.length;
       const lead = moduleSummary(m.docs_markdown);
-      const meta = `<p style="margin:0.5rem 0 0;font-size:0.8rem;opacity:0.5">${count} item${count === 1 ? "" : "s"}</p>`;
-      headings.push({ id: mSlug, text: label, level: 3 });
+      const meta = `<p class="card-item-meta">${count} item${count === 1 ? "" : "s"}</p>`;
+      headings.push({ id: mSlug, text: label, level: 2 });
       return (
         `<a class="card-item" href="${escapeHtml(href)}" id="${mSlug}">` +
         `<div class="card-item-inner">` +
-        `<h3 class="card-item-title">${escapeHtml(label)}</h3>` +
+        `<h2 class="card-item-title">${escapeHtml(label)}</h2>` +
         `<div class="card-item-content">${lead ? `<p>${renderMarkdownInline(lead)}</p>` : ""}${meta}</div>` +
         `</div></a>`
       );
@@ -307,12 +307,11 @@ function renderDoctestsIndexPage(
   const searchEntries: PageSearchEntry[] = [];
   const parts: string[] = [];
   parts.push(`<section class="rust-doctests-index">`);
-  parts.push(`<h1>Doctests</h1>`);
   parts.push(`<p>${doctests.length} runnable example${doctests.length === 1 ? "" : "s"}.</p>`);
   for (const { crate, item, doctest } of doctests) {
     const parentPath = item.path.join("::");
     const anchor = `doctest-${itemAnchor(item)}-${doctest.ordinal}`;
-    headings.push({ id: anchor, text: parentPath, level: 3 });
+    headings.push({ id: anchor, text: parentPath, level: 2 });
     searchEntries.push({
       title: `Doctest: ${parentPath}`,
       content: doctest.display_code.slice(0, 200),
@@ -323,7 +322,7 @@ function renderDoctestsIndexPage(
       namespace: crate.name,
     });
     parts.push(
-      `<section class="rust-doctest" id="${anchor}"><h3>${escapeHtml(parentPath)}</h3>` +
+      `<section class="rust-doctest" id="${anchor}"><h2>${escapeHtml(parentPath)}</h2>` +
         renderDoctestBadges(doctest) +
         renderCodeBlock(doctest.display_code, "rust") +
         `</section>`,

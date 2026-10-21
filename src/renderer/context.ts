@@ -91,6 +91,11 @@ export const NavigationContext = createContext<SiteNavigation>(null as never);
  */
 export const PageContext = createContext<CurrentPage>(null as never);
 
+/** A reference page that holds one operation, titled by it, rather than a reference listing many. */
+export function isOperationPage(page: CurrentPage): boolean {
+  return page.kind === "spec" && page.view?.kind === "operation";
+}
+
 /**
  * Site-wide config available to all layout components.
  */

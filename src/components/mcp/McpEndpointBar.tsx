@@ -4,7 +4,7 @@
 
 const methodColors: Record<string, string> = {
   tool: "bg-purple-400/20 dark:bg-purple-400/20 text-purple-700 dark:text-purple-400",
-  resource: "bg-green-400/20 dark:bg-green-400/20 text-green-700 dark:text-green-400",
+  resource: "bg-green-400/20 dark:bg-green-400/20 text-green-800 dark:text-green-400",
   prompt: "bg-blue-400/20 dark:bg-blue-400/20 text-blue-700 dark:text-blue-400",
 };
 
@@ -23,7 +23,7 @@ export function McpEndpointBar({ method, path }: { method: string; path: string 
       <span class="flex items-center overflow-x-auto flex-1 no-scrollbar font-mono text-sm text-[rgb(var(--color-gray-800))] dark:text-[rgb(var(--color-gray-200))]">
         {segments.map((seg, i) =>
           seg.startsWith("{") ? (
-            <span key={i} class="text-[rgb(var(--color-gray-400))] dark:text-[rgb(var(--color-gray-500))]">{seg}</span>
+            <span key={i} class="text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">{seg}</span>
           ) : (
             <span key={i}>{seg}</span>
           ),

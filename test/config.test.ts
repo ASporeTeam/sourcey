@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { resolveConfigFromRaw } from "../src/config.js";
 import { doxygen, godoc, markdown, openapi } from "../src/adapters/index.js";
 import type { SourceyConfig } from "../src/config.js";
+import { contrast, rgbToOklch } from "../src/utils/palette.js";
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "sourcey-config-"));
@@ -83,6 +84,29 @@ describe("resolveConfigFromRaw – validation", () => {
           dir,
         ),
       ).rejects.toThrow(/theme\.reader options require theme\.name/);
+    });
+  });
+
+  it("derives each text shade a site leaves out from its primary, so links read in both schemes", async () => {
+    await withTempDir(async (dir) => {
+      const colours = async (colors: { primary: string; light?: string; dark?: string }) =>
+        (await resolveConfigFromRaw(baseConfig({ theme: { colors } }), dir)).theme.colors;
+      const channels = (triplet: string) => triplet.split(" ").map(Number) as [number, number, number];
+      const reads = (triplet: string, pages: [number, number, number][]) => pages.every(page => contrast(channels(triplet), page) >= 4.5);
+      const lightPages: [number, number, number][] = [[255, 255, 255], [247, 248, 251]];
+      const darkPages: [number, number, number][] = [[11, 12, 16], [20, 22, 28]];
+      // An emerald too light for text on white keeps its hue a step darker there, and itself in dark mode.
+      const emerald = await colours({ primary: "#10b981" });
+      expect(emerald.primary).toBe("16 185 129");
+      expect(reads(emerald.dark, lightPages)).toBe(true);
+      expect(emerald.light).toBe("16 185 129");
+      // A deep red that reads on white stays itself there and lightens for dark pages.
+      const red = await colours({ primary: "#BD1E1E" });
+      expect(red.dark).toBe("189 30 30");
+      expect(reads(red.light, darkPages)).toBe(true);
+      expect(rgbToOklch(channels(red.light))[2]).toBeCloseTo(rgbToOklch([189, 30, 30])[2], 1);
+      // Shades a site sets are its own.
+      expect(await colours({ primary: "#10b981", light: "#34d399", dark: "#10b981" })).toEqual({ primary: "16 185 129", light: "52 211 153", dark: "16 185 129" });
     });
   });
 

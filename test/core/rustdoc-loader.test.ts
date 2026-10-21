@@ -79,6 +79,15 @@ describe("loadRustdocTab snapshot mode", () => {
     expect(await hrefs("slash")).toEqual(["rust-api/", "rust-api/pkg-basic/"]);
   });
 
+  it("keeps every page's headings in order beneath its title, with a card's count as plain text", async () => {
+    const result = await loadRustdocTab(snapshotConfig(), "rust-api", "Rust API");
+    for (const page of result.pages.values()) {
+      const levels = [1, ...[...page.html.matchAll(/<h([1-6])\b/g)].map(([, level]) => Number(level))];
+      expect(levels.every((level, i) => i === 0 || level <= levels[i - 1] + 1), `${page.slug}: ${levels.join(",")}`).toBe(true);
+      expect(page.html).not.toMatch(/style="[^"]*opacity/);
+    }
+  });
+
   it("emits a crate index page and the doctests aggregation page", async () => {
     const result = await loadRustdocTab(snapshotConfig(), "rust-api", "Rust API");
     expect(result.pages.has("pkg-basic")).toBe(true);
@@ -109,10 +118,14 @@ describe("loadRustdocTab snapshot mode", () => {
     expect(result.diagnostics.some((d) => d.severity === "error")).toBe(true);
   });
 
-  it("renders the workspace doctest count in the doctests page heading", async () => {
+  it("titles the doctests page once, through the layout, and counts the workspace's examples under it", async () => {
     const result = await loadRustdocTab(snapshotConfig(), "rust-api", "Rust API");
     const page = result.pages.get("doctests")!;
-    expect(page.html).toContain("Doctests");
+    expect(page.title).toBe("Doctests");
+    expect(page.html).not.toContain("<h1");
     expect(page.html.toLowerCase()).toMatch(/runnable example/);
+    // Each example is a section under the page's title.
+    expect(page.html).toMatch(/<section class="rust-doctest" id="[^"]+"><h2>/);
+    expect(page.headings.every(heading => heading.level === 2)).toBe(true);
   });
 });

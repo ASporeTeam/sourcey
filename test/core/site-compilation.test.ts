@@ -204,7 +204,7 @@ describe("native compilation", () => {
     expect(page.markdown.html).toContain('class="callout-title">Important</div>');
     expect(page.markdown.html).toContain("[!NOTE] Custom title");
     expect(page.markdown.html).toContain("This stays a plain quote.");
-    expect(page.markdown.html.match(/<aside/g)).toHaveLength(1);
+    expect(page.markdown.html.match(/role="note"/g)).toHaveLength(1);
     expect(page.markdown.markdown).toContain("Later `code` span.");
   }));
 
@@ -396,6 +396,108 @@ describe("native compilation", () => {
     expect(files.get(engineHref(html("install.html"), "sourcey.css")!.slice(1))!.toString()).not.toContain("M49.33%2062h29.159");
   }));
 
+  it("defines every custom property each theme's stylesheet reads", () => fixture(async root => {
+    await file(root, "docs/install.md", "# Install\n\nRun it.\n");
+    const undefinedByTheme: Record<string, string[]> = {};
+    const notChannels: Record<string, string[]> = {};
+    for (const name of ["default", "minimal", "api-first", "reader"] as const) {
+      const config = await resolveConfigFromRaw({ theme: { name, fonts: { google: false } }, navigation: { tabs: [{ tab: "Docs", slug: "", source: markdown({ root: "docs", groups: [{ group: "Start", pages: ["install"] }] }) }] } }, root);
+      const files = await sourceyArtifacts(await buildSourceySite({ config, generateOgImages: false }));
+      const page = files.get("install.html")!.toString();
+      const css = files.get(engineHref(page, "sourcey.css")!.slice(1))!.toString();
+      // A colour that reads an undefined property is invalid, and the rule silently draws nothing.
+      // Highlighted code sets its own token colours on each token.
+      const values = new Map<string, string[]>();
+      for (const [, property, value] of `${css}\n${page}`.matchAll(/(--[\w-]+)\s*:\s*([^;}]*)/g)) values.set(property, [...values.get(property) ?? [], value.trim()]);
+      const read = [...new Set([...css.matchAll(/var\((--[\w-]+)\s*\)/g)].map(([, property]) => property))];
+      undefinedByTheme[name] = read.filter(property => !values.has(property) && !property.startsWith("--shiki-"));
+      // rgb() takes Sourcey's channel triplets; a full colour such as an oklch() palette step inside it is just as invalid.
+      const channels = [...new Set([...css.matchAll(/rgb\(var\((--[\w-]+)\)/g)].map(([, property]) => property))];
+      notChannels[name] = channels.filter(property => (values.get(property) ?? []).some(value => !/^\d{1,3} \d{1,3} \d{1,3}$/.test(value)));
+    }
+    expect(undefinedByTheme).toEqual({ default: [], minimal: [], "api-first": [], reader: [] });
+    expect(notChannels).toEqual({ default: [], minimal: [], "api-first": [], reader: [] });
+  }));
+
+  it("keeps a section's own link beside its toggle, and names a picker by what it shows", () => fixture(async root => {
+    await file(root, "index.md", "# Start\n\nHello.\n");
+    await file(root, "install.md", "# Install\n\nRun it.\n");
+    await file(root, "archive/index.md", "# Start\n\nBefore.\n");
+    await file(root, "archive/install.md", "# Install\n\nRan it.\n");
+    for (const theme of ["default", "reader"] as const) {
+      const config = await resolveConfigFromRaw({
+        theme: { name: theme, fonts: { google: false } },
+        versions: { default: "current", items: [{ id: "current", label: "Current", content: ".", path: "" }, { id: "archive", label: "Archive", content: "archive", path: "archive" }] },
+        navigation: { tabs: [{ tab: "Docs", slug: "", source: markdown({ groups: [{ group: "Start", id: "start", href: "/", collapsed: false, pages: [{ page: "index", hidden: true }, "install"] }] }) }] },
+      }, root);
+      const site = await buildSourceySite({ config, generateOgImages: false });
+      const page = (await sourceyArtifacts(site)).get("install.html")!.toString();
+      // A summary is a control of its own, so the section's link is beside it, and the toggle is named for the section.
+      expect(page).toMatch(/<div class="sourcey-nav-group-linked"><a [^>]*href="\/"[^>]*>Start<\/a><details (?:open class="sourcey-nav-group"|class="sourcey-nav-group" open)><summary (?:class="nav-section" )?aria-label="Start"><\/summary>/);
+      expect(page).not.toMatch(/<summary[^>]*>(?:(?!<\/summary>)[^])*<a /);
+      // The version picker is named by its label and the version it shows.
+      expect(page).toMatch(/<summary><span class="sr-only">Version: <\/span><span>Current<\/span>/);
+    }
+  }));
+
+  it("gives assistive technology named landmarks, ordered headings and reachable examples in every theme", () => fixture(async root => {
+    await file(root, "docs/install.md", "# Install\n\nRun it.\n\n> [!NOTE]\n> Twice.\n\n## Requirements\n\n| | Version |\n| --- | --- |\n| Node | 22 |\n\n## Upgrade\n\nAgain.\n");
+    await file(root, "spec.json", JSON.stringify({ openapi: "3.1.0", info: { title: "Pets API", version: "1" }, paths: { "/pets": { get: { operationId: "listPets", summary: "List pets",
+      parameters: [{ name: "limit", in: "query", schema: { type: "integer", example: 20 } }],
+      responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { name: { type: "string", example: "Rex" } } } } } } } } } } }));
+    const navs = (html: string) => [...html.matchAll(/<nav\b([^>]*)>/g)].map(([, attributes]) => attributes).filter(attributes => !/\shidden\b/.test(attributes));
+    const levels = (html: string) => [...html.slice(html.indexOf("<body")).matchAll(/<h([1-6])\b/g)].map(([, level]) => Number(level));
+    for (const theme of ["default", "minimal", "api-first", "reader"] as const) for (const split of [true, false]) {
+      const config = await resolveConfigFromRaw({ theme: { name: theme, fonts: { google: false } }, navigation: { tabs: [
+        { tab: "Docs", slug: "", source: markdown({ root: "docs", groups: [{ group: "Start", pages: ["install"] }] }) },
+        { tab: "API", slug: "api", source: openapi("spec.json"), ...(split ? { reference: { split: "operations" as const } } : {}) },
+      ] } }, root);
+      const site = await buildSourceySite({ config, generateOgImages: false });
+      const files = await sourceyArtifacts(site);
+      const html = (document: string) => files.get(site.pages.find(page => page.identity.document === document)!.outputPath)!.toString();
+      for (const page of [html("install"), html(split ? "GET /pets" : "introduction")]) {
+        // The masthead is the page's banner, and each navigation on show has a name of its own; none is empty.
+        expect(page).toMatch(theme === "reader" ? /<header class="site-header"/ : /<header id="navbar"/);
+        const names = navs(page).map(attributes => attributes.match(/aria-label(?:ledby)?="([^"]*)"/)?.[1]);
+        expect(names.every(Boolean), `${theme}: ${navs(page).join(" | ")}`).toBe(true);
+        expect(new Set(names).size).toBe(names.length);
+        expect(page).not.toMatch(/<nav\b[^>]*>\s*<ul[^>]*>\s*<\/ul>\s*<\/nav>/);
+        // Headings never skip a level on the way down.
+        const order = levels(page);
+        expect(order.every((level, i) => i === 0 || level <= order[i - 1] + 1), `${theme}: ${order.join(",")}`).toBe(true);
+      }
+      const operation = html(split ? "GET /pets" : "introduction");
+      // An operation's sections sit one level below its title: h2 on its own page, h3 under its h2 in a listing.
+      expect(operation).toMatch(split ? /<h2 class="flex-1[^>]*>Parameters<\/h2>/ : /<h3 class="flex-1[^>]*>Parameters<\/h3>/);
+      // A scrolling example can be reached from the keyboard to scroll it.
+      expect(operation).toContain('<span class="schema-example-label">Example</span><pre tabindex="0"><code>Rex</code></pre>');
+      if (theme !== "reader") {
+        // The search control is named by the placeholder it shows; its shortcut is announced, not read as text.
+        expect(operation).toMatch(/<button id="search-open" type="button" aria-keyshortcuts="\/" class=/);
+        expect(operation).toContain('<kbd aria-hidden="true">/</kbd>');
+      }
+      // "On this page" labels the contents navigation rather than heading the page.
+      const guide = html("install");
+      // A callout is a note in the page's content, not a landmark beside it, and a wide table scrolls under the keyboard.
+      expect(guide).toMatch(/<div class="callout callout-note not-prose" role="note">/);
+      expect(guide).toContain('<div class="table-wrap" tabindex="0"><table>');
+      // A header row's empty corner is a plain cell, not a header that names nothing.
+      expect(guide).toContain("<thead><tr><td></td><th>Version</th></tr></thead>");
+      if (theme !== "minimal" && theme !== "reader") expect(guide).toMatch(/<p id="sourcey-toc-label"[^>]*>[^]*?On this page<\/p><nav aria-labelledby="sourcey-toc-label">/);
+      if (theme === "reader") expect(guide).toMatch(/<aside class="docs-sidebar-region" aria-label="Docs"><details open class="docs-sidebar" data-reader-chapters/);
+    }
+    // Landmark names follow the site's language.
+    await file(root, "docs/configure.md", "# Configure\n\nSet it.\n");
+    const french = await resolveConfigFromRaw({ i18n: { defaultLocale: "fr", locales: { fr: { label: "Français" } } }, theme: { fonts: { google: false } }, navigation: { tabs: [
+      { tab: "Docs", slug: "", source: markdown({ root: "docs", groups: [{ group: "Start", pages: ["install", "configure"] }] }) },
+      { tab: "API", slug: "api", source: openapi("spec.json") },
+    ] } }, root);
+    const site = await buildSourceySite({ config: french, generateOgImages: false });
+    const page = (await sourceyArtifacts(site)).get(site.pages.find(page => page.identity.document === "install")!.outputPath)!.toString();
+    expect(page).toContain('aria-label="Sections de la documentation"');
+    expect(page).toContain('aria-label="Page précédente et page suivante"');
+  }));
+
   it("keeps IDs, authored slugs, sparse translations, archives and canonical exports in agreement", () => fixture(async root => {
     await file(root, "guide.md", "---\nid: install\nslug: setup\ntitle: Install\n---\n\n## Details {#stable-heading}\n\nThe marmalade is in the full body.\n");
     await file(root, "fr/guide.md", "---\nid: install\nslug: installation\ntitle: Installer\n---\n\n## Détails\n\nBonjour.\n");
@@ -545,7 +647,7 @@ describe("native compilation", () => {
     const site = await buildSourceySite({ config, generateOgImages: false });
     const page = site.pages[0].currentPage; if (page.kind !== "markdown") throw new Error("Expected markdown");
     expect(page.markdown.markdown).toContain('After the inner note.');
-    expect(page.markdown.html.match(/<aside /g)).toHaveLength(2);
+    expect(page.markdown.html.match(/role="note"/g)).toHaveLength(2);
     expect(page.markdown.html).toContain('video/webm'); expect(page.markdown.html).toContain('video/mp4');
     expect(page.markdown.html).toContain('muted loop');
     expect([...site.extraFiles.keys()].filter(path => /\.(webm|mp4)$/.test(path))).toHaveLength(2);

@@ -115,8 +115,8 @@ describe("indented code", () => {
     expect(page.html).toContain("docker pull &lt;REGISTRY.DOMAIN.COM:PORT&gt;/rancher/rancher:latest");
     expect(page.html).toContain("&lt;Note&gt;stays an example&lt;/Note&gt;");
     expect(page.html).toContain("&lt;Host&gt;:8080");
-    expect(page.html).toMatch(/<aside class="callout callout-note[\s\S]*?Inside a callout:[\s\S]*?&lt;Port&gt;[\s\S]*?<\/aside>/);
-    expect(page.html.match(/<aside/g)).toHaveLength(1);
+    expect(page.html).toMatch(/<div class="callout callout-note[^>]*role="note">[\s\S]*?Inside a callout:[\s\S]*?&lt;Port&gt;/);
+    expect(page.html.match(/role="note"/g)).toHaveLength(1);
   });
 });
 
@@ -212,5 +212,17 @@ describe("callouts", () => {
     expect(page.description).toBe("Track regular payments with subscriptions.");
     expect(page.markdown).toContain("> [!TIP]\n> This tutorial is unfinished.");
     expect(page.markdown).toContain("> [!WARNING]\n> **Back up first**\n>\n> It changes your data.");
+  });
+});
+
+describe("cards", () => {
+  it("title themselves one level below the heading they sit under, so the page's outline never skips", async () => {
+    const cards = '<CardGroup>\n<Card title="Install" href="/install">Run it.</Card>\n<Card title="Use" href="/use">Call it.</Card>\n</CardGroup>';
+    const top = await guide(`Start here.\n\n${cards}\n`);
+    expect(top.html.match(/<h2 class="card-item-title">/g)).toHaveLength(2);
+    const nested = await guide(`Start here.\n\n## Next steps\n\n${cards}\n\n### Deeper\n\n${cards}\n`);
+    expect(nested.html.match(/<h3 class="card-item-title">/g)).toHaveLength(2);
+    expect(nested.html.match(/<h4 class="card-item-title">/g)).toHaveLength(2);
+    expect(nested.html).not.toContain("<h2 class=\"card-item-title\">");
   });
 });

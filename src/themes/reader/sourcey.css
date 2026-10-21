@@ -32,6 +32,10 @@
   -webkit-font-smoothing: antialiased;
   color-scheme: light;
 }
+/* Secondary text in references meets 4.5:1 on the paper and on the mist behind fields. */
+:root:not(.dark) {
+  --color-gray-500: 105 105 110;
+}
 :root.dark {
   --paper: oklch(20% 0.012 275);
   --mist: oklch(25% 0.014 275);
@@ -40,7 +44,7 @@
   --reader-text: oklch(83% 0.012 275);
   --reader-muted: oklch(74% 0.015 275);
   --reader-subtle: oklch(68% 0.015 275);
-  --reader-selected: oklch(29% 0.043 286);
+  --reader-selected: oklch(27% 0.04 286);
   --reader-hover: oklch(26% 0.025 286);
   --blue-ink: rgb(var(--color-primary-light));
   color-scheme: dark;
@@ -585,7 +589,8 @@ kbd {
   font-size: 11px;
   line-height: 1.8;
 }
-.reader-prose th {
+.reader-prose th,
+.reader-prose thead td {
   background: var(--mist);
   text-align: left;
   color: var(--reader-heading);

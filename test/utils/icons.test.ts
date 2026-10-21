@@ -34,11 +34,11 @@ describe("icon sets", () => {
 describe("GitHub alerts in reference Markdown", () => {
   it("render as the site's callouts, in its language, and leave other quotes alone", () => {
     const html = renderMarkdown("> [!WARNING]\n> Rotate the **key** first.\n\n> [!NOTE] Custom title\n> A plain quote.\n\n> Also plain.", siteMarkdownOptions("heroicons", messagesFor("fr")));
-    expect(html).toContain('<aside class="callout callout-warning not-prose"><svg class="callout-icon" width="20" height="20" aria-hidden="true"');
+    expect(html).toContain('<div class="callout callout-warning not-prose" role="note"><svg class="callout-icon" width="20" height="20" aria-hidden="true"');
     // Sanitizing keeps the icon's coordinate system, so the 24-unit drawing scales to 20px instead of being clipped.
     expect(html).toContain('viewbox="0 0 24 24"');
     expect(html).toContain('<div class="callout-title">Avertissement</div><div class="callout-content"><p>Rotate the <strong>key</strong> first.</p>');
-    expect(html.match(/<aside/g)).toHaveLength(1);
+    expect(html.match(/role="note"/g)).toHaveLength(1);
     expect(html).toContain("[!NOTE] Custom title");
     expect(html).toContain("<blockquote>\n<p>Also plain.</p>");
   });
@@ -152,7 +152,7 @@ describe("Lucide", () => {
       const site = await buildSourceySite({ config: await resolveConfigFromRaw({ theme: { fonts: { google: false }, icons: "lucide" }, navigation: { tabs: [{ tab: "Docs", slug: "", source: markdown({ slugs: "file", groups: [{ group: "Start", pages: ["guide"] }] }) }] } }, root), generateOgImages: false });
       const page = site.pages.find(entry => entry.outputPath === "guide.html")!.currentPage;
       if (page.kind !== "markdown") throw new Error("Expected a guide");
-      expect(page.markdown.html).toMatch(/<aside class="callout callout-note[^>]*><svg class="callout-icon"[^>]*stroke-width="2"/);
+      expect(page.markdown.html).toMatch(/<div class="callout callout-note[^>]*><svg class="callout-icon"[^>]*stroke-width="2"/);
       expect(page.markdown.html).toMatch(/<svg class="card-icon"[^>]*stroke-width="2"[^>]*>/);
     } finally {
       await rm(root, { recursive: true, force: true });

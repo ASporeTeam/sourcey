@@ -19,8 +19,10 @@ export function ContextControls() {
         const label = kind === "locale" ? options.messages.language : options.messages.version;
         return (
           <details class="sourcey-context-menu" name="sourcey-context">
-            <summary aria-label={label}>
+            {/* Named "Version: v2" and so on: what it says, after what it chooses. */}
+            <summary>
               {kind === "locale" && <NativeIcon meaning="language" size={17} class="sourcey-language-icon" />}
+              <span class="sr-only">{label}: </span>
               <span>{items.find(item => item.active)?.label ?? label}</span>
               <svg class="sourcey-context-chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </summary>
@@ -36,3 +38,4 @@ export function ContextNotice() {
   const { notice } = useContext(OptionsContext);
   return notice ? <aside class="sourcey-context-notice" role="note">{notice}</aside> : null;
 }
+

@@ -100,9 +100,10 @@ function NavGroup({ group, activePageSlug, base }: {
         {item.method && <MethodPill method={item.method} />}<span class="flex-1 break-words [word-break:break-word]">{item.label}</span>
       </a></li>)}</ul>;
   const active = current || [...walkNavItems([group])].some(item => item.id === activePageSlug);
-  return collapsible
-    ? <details open={active || !group.collapsed} class="sourcey-nav-group"><summary>{label}</summary>{contents}</details>
-    : <>{group.label && label}{contents}</>;
+  if (!collapsible) return <>{group.label && label}{contents}</>;
+  // A summary is a control of its own, so a section's own link sits beside its toggle, not inside it.
+  if (group.href) return <div class="sourcey-nav-group-linked">{label}<details open={active || !group.collapsed} class="sourcey-nav-group"><summary aria-label={group.label} />{contents}</details></div>;
+  return <details open={active || !group.collapsed} class="sourcey-nav-group"><summary>{label}</summary>{contents}</details>;
 }
 
 const hasPages = (group: SiteNavGroup) => !walkNavItems([group]).next().done;
@@ -191,11 +192,11 @@ export function Sidebar({ mobileOnly = false }: { mobileOnly?: boolean }) {
         {/* Sidebar content for the active tab */}
         <div class="sourcey-nav-context"><ContextNotice /></div>
         {activeTab ? (
-          <nav id="nav" class="sourcey-nav-scroll pt-5 pb-3 px-4 flex-1 overflow-y-auto" data-sourcey-sidebar-scroll data-sourcey-sidebar-tab={nav.activeTabSlug || "default"}>
+          <nav id="nav" class="sourcey-nav-scroll pt-5 pb-3 px-4 flex-1 overflow-y-auto" aria-label={activeTab.label} data-sourcey-sidebar-scroll data-sourcey-sidebar-tab={nav.activeTabSlug || "default"}>
             <NavGroups groups={groups} activePageSlug={activePageSlug} base={base} />
           </nav>
         ) : (
-          <nav class="sourcey-nav-scroll pt-5 pb-3 px-4 flex-1 overflow-y-auto" aria-label="Documentation sections">
+          <nav class="sourcey-nav-scroll pt-5 pb-3 px-4 flex-1 overflow-y-auto" aria-label={options.messages.sections}>
             <ul class="space-y-px">{nav.tabs.map(tab => (
               <li key={tab.slug}><a href={joinHref(base, tab.href)} class="nav-link"><span class="flex-1 break-words [word-break:break-word]">{tab.label}</span></a></li>
             ))}</ul>

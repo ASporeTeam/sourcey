@@ -33,7 +33,12 @@ export type ContentNode =
   | { kind: "code"; value: string; language: string; title?: string; metadata?: CodeFenceMetadata }
   | { kind: "component"; name: string; id: string; inline?: boolean; resolved: ResolvedComponent; definition: NativeComponentDefinition; client?: { entry: string; css: string[] } };
 export interface ResolvedComponent<Data = unknown> { content: readonly ContentNode[]; data?: Data; clientProps?: JsonValue }
-export interface ComponentRenderHelpers { render(nodes: readonly ContentNode[]): string; escape(value: string): string }
+export interface ComponentRenderHelpers {
+  render(nodes: readonly ContentNode[]): string;
+  escape(value: string): string;
+  /** The level of the heading the component sits under: 1 above the page's first, beneath its title. */
+  headingLevel: number;
+}
 export interface NativeContentContext {
   locale: string;
   lang: string;
@@ -140,7 +145,8 @@ function container(name: string): NativeComponentDefinition {
         const href = pageLinkHref(text(props.href));
         const headingHref = href || (heading?.href ? pageLinkHref(heading.href) : null);
         const headingHtml = renderMarkdownInline(heading?.text ?? "");
-        return `<div class="card-item"><div class="card-item-inner">${cardIcon ?? ""}<h3 class="card-item-title">${headingHref ? `<a class="card-item-link" href="${escapeAttr(headingHref)}">${headingHtml}</a>` : headingHtml}</h3><div class="card-item-content">${content}</div></div></div>`;
+        const tag = `h${Math.min(6, h.headingLevel + 1)}`;
+        return `<div class="card-item"><div class="card-item-inner">${cardIcon ?? ""}<${tag} class="card-item-title">${headingHref ? `<a class="card-item-link" href="${escapeAttr(headingHref)}">${headingHtml}</a>` : headingHtml}</${tag}><div class="card-item-content">${content}</div></div></div>`;
       }
       if (name === "CardGroup" && !bodyNodes(result).some(node => node.kind === "component" && node.name === "Card")) return content;
       if (name === "CardGroup") return `<div class="card-group not-prose" data-cols="${escapeAttr(text(props.cols || 2))}">${content}</div>`;
@@ -762,17 +768,23 @@ export function readableContent(nodes: readonly ContentNode[], audience: Audienc
   }).join("");
 }
 const renderOptions = new WeakMap<NonNullable<NativeContentContext["messages"]>, MarkdownRenderOptions>();
-export function renderContent(nodes: readonly ContentNode[], messages?: NativeContentContext["messages"]): string {
+export function renderContent(nodes: readonly ContentNode[], messages?: NativeContentContext["messages"], headingLevel = 1): string {
   let options = messages ? renderOptions.get(messages) : PAGE_CONTENT;
   if (messages && !options) { options = { ...PAGE_CONTENT, copyLabel: messages.copyCode }; renderOptions.set(messages, options); }
-  const helpers: ComponentRenderHelpers = { render: children => renderContent(children, messages), escape: escapeHtml };
+  // Components learn the level of the heading they sit under, read in document order.
+  let level = headingLevel;
   const markdown = nodes.map(node => {
     if (node.kind === "section-index") throw new Error("Unresolved section index reached the HTML renderer");
     if (node.kind === "markdown") return node.value;
-    if (node.kind === "heading") return `\n\n<h${node.level} id="${escapeAttr(node.id)}">${(node.aliases ?? []).map(alias => `<span id="${escapeAttr(alias)}" aria-hidden="true"></span>`).join("")}${renderMarkdownInline(node.text)}</h${node.level}>\n\n`;
+    if (node.kind === "heading") {
+      level = node.level;
+      return `\n\n<h${node.level} id="${escapeAttr(node.id)}">${(node.aliases ?? []).map(alias => `<span id="${escapeAttr(alias)}" aria-hidden="true"></span>`).join("")}${renderMarkdownInline(node.text)}</h${node.level}>\n\n`;
+    }
     if (node.kind === "label") return `\n<p>${node.href ? `<a href="${escapeAttr(safeUrl(node.href) ?? "#")}">${escapeHtml(node.text)}</a>` : escapeHtml(node.text)}</p>\n`;
     if (node.kind === "code") return `\n\n${renderCodeBlock(node.value, node.language, node.metadata, options?.copyLabel)}\n\n`;
-    const html = node.definition.renderHtml ? node.definition.renderHtml(node.resolved, helpers) : renderContent(node.resolved.content, messages);
+    const under = level;
+    const helpers: ComponentRenderHelpers = { render: children => renderContent(children, messages, under), escape: escapeHtml, headingLevel: under };
+    const html = node.definition.renderHtml ? node.definition.renderHtml(node.resolved, helpers) : renderContent(node.resolved.content, messages, under);
     const wrapper = node.inline ? "span" : "div";
     const rendered = node.client ? `<${wrapper} data-sourcey-component="${escapeAttr(node.id)}" data-sourcey-module="${escapeAttr(node.client.entry)}" data-sourcey-props="${escapeAttr(JSON.stringify(node.resolved.clientProps ?? null))}">${html}</${wrapper}>` : html;
     return node.inline ? rendered : `\n\n${rendered}\n\n`;

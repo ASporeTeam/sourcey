@@ -31,11 +31,14 @@ export function ResponseView({
   response,
   stale,
   id,
+  headingLevel = 3,
 }: {
   response: ConsoleResponse;
   stale: boolean;
   id: string;
+  headingLevel?: 2 | 3;
 }) {
+  const Heading = headingLevel === 2 ? "h2" : "h3";
   const [tab, setTab] = useState("body");
   const [raw, setRaw] = useState(false);
   const [text, setText] = useState("");
@@ -75,7 +78,7 @@ export function ResponseView({
   return (
     <section class="tryit-response" aria-label="Live response">
       <div class="tryit-heading">
-        <h3>Response</h3>
+        <Heading>Response</Heading>
         <div class="tryit-response-meta">
           <span class={"tryit-status " + statusClass}>
             {response.status} {response.statusText}

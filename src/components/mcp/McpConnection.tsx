@@ -44,7 +44,7 @@ export function McpConnection({ connection }: { connection: McpConnectionInfo })
           Add to your MCP client configuration:
         </p>
         <Markdown content={`\`\`\`json\n${configJson}\n\`\`\``} />
-        <div class="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-[rgb(var(--color-gray-500))]">
+        <div class="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
           {connection.mcpVersion && (
             <span>Protocol <span class="font-medium text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))]">MCP {connection.mcpVersion}</span></span>
           )}

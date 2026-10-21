@@ -75,7 +75,7 @@ describe("api-first theme", () => {
     expect(guide).toContain("api-first-reading");
     expect(guide).toMatch(/<nav class="page-trail" aria-label="Breadcrumb">.*Getting Started/s);
     expect(guide).toMatch(
-      /<aside id="toc" class="toc-wide[^"]*"[^>]*>\s*<h5 class="toc-wide-label"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg>On this page<\/h5>/s,
+      /<aside id="toc" aria-labelledby="sourcey-toc-label" class="toc-wide[^"]*"[^>]*>\s*<p id="sourcey-toc-label" class="toc-wide-label"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg>On this page<\/p>\s*<nav aria-labelledby="sourcey-toc-label">/s,
     );
     expect(guide).not.toContain("noreferrer");
     expect(css).toContain(".operation-split");

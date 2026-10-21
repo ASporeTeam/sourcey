@@ -27,6 +27,7 @@ import {
 import type { ResolvedTabSource, SourceAdapter } from "./adapters/types.js";
 import { DEFAULT_CODE_SAMPLE_LANGS, SUPPORTED_CODE_SAMPLE_LANGS } from "./utils/code-samples.js";
 import { themeDefinitions, type ThemeName } from "./themes/registry.js";
+import { textShades } from "./utils/palette.js";
 
 export type { PrettyUrls } from "./site-url.js";
 
@@ -825,13 +826,7 @@ function resolveTheme(raw: SourceyConfig, configDir: string): ResolvedTheme {
   }
 
   const rawColors = raw.theme?.colors;
-  const colors = rawColors
-    ? {
-        primary: hexToRgb(rawColors.primary),
-        light: rawColors.light ? hexToRgb(rawColors.light) : hexToRgb(rawColors.primary),
-        dark: rawColors.dark ? hexToRgb(rawColors.dark) : hexToRgb(rawColors.primary),
-      }
-    : { ...DEFAULT_COLORS };
+  const colors = rawColors ? brandColors(rawColors) : { ...DEFAULT_COLORS };
 
   const named = (name: string | undefined) => (name && name !== "system" ? name : undefined);
   const sansName = named(raw.theme?.fonts?.sans ?? DEFAULT_FONT_SANS);
@@ -1032,6 +1027,17 @@ function resolvePrettyUrls(value: PrettyUrls | undefined): PrettyUrls {
   if (value === undefined || value === false) return false;
   if (value === "slash" || value === "strip") return value;
   throw new Error(`Invalid prettyUrls "${String(value)}". Expected false, "slash", or "strip".`);
+}
+
+/** The site's colours; a text shade it leaves out is its primary as text that reads in that scheme. */
+function brandColors(raw: { primary: string; light?: string; dark?: string }): ResolvedTheme["colors"] {
+  const primary = hexToRgb(raw.primary);
+  const shades = textShades(primary);
+  return {
+    primary,
+    light: raw.light ? hexToRgb(raw.light) : shades.light,
+    dark: raw.dark ? hexToRgb(raw.dark) : shades.ink,
+  };
 }
 
 export function hexToRgb(hex: string): string {

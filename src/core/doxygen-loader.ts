@@ -386,13 +386,13 @@ function buildRichIndex(
     const desc = stripMarkdownLinks(page.description || "");
     const meta =
       typeCount > 0
-        ? `<p style="margin:0.5rem 0 0;font-size:0.8rem;opacity:0.5">${typeCount} type${typeCount !== 1 ? "s" : ""}</p>`
+        ? `<p class="card-item-meta">${typeCount} type${typeCount !== 1 ? "s" : ""}</p>`
         : "";
 
     cards.push(
       `<a href="${href}" class="card-item">` +
         `<div class="card-item-inner">` +
-        `<h3 class="card-item-title">${escHtml(page.title)}</h3>` +
+        `<h2 class="card-item-title">${escHtml(page.title)}</h2>` +
         (desc
           ? `<div class="card-item-content"><p>${inlineCode(escHtml(desc))}</p>${meta}</div>`
           : `<div class="card-item-content">${meta}</div>`) +
@@ -413,8 +413,8 @@ function buildRichIndex(
     cards.push(
       `<a href="${href}" class="card-item">` +
         `<div class="card-item-inner">` +
-        `<h3 class="card-item-title">${escHtml(key)}</h3>` +
-        `<div class="card-item-content"><p style="margin:0;font-size:0.8rem;opacity:0.5">${typeCount} type${typeCount !== 1 ? "s" : ""}</p></div>` +
+        `<h2 class="card-item-title">${escHtml(key)}</h2>` +
+        `<div class="card-item-content"><p class="card-item-meta">${typeCount} type${typeCount !== 1 ? "s" : ""}</p></div>` +
         `</div></a>`,
     );
   }

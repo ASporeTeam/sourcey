@@ -42,6 +42,7 @@ import { definitionAnchor, referenceOperation } from "../../core/reference-ident
 function PagePlace({ spacing }: { spacing?: string }) {
   const nav = useContext(NavigationContext);
   const site = useContext(SiteContext);
+  const { messages } = useContext(OptionsContext);
   const { tab, group } = activeSection(nav);
   const eyebrow = group?.label;
   const trail =
@@ -52,7 +53,7 @@ function PagePlace({ spacing }: { spacing?: string }) {
       : [];
   if (trail.length > 0) {
     return (
-      <nav class={spacing ? `page-trail ${spacing}` : "page-trail"} aria-label="Breadcrumb">
+      <nav class={spacing ? `page-trail ${spacing}` : "page-trail"} aria-label={messages.breadcrumb}>
         {trail.map((label, i) => (
           <span key={label} class="page-trail-item">
             {i > 0 && <span class="page-trail-separator" aria-hidden="true">/</span>}
@@ -220,7 +221,7 @@ function PageNavigation() {
   const base = options.assetBase;
 
   return (
-    <nav class="mt-12 flex items-stretch justify-between gap-4">
+    <nav class="mt-12 flex items-stretch justify-between gap-4" aria-label={options.messages.pagination}>
       {prev ? (
         <a href={joinHref(base, prev.href)} class={linkClass}>
           <span class={labelClass}>← {options.messages?.previous ?? "Previous"}</span>

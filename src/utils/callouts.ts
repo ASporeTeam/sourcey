@@ -45,5 +45,6 @@ export function alertBody(quoted: string): string {
 /** A callout's HTML from its rendered title and content. */
 export function renderCallout(kind: CalloutKind, { title, content, icons }: { title: string; content: string; icons: IconSet }): string {
   const icon = iconSvg(nativeIcon(icons, CALLOUTS[kind].icon), { class: "callout-icon", size: 20 });
-  return `<aside class="callout callout-${kind.toLowerCase()} not-prose">${icon}<div class="callout-body"><div class="callout-title">${title}</div><div class="callout-content">${content}</div></div></aside>`;
+  // A note within the page's content, not a landmark beside it.
+  return `<div class="callout callout-${kind.toLowerCase()} not-prose" role="note">${icon}<div class="callout-body"><div class="callout-title">${title}</div><div class="callout-content">${content}</div></div></div>`;
 }

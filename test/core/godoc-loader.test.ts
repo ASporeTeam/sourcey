@@ -145,6 +145,12 @@ describe("loadGodocTab – snapshot mode", () => {
       expect(pkgPage!.html).toContain("Hello");
       expect(pkgPage!.html).toContain("<p>Tiny snapshot fixture.</p>");
       expect(pkgPage!.html).toContain("<p>Second paragraph with <strong>emphasis</strong>.</p>");
+      // Under each page's title the headings never skip a level, and a card's import path reads as text.
+      for (const page of result.pages.values()) {
+        const levels = [1, ...[...page.html.matchAll(/<h([1-6])\b/g)].map(([, level]) => Number(level))];
+        expect(levels.every((level, i) => i === 0 || level <= levels[i - 1] + 1), `${page.slug}: ${levels.join(",")}`).toBe(true);
+        expect(page.html).not.toMatch(/style="[^"]*opacity/);
+      }
     });
   });
 
@@ -177,7 +183,7 @@ describe("loadGodocTab – snapshot mode", () => {
 
       const english = (await loadGodocTab(config, "go-api", "Go API")).pages.get("package-root")!.html;
       const french = (await loadGodocTab(config, "go-api", "Go API", {}, undefined, { icons: "heroicons", messages: messagesFor("fr") })).pages.get("package-root")!.html;
-      expect(english).toContain('<aside class="callout callout-warning not-prose">');
+      expect(english).toContain('<div class="callout callout-warning not-prose" role="note">');
       expect(english).toContain('<div class="callout-title">Warning</div><div class="callout-content"><p>Rotate the key first.</p>');
       expect(french).toContain('<div class="callout-title">Avertissement</div>');
     });

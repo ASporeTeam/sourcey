@@ -296,7 +296,9 @@ describe("doctests in their documentation context", () => {
     expect(html.match(/id="doctest-fn.greet-0"/g)).toHaveLength(1);
     expect(html).toContain("foreign block");
     expect(html).not.toContain("# let name");
-    expect(html).toContain('<h5 id="fn.greet-examples"');
+    // The item is an h3, so its doc comment's "# Examples" is the h4 beneath it.
+    expect(html).toContain('<h3 id="fn.greet" class="section-header api-section-header code-header rust-item-header">');
+    expect(html).toContain('<h4 id="fn.greet-examples"');
     expect(html).toMatch(/id="doctest-fn.greet-0-full" hidden/);
     expect(html).toContain('data-target="#doctest-fn.greet-0-full"');
     expect(html.indexOf("Before the example.")).toBeLessThan(

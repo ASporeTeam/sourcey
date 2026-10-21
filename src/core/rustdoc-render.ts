@@ -578,18 +578,28 @@ export function renderSourceHref(item: Item, ctx: RenderContext): string | null 
 // Item rendering
 // ---------------------------------------------------------------------------
 
+/**
+ * A module page lists its items under each kind's h2, so an item is an h3; its
+ * implementation and member sections are h4, an impl's header h5, and a member
+ * one level below the heading it sits under. Doc-comment headings start below
+ * the item or member they document.
+ */
+const ITEM_LEVEL = 3;
+const SECTION_LEVEL = 4;
+const IMPL_LEVEL = 5;
+
 export function renderItemHtml(item: Item, ctx: RenderContext): string {
   const anchor = itemAnchor(item);
   const callouts = renderStabilityCallouts(item);
   const infoRow = renderItemInfoRow(item, ctx);
   const signatureHtml = renderItemSignature(item, ctx);
-  const docs = renderItemDocs(item, ctx);
+  const docs = renderItemDocs(item, ctx, ITEM_LEVEL);
   const impls = renderItemImpls(item, ctx);
   return [
     `<section class="rust-item rust-${item.inner.kind} api-item">`,
     infoRow,
     apiSectionAnchor({
-      level: 4,
+      level: ITEM_LEVEL,
       id: anchor,
       text: itemDisplayName(item) || anchor,
       className: "code-header rust-item-header",
@@ -632,15 +642,15 @@ function renderItemImpls(item: Item, ctx: RenderContext): string {
           item.inner.kind === "trait" &&
           m.inner.kind === "function" &&
           !providedMethods.has(m.name ?? "");
-        return renderImplMember(m, ctx, isRequired);
+        return renderImplMember(m, ctx, isRequired, IMPL_LEVEL + 1);
       })
       .filter(Boolean)
       .join("\n");
     // No <code> child: `.code-header` gives the mono font, and a bare <code>
     // inside the prose container would render with backtick pseudo-elements.
-    const implHeader = `<h3 class="code-header rust-impl-header" id="${escapeAttr(
+    const implHeader = `<h${IMPL_LEVEL} class="code-header rust-impl-header" id="${escapeAttr(
       implAnchorId,
-    )}">${escapeHtml(header)}</h3>`;
+    )}">${escapeHtml(header)}</h${IMPL_LEVEL}>`;
 
     if (traitName) {
       if (methodSections) {
@@ -662,7 +672,7 @@ function renderItemImpls(item: Item, ctx: RenderContext): string {
   if (inherent.length > 0) {
     parts.push(
       apiSectionAnchor({
-        level: 3,
+        level: SECTION_LEVEL,
         id: `impls-for-${itemAnchor(item)}`,
         text: "Implementations",
         className: "rust-impls-header",
@@ -673,7 +683,7 @@ function renderItemImpls(item: Item, ctx: RenderContext): string {
   if (traitImpls.length > 0 || traitRows.length > 0) {
     parts.push(
       apiSectionAnchor({
-        level: 3,
+        level: SECTION_LEVEL,
         id: `trait-impls-for-${itemAnchor(item)}`,
         text: "Trait Implementations",
         className: "rust-impls-header",
@@ -711,30 +721,30 @@ function renderTraitOwnMembers(item: Item, ctx: RenderContext): string {
   if (assocTypes.length > 0) {
     parts.push(
       apiSectionAnchor({
-        level: 3,
+        level: SECTION_LEVEL,
         id: "required-associated-types",
         text: "Required Associated Types",
       }),
     );
-    parts.push(assocTypes.map((m) => renderImplMember(m, ctx, false)).join("\n"));
+    parts.push(assocTypes.map((m) => renderImplMember(m, ctx, false, SECTION_LEVEL + 1)).join("\n"));
   }
   if (assocConsts.length > 0) {
     parts.push(
       apiSectionAnchor({
-        level: 3,
+        level: SECTION_LEVEL,
         id: "required-associated-consts",
         text: "Required Associated Constants",
       }),
     );
-    parts.push(assocConsts.map((m) => renderImplMember(m, ctx, false)).join("\n"));
+    parts.push(assocConsts.map((m) => renderImplMember(m, ctx, false, SECTION_LEVEL + 1)).join("\n"));
   }
   if (required.length > 0) {
-    parts.push(apiSectionAnchor({ level: 3, id: "required-methods", text: "Required Methods" }));
-    parts.push(required.map((m) => renderImplMember(m, ctx, true)).join("\n"));
+    parts.push(apiSectionAnchor({ level: SECTION_LEVEL, id: "required-methods", text: "Required Methods" }));
+    parts.push(required.map((m) => renderImplMember(m, ctx, true, SECTION_LEVEL + 1)).join("\n"));
   }
   if (provided.length > 0) {
-    parts.push(apiSectionAnchor({ level: 3, id: "provided-methods", text: "Provided Methods" }));
-    parts.push(provided.map((m) => renderImplMember(m, ctx, false)).join("\n"));
+    parts.push(apiSectionAnchor({ level: SECTION_LEVEL, id: "provided-methods", text: "Provided Methods" }));
+    parts.push(provided.map((m) => renderImplMember(m, ctx, false, SECTION_LEVEL + 1)).join("\n"));
   }
   return parts.join("\n");
 }
@@ -764,17 +774,18 @@ function collectImplIds(item: Item): string[] {
   }
 }
 
-function renderImplMember(member: Item, ctx: RenderContext, isRequiredTraitMethod = false): string {
+/** A member's heading sits one level below its section, or below its impl's header. */
+function renderImplMember(member: Item, ctx: RenderContext, isRequiredTraitMethod: boolean, level: number): string {
   const anchor = implMemberAnchor(member, isRequiredTraitMethod);
   const sigHtml = renderItemSignature(member, ctx);
   const callouts = renderStabilityCallouts(member);
-  const docs = renderItemDocs(member, ctx);
+  const docs = renderItemDocs(member, ctx, level);
   const infoRow = renderItemInfoRow(member, ctx);
   const body = [
     infoRow,
-    `<h4 class="code-header rust-method-header" id="${escapeAttr(anchor)}">${escapeHtml(
+    `<h${level} class="code-header rust-method-header" id="${escapeAttr(anchor)}">${escapeHtml(
       member.name ?? "",
-    )}</h4>`,
+    )}</h${level}>`,
     sigHtml,
     callouts,
     docs,
@@ -785,7 +796,7 @@ function renderImplMember(member: Item, ctx: RenderContext, isRequiredTraitMetho
   return `<section class="rust-member api-member">${body}</section>`;
 }
 
-function renderItemDocs(item: Item, ctx: RenderContext, headingOffset = 4): string {
+function renderItemDocs(item: Item, ctx: RenderContext, headingOffset: number): string {
   if (!item.docs_markdown) return "";
   const { definitions, resolveHref, unresolved } = intraDocReferences(item.links ?? {}, ctx);
   for (const label of unresolved) {

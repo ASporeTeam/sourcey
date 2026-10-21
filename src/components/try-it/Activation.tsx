@@ -1,5 +1,5 @@
 import { useContext } from "preact/hooks";
-import { OptionsContext, PageContext, SiteContext } from "../../renderer/context.js";
+import { OptionsContext, PageContext, SiteContext, isOperationPage } from "../../renderer/context.js";
 import type { NormalizedOperation } from "../../core/types.js";
 import { consoleArtifactPath } from "../../renderer/try-it.js";
 import { createContext, type ComponentChildren } from "preact";
@@ -46,7 +46,8 @@ export function ConsoleExamples({
       <div data-try-it-examples class="tryit-examples">
         {children}
       </div>
-      <div id={id} data-try-it-mount hidden />
+      {/* The console's sections sit at the level of the operation's own, which it draws later. */}
+      <div id={id} data-try-it-mount data-try-it-heading={isOperationPage(page) ? "2" : "3"} hidden />
     </>
   );
 }
