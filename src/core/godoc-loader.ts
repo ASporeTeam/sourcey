@@ -235,10 +235,12 @@ function buildResult(
 
   const indexSlug = "index";
   const indexHtml = renderIndexPage(spec, filteredPackages);
+  const extent = `${filteredPackages.length} package${filteredPackages.length === 1 ? "" : "s"}`;
   pages.set(indexSlug, {
     kind: "markdown",
     title: tabLabel,
-    description: spec.modulePath,
+    // Standard library packages belong to no module, so the summary names one only where there is one.
+    description: spec.modulePath ? `Go API for ${spec.modulePath} across ${extent}.` : `Go API across ${extent}.`,
     slug: indexSlug,
     html: indexHtml,
     markdown: filteredPackages

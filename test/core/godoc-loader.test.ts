@@ -140,6 +140,8 @@ describe("loadGodocTab – snapshot mode", () => {
       );
 
       expect(result.pages.size).toBeGreaterThanOrEqual(2);
+      // The index has a summary of its own rather than a bare module path.
+      expect(result.pages.get("index")!.description).toBe("Go API for example.com/snapshotted across 1 package.");
       const pkgPage = result.pages.get("package-root");
       expect(pkgPage).toBeDefined();
       expect(pkgPage!.html).toContain("Hello");
@@ -151,6 +153,51 @@ describe("loadGodocTab – snapshot mode", () => {
         expect(levels.every((level, i) => i === 0 || level <= levels[i - 1] + 1), `${page.slug}: ${levels.join(",")}`).toBe(true);
         expect(page.html).not.toMatch(/style="[^"]*opacity/);
       }
+    });
+  });
+
+  it("summarises standard library packages without naming a module", async () => {
+    await withTempDir(async (dir) => {
+      const pkg = (importPath: string, name: string) => ({
+        importPath,
+        name,
+        synopsis: `Package ${name} is a fixture.`,
+        doc: `Package ${name} is a fixture.`,
+        dir: ".",
+        files: [`${name}.go`],
+        consts: [],
+        vars: [],
+        funcs: [],
+        types: [],
+        examples: [],
+      });
+      const snapshot: GodocSnapshot = {
+        schema_version: GODOC_SCHEMA_VERSION,
+        source: "sourcey-godoc",
+        module_path: "",
+        generated_at: "2026-10-21T00:00:00Z",
+        packages: [pkg("net/url", "url"), pkg("net/netip", "netip")],
+      };
+      const snapshotPath = join(dir, "godoc.json");
+      await writeFile(snapshotPath, JSON.stringify(snapshot), "utf8");
+
+      const result = await loadGodocTab(
+        {
+          module: dir,
+          packages: ["./..."],
+          mode: "snapshot",
+          snapshot: snapshotPath,
+          includeTests: false,
+          includeUnexported: false,
+          hideUndocumented: false,
+          exclude: [],
+          sourceBasePath: "",
+        },
+        "go-api",
+        "Go API",
+      );
+
+      expect(result.pages.get("index")!.description).toBe("Go API across 2 packages.");
     });
   });
 
