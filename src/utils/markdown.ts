@@ -307,9 +307,69 @@ export interface MarkdownRenderOptions {
   operationLinks?: boolean;
 }
 
+/**
+ * Whether the Markdown being rendered holds HTML its author wrote. Everything
+ * else a parser writes is escaped as it is written, with its links and images
+ * checked, so only authored HTML needs the sanitizer.
+ */
+let authoredHtml = false;
+
+/**
+ * HTML the build drew itself, such as a heading, highlighted code or a
+ * component, stands in the Markdown rendered around it as a marker that
+ * renders as that HTML. The Markdown still reads as one document, but the
+ * build's own HTML is never read again as Markdown, or sanitized as an
+ * author's would be.
+ */
+let generatedHtml: readonly string[] = [];
+const GENERATED_OPEN = "\uE000", GENERATED_CLOSE = "\uE001";
+const GENERATED_BLOCK = /^\uE000(\d+)\uE001(?:\n+|$)/;
+const GENERATED_BLOCK_START = /(^|\n)\uE000\d+\uE001(?:\n|$)/;
+const GENERATED_INLINE = /^\uE000(\d+)\uE001/;
+
+/** The marker for the `index`th piece of generated HTML passed to `renderMarkdown`. */
+export function generatedMarker(index: number): string {
+  return `${GENERATED_OPEN}${index}${GENERATED_CLOSE}`;
+}
+
+/** Authored text keeps any marker characters it holds as characters. */
+export function escapeGeneratedMarkers(markdown: string): string {
+  return /[\uE000\uE001]/.test(markdown) ? markdown.replace(/[\uE000\uE001]/g, (char) => `&#x${char.charCodeAt(0).toString(16)};`) : markdown;
+}
+
+interface GeneratedToken extends Tokens.Generic { index: number }
+const generatedExtension = {
+  extensions: [
+    {
+      name: "generated",
+      level: "block" as const,
+      // A block marker stands on a line of its own; one inside a sentence is inline.
+      start: (src: string) => { const match = GENERATED_BLOCK_START.exec(src); return match ? match.index + match[1].length : undefined; },
+      tokenizer(src: string) {
+        const match = GENERATED_BLOCK.exec(src);
+        if (match) return { type: "generated", raw: match[0], index: Number(match[1]) };
+      },
+      renderer: (token: Tokens.Generic) => generatedHtml[(token as GeneratedToken).index] ?? "",
+    },
+    {
+      name: "generatedInline",
+      level: "inline" as const,
+      start: (src: string) => { const at = src.indexOf(GENERATED_OPEN); return at < 0 ? undefined : at; },
+      tokenizer(src: string) {
+        const match = GENERATED_INLINE.exec(src);
+        if (match) return { type: "generatedInline", raw: match[0], index: Number(match[1]) };
+      },
+      renderer: (token: Tokens.Generic) => generatedHtml[(token as GeneratedToken).index] ?? "",
+    },
+  ],
+};
+
 /** Keep adapter rendering on the same Markdown, links and sanitization path. */
 function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
-  return new Marked(videoExtension, iframeExtension, alertExtension(options.callouts ?? DEFAULT_CALLOUTS), {
+  return new Marked(generatedExtension, videoExtension, iframeExtension, alertExtension(options.callouts ?? DEFAULT_CALLOUTS), {
+    walkTokens(token: Token) {
+      if (token.type === "html") authoredHtml = true;
+    },
     renderer: {
       code(token: Tokens.Code): string {
         return options.code ? options.code(token) : renderCodeBlock(token.text, token.lang, undefined, options.copyLabel);
@@ -345,8 +405,31 @@ function createMarkdownParser(options: MarkdownRenderOptions = {}): Marked {
         const target = isExternal ? ' target="_blank" rel="noopener"' : "";
         return `<a href="${escapeAttr(linkUrl)}"${titleAttr}${target}>${text}</a>`;
       },
+      image({ href, title, text, tokens }: Tokens.Image): string {
+        const alt = tokens ? this.parser.parseInline(tokens, this.parser.textRenderer) : text;
+        // An image from anywhere but the web or this site keeps its text alone, as a link does.
+        const src = safeUrl(href, { allowedProtocols: ["http:", "https:"], allowAnchor: false });
+        if (!src) return escapeHtml(alt);
+        const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+        return `<img src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"${titleAttr}>`;
+      },
     },
   });
+}
+
+/** Render, sanitizing only where an author's own HTML is in what was rendered. */
+function rendered(render: () => string, operationLinks: boolean | undefined, generated: readonly string[] = []): string {
+  const outer = authoredHtml, outerGenerated = generatedHtml;
+  authoredHtml = false;
+  generatedHtml = generated;
+  try {
+    const html = render();
+    return authoredHtml ? sanitizeRenderedHtml(html, operationLinks ? ["operation"] : []) : html;
+  } finally {
+    // A nested render, such as a component's content, leaves its parent's as it was.
+    authoredHtml = outer;
+    generatedHtml = outerGenerated;
+  }
 }
 
 const marked = createMarkdownParser();
@@ -552,7 +635,8 @@ function findMarkdownHrefEnd(input: string, start: number): number {
  */
 const parsersByOptions = new WeakMap<MarkdownRenderOptions, Marked>();
 
-export function renderMarkdown(input?: string, options?: MarkdownRenderOptions): string {
+/** `generated` is HTML the build drew, placed in `input` by `generatedMarker`. */
+export function renderMarkdown(input?: string, options?: MarkdownRenderOptions, generated?: readonly string[]): string {
   if (!input) return "";
   let parser = marked;
   if (options) {
@@ -560,7 +644,7 @@ export function renderMarkdown(input?: string, options?: MarkdownRenderOptions):
     parser = parsersByOptions.get(options) ?? createMarkdownParser(options);
     parsersByOptions.set(options, parser);
   }
-  return sanitizeRenderedHtml(parser.parse(input, { async: false }) as string, options?.operationLinks ? ["operation"] : []);
+  return rendered(() => parser.parse(input, { async: false }) as string, options?.operationLinks, generated);
 }
 
 /** A page's link to an operation by name, as navigation names one: `operation:GET /pets`. */
@@ -580,5 +664,5 @@ export function renderMarkdownInline(input?: string, options?: MarkdownRenderOpt
   if (!input) return "";
   const parser = options ? parsersByOptions.get(options) ?? createMarkdownParser(options) : marked;
   if (options) parsersByOptions.set(options, parser);
-  return sanitizeRenderedHtml(parser.parseInline(input, { async: false }) as string, options?.operationLinks ? ["operation"] : []);
+  return rendered(() => parser.parseInline(input, { async: false }) as string, options?.operationLinks);
 }

@@ -85,6 +85,9 @@ const SVG_ATTRIBUTES = [
 const HEX = /^#[0-9a-fA-F]{3,8}$/;
 const LENGTH = /^(0|\d{1,4}(\.\d{1,3})?(px|rem|em|%))$/;
 const FRACTION = /^(0|1|0?\.\d{1,3})$/;
+const SHIKI_FONT_STYLE = /^(italic|normal|inherit)$/;
+const SHIKI_FONT_WEIGHT = /^(bold|normal|inherit|[1-9]00)$/;
+const SHIKI_TEXT_DECORATION = /^(underline|line-through|none|inherit)$/;
 
 /** `linkSchemes` are further link schemes the build resolves after rendering, such as `operation`. */
 export function sanitizeRenderedHtml(input: string, linkSchemes: readonly string[] = []): string {
@@ -98,9 +101,12 @@ export function sanitizeRenderedHtml(input: string, linkSchemes: readonly string
       "figure",
       "figcaption",
       "button",
+      "del",
       "details",
       "iframe",
       "img",
+      // A task list's checkbox, as Markdown draws one.
+      "input",
       "source",
       "summary",
       "video",
@@ -148,6 +154,8 @@ export function sanitizeRenderedHtml(input: string, linkSchemes: readonly string
       h6: ["id", "class"],
       iframe: ["src", "title", "frameborder", "allow", "allowfullscreen", "loading", "height", "width", "class", "id"],
       img: ["src", "srcset", "sizes", "alt", "title", "width", "height", "loading", "class", "id"],
+      input: [{ name: "type", values: ["checkbox"], multiple: false }, "checked", "disabled"],
+      ol: ["start"],
       ...Object.fromEntries(SVG_TAGS.map((tag) => [tag, SVG_ATTRIBUTES])),
       pre: ["class", "tabindex", "style"],
       source: ["data-light", "data-dark", "src", "srcset", "sizes", "media", "type"],
@@ -191,6 +199,13 @@ export function sanitizeRenderedHtml(input: string, linkSchemes: readonly string
         "--shiki-dark-bg": [HEX],
         "--shiki-light": [HEX],
         "--shiki-light-bg": [HEX],
+        // A theme's emphasis in highlighted code: italic comments, bold keywords.
+        "--shiki-dark-font-style": [SHIKI_FONT_STYLE],
+        "--shiki-light-font-style": [SHIKI_FONT_STYLE],
+        "--shiki-dark-font-weight": [SHIKI_FONT_WEIGHT],
+        "--shiki-light-font-weight": [SHIKI_FONT_WEIGHT],
+        "--shiki-dark-text-decoration": [SHIKI_TEXT_DECORATION],
+        "--shiki-light-text-decoration": [SHIKI_TEXT_DECORATION],
       },
     },
   });

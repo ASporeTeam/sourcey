@@ -7,8 +7,8 @@ import { toPublicPath } from "../site-url.js";
 import { createHash } from "node:crypto";
 import { canonicalInputPath } from "./loader.js";
 import type { InputReader } from "./loader.js";
-import { escapeAttr, escapeHtml, safeUrl, rewriteHtmlUrls } from "../utils/html.js";
-import { forEachToken, renderMarkdown, renderMarkdownInline, renderCodeBlock, parseCodeFenceInfo, type CodeFenceMetadata, type MarkdownRenderOptions, lexMarkdown, headingInfo, pageLinkHref, PAGE_CONTENT } from "../utils/markdown.js";
+import { escapeAttr, escapeHtml, safeUrl, rewriteHtmlUrls, sanitizeRenderedHtml } from "../utils/html.js";
+import { escapeGeneratedMarkers, forEachToken, generatedMarker, renderMarkdown, renderMarkdownInline, renderCodeBlock, parseCodeFenceInfo, type CodeFenceMetadata, type MarkdownRenderOptions, lexMarkdown, headingInfo, pageLinkHref, PAGE_CONTENT } from "../utils/markdown.js";
 import { iconDrawing, iconSource, iconSvg, isImageIcon, type IconPresentation } from "../utils/icons.js";
 import { ALERT, ALERT_TYPE, CALLOUTS, alertBody, alertCallout, isCallout, renderCallout } from "../utils/callouts.js";
 import type { IconSet } from "../config.js";
@@ -369,7 +369,8 @@ for (const name of ["Video", "Iframe"]) builtins[name] = defineComponent({
   },
   renderHtml(result, helpers) {
     const attributes = result.data as StaticAttributes;
-    if (name === "Iframe") return `<iframe loading="lazy" src="${escapeAttr(text(attributes.src))}" title="${escapeAttr(text(attributes.title) || "Embedded content")}" height="${escapeAttr(text(attributes.height) || "400")}" allowfullscreen></iframe>`;
+    // A frame shows a page from the web or this site, never a script or inline document.
+    if (name === "Iframe") return `<iframe loading="lazy" src="${escapeAttr(safeUrl(text(attributes.src), { allowedProtocols: ["http:", "https:"] }) ?? "about:blank")}" title="${escapeAttr(text(attributes.title) || "Embedded content")}" height="${escapeAttr(text(attributes.height) || "400")}" allowfullscreen></iframe>`;
     const sources = attributes.sources as { src: string; type: string }[];
     if (!sources.length && /(?:youtube\.com|youtu\.be|vimeo\.com)/i.test(text(attributes.src))) return renderMarkdown(`::video[${text(attributes.src)}]{title="${text(attributes.title).replace(/"/g, "&quot;")}"}`);
     const flags = ["muted", "loop", "autoplay", "playsinline"].filter(key => attributes[key] === true).join(" ");
@@ -769,28 +770,37 @@ export function readableContent(nodes: readonly ContentNode[], audience: Audienc
   }).join("");
 }
 const renderOptions = new WeakMap<NonNullable<NativeContentContext["messages"]>, MarkdownRenderOptions>();
+let builtinDefinitions: ReadonlySet<NativeComponentDefinition> | undefined;
+/** Sourcey's own components, which draw their HTML from escaped and checked values. */
+const isBuiltin = (definition: NativeComponentDefinition) => (builtinDefinitions ??= new Set(Object.values(builtins))).has(definition);
+
 export function renderContent(nodes: readonly ContentNode[], messages?: NativeContentContext["messages"], headingLevel = 1): string {
   let options = messages ? renderOptions.get(messages) : PAGE_CONTENT;
   if (messages && !options) { options = { ...PAGE_CONTENT, copyLabel: messages.copyCode }; renderOptions.set(messages, options); }
   // Components learn the level of the heading they sit under, read in document order.
   let level = headingLevel;
+  // What the build draws itself goes in as markers, so Markdown never reads it again.
+  const generated: string[] = [];
+  const block = (html: string) => `\n\n${generatedMarker(generated.push(html) - 1)}\n\n`;
   const markdown = nodes.map(node => {
     if (node.kind === "section-index") throw new Error("Unresolved section index reached the HTML renderer");
-    if (node.kind === "markdown") return node.value;
+    if (node.kind === "markdown") return escapeGeneratedMarkers(node.value);
     if (node.kind === "heading") {
       level = node.level;
-      return `\n\n<h${node.level} id="${escapeAttr(node.id)}">${(node.aliases ?? []).map(alias => `<span id="${escapeAttr(alias)}" aria-hidden="true"></span>`).join("")}${renderMarkdownInline(node.text)}</h${node.level}>\n\n`;
+      return block(`<h${node.level} id="${escapeAttr(node.id)}">${(node.aliases ?? []).map(alias => `<span id="${escapeAttr(alias)}" aria-hidden="true"></span>`).join("")}${renderMarkdownInline(node.text)}</h${node.level}>`);
     }
-    if (node.kind === "label") return `\n<p>${node.href ? `<a href="${escapeAttr(safeUrl(node.href) ?? "#")}">${escapeHtml(node.text)}</a>` : escapeHtml(node.text)}</p>\n`;
-    if (node.kind === "code") return `\n\n${renderCodeBlock(node.value, node.language, node.metadata, options?.copyLabel)}\n\n`;
+    if (node.kind === "label") return block(`<p>${node.href ? `<a href="${escapeAttr(safeUrl(node.href) ?? "#")}">${escapeHtml(node.text)}</a>` : escapeHtml(node.text)}</p>`);
+    if (node.kind === "code") return block(renderCodeBlock(node.value, node.language, node.metadata, options?.copyLabel));
     const under = level;
     const helpers: ComponentRenderHelpers = { render: children => renderContent(children, messages, under), escape: escapeHtml, headingLevel: under };
     const html = node.definition.renderHtml ? node.definition.renderHtml(node.resolved, helpers) : renderContent(node.resolved.content, messages, under);
     const wrapper = node.inline ? "span" : "div";
-    const rendered = node.client ? `<${wrapper} data-sourcey-component="${escapeAttr(node.id)}" data-sourcey-module="${escapeAttr(node.client.entry)}" data-sourcey-props="${escapeAttr(JSON.stringify(node.resolved.clientProps ?? null))}">${html}</${wrapper}>` : html;
-    return node.inline ? rendered : `\n\n${rendered}\n\n`;
+    // A component the site defines draws HTML of its own making, sanitized as an author's is.
+    const drawn = isBuiltin(node.definition) ? html : sanitizeRenderedHtml(html, ["operation"]);
+    const rendered = node.client ? `<${wrapper} data-sourcey-component="${escapeAttr(node.id)}" data-sourcey-module="${escapeAttr(node.client.entry)}" data-sourcey-props="${escapeAttr(JSON.stringify(node.resolved.clientProps ?? null))}">${drawn}</${wrapper}>` : drawn;
+    return node.inline ? generatedMarker(generated.push(rendered) - 1) : block(rendered);
   }).join("");
-  return renderMarkdown(markdown, options);
+  return renderMarkdown(markdown, options, generated);
 }
 
 function assertJson(value: unknown, seen = new WeakSet<object>()): void {

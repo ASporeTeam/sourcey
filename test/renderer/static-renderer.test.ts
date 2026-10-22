@@ -346,7 +346,7 @@ describe("renderPage (spec)", () => {
     };
     const html = renderSpec(createMinimalSpec({ tags: [{ name: "pets", operations: [operation] }], operations: [operation] }), defaultOptions);
     const root = "fields/POST/~002fpets/request-body";
-    expect(html.match(/The pet's name\./g)).toHaveLength(1);
+    expect(html.match(/The pet&#39;s name\./g)).toHaveLength(1);
     expect(html).toMatch(/>Body<\/h3><\/div>/);
     expect(html).toContain(">application/json,</code>");
     expect(html).toContain(">application/x-www-form-urlencoded</code>");

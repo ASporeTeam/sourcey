@@ -7,6 +7,29 @@ import {
 } from "../../src/utils/markdown.js";
 
 describe("renderMarkdown", () => {
+  it("keeps what Markdown draws, whether or not the page's own HTML sends it through the sanitizer", () => {
+    const source = "3. third\n4. fourth\n\n- [x] done\n- [ ] open\n\n~~dropped~~\n\n```js\n// a comment\nconst x = 1;\n```";
+    for (const html of [renderMarkdown(source), renderMarkdown(`${source}\n\n<kbd>Esc</kbd>`)]) {
+      expect(html).toMatch(/<ol start="3">/);
+      expect(html.match(/<input [^>]*type="checkbox"/g)).toHaveLength(2);
+      expect(html).toMatch(/<input [^>]*checked/);
+      expect(html).toContain("<del>dropped</del>");
+      expect(html).toMatch(/--shiki-(light|dark)/);
+    }
+    // Authored HTML is sanitized as before.
+    expect(renderMarkdown("<script>alert(1)</script>\n\nText")).not.toContain("<script");
+  });
+
+  it("draws an image only from the web or this site, as it links", () => {
+    expect(renderMarkdown("![Logo](/logo.png)")).toContain('<img src="/logo.png" alt="Logo">');
+    expect(renderMarkdown("![Logo](https://example.com/logo.png)")).toContain('<img src="https://example.com/logo.png" alt="Logo">');
+    for (const src of ["javascript:alert(1)", "data:image/png;base64,AAAA"]) {
+      const html = renderMarkdown(`![Logo](${src})`);
+      expect(html).not.toContain("<img");
+      expect(html).toContain("Logo");
+    }
+  });
+
   it("renders markdown to HTML", () => {
     const html = renderMarkdown("**bold** text");
     expect(html).toContain("<strong>bold</strong>");

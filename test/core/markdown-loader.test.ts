@@ -114,7 +114,7 @@ describe("loadMarkdownPage", { timeout: 30_000 }, () => {
 
       expect(page.headings.map((heading) => heading.id)).toEqual(["anchors", "after"]);
       expect(page.html.match(/id="anchors"/g)?.length).toBe(1);
-      for (const literal of ["<code>$</code>", "<code>$&amp;</code>", "<code>$'</code>", "<code>$$</code>"]) {
+      for (const literal of ["<code>$</code>", "<code>$&amp;</code>", "<code>$&#39;</code>", "<code>$$</code>"]) {
         expect(page.html).toContain(literal);
       }
       expect(page.html.replace(/<[^>]+>/g, "")).toContain("/x$`/");

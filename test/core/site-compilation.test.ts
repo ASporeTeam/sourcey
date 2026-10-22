@@ -46,7 +46,7 @@ describe("native compilation", () => {
     expect(typeset.html).toContain("“Stay calm” — it’s fine…");
     expect(typeset.html).toContain(">Isn’t it?</h2>");
     expect(headingId(typeset.html)).toBe(headingId(plain.html));
-    expect(typeset.html).toContain('<code>--load-only "en"</code>');
+    expect(typeset.html).toContain("<code>--load-only &quot;en&quot;</code>");
     expect(typeset.html).toMatch(/it&#39;s -- raw|it's -- raw/);
     // A title with an apostrophe is the page's one h1, typeset or not.
     for (const { html } of [typeset, plain]) expect(html.match(/<h1\b/g)).toHaveLength(1);

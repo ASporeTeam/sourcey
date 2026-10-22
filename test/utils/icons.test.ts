@@ -35,8 +35,12 @@ describe("GitHub alerts in reference Markdown", () => {
   it("render as the site's callouts, in its language, and leave other quotes alone", () => {
     const html = renderMarkdown("> [!WARNING]\n> Rotate the **key** first.\n\n> [!NOTE] Custom title\n> A plain quote.\n\n> Also plain.", siteMarkdownOptions("heroicons", messagesFor("fr")));
     expect(html).toContain('<div class="callout callout-warning not-prose" role="note"><svg class="callout-icon" width="20" height="20" aria-hidden="true"');
-    // Sanitizing keeps the icon's coordinate system, so the 24-unit drawing scales to 20px instead of being clipped.
-    expect(html).toContain('viewbox="0 0 24 24"');
+    // The icon keeps its coordinate system, so the 24-unit drawing scales to 20px instead of being clipped,
+    // and so it does where the page's own HTML sends the callout through the sanitizer.
+    expect(html).toContain('viewBox="0 0 24 24"');
+    const sanitized = renderMarkdown("> [!WARNING]\n> Rotate the key.\n\n<kbd>Esc</kbd>", siteMarkdownOptions("heroicons", messagesFor("fr")));
+    expect(sanitized).toContain('viewbox="0 0 24 24"');
+    expect(sanitized).toContain("<kbd>Esc</kbd>");
     expect(html).toContain('<div class="callout-title">Avertissement</div><div class="callout-content"><p>Rotate the <strong>key</strong> first.</p>');
     expect(html.match(/role="note"/g)).toHaveLength(1);
     expect(html).toContain("[!NOTE] Custom title");
@@ -75,7 +79,7 @@ describe("authored icons", () => {
       const site = await buildSourceySite({ config, generateOgImages: false });
       const page = site.pages.find(entry => entry.outputPath === "guide.html")!.currentPage;
       if (page.kind !== "markdown") throw new Error("Expected a guide");
-      const asset = page.markdown.html.match(/<img class="card-icon" src="\/(_media\/[0-9a-f]{20}\.svg)" alt="" \/>/)?.[1];
+      const asset = page.markdown.html.match(/<img class="card-icon" src="\/(_media\/[0-9a-f]{20}\.svg)" alt="">/)?.[1];
       expect(asset).toBeDefined();
       expect([...(await sourceyArtifacts(site)).keys()]).toContain(asset);
       // Decorative without a label; with one, it is named for assistive technology and stays in readable Markdown.
@@ -126,7 +130,7 @@ describe("brand marks", () => {
       if (page.kind !== "markdown") throw new Error("Expected a guide");
       const published = String((await sourceyArtifacts(site)).get("guide.html"));
       for (const html of [page.markdown.html, published]) {
-        expect(html).toMatch(/<svg class="card-icon" aria-hidden="true" xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewbox="0 0 640 512" data-sourcey-attribution="Font Awesome Free 7\.2\.0 [^"]*Licence: https:\/\/creativecommons\.org\/licenses\/by\/4\.0\/\. SVG attributes adapted by Sourcey for inline rendering\."><path fill="currentColor" d="/);
+        expect(html).toMatch(/<svg class="card-icon" aria-hidden="true" xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 640 512" data-sourcey-attribution="Font Awesome Free 7\.2\.0 [^"]*Licence: https:\/\/creativecommons\.org\/licenses\/by\/4\.0\/\. SVG attributes adapted by Sourcey for inline rendering\."><path fill="currentColor" d="/);
         expect(html).toMatch(/<svg class="sourcey-inline-icon" role="img" aria-label="GitHub" [^>]*data-sourcey-attribution="Font Awesome Free 7\.2\.0 /);
       }
       await expect(build('# Guide\n\n<Card title="Nope" icon="brand:nope">No.</Card>\n')).rejects.toThrow(/Icon "brand:nope" is not in Font Awesome's brand marks at .*guide\.md/);
@@ -142,7 +146,10 @@ describe("Lucide", () => {
     for (const meaning of ["note", "tip", "warning", "danger", "language", "contents"] as const) expect(nativeIcon("lucide", meaning).body).toMatch(/<(path|circle)/);
     const html = renderMarkdown("> [!NOTE]\n> Drawn by Lucide.", siteMarkdownOptions("lucide", messagesFor("en")));
     expect(html).toContain('stroke-width="2"');
-    expect(html).toContain('<circle cx="12" cy="12" r="10"></circle>');
+    expect(html).toMatch(/<circle cx="12" cy="12" r="10"/);
+    // Sanitized, where the page's own HTML calls for it, the shapes stay.
+    const sanitized = renderMarkdown("> [!NOTE]\n> Drawn by Lucide.\n\n<kbd>Esc</kbd>", siteMarkdownOptions("lucide", messagesFor("en")));
+    expect(sanitized).toContain('<circle cx="12" cy="12" r="10"></circle>');
   });
 
   it("draws a guide's callouts and cards when the theme selects it", async () => {

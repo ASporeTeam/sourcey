@@ -408,7 +408,7 @@ describe("intra-doc link resolver", () => {
     expect(html).toContain("<code>Hidden</code> and");
     expect(html).toContain("[<code>Missing</code>]");
     expect(html).toContain('<a href="https://doc.rust-lang.org/stable/core/error/trait.Error.html" target="_blank" rel="noopener"><code>std::error::Error</code></a>');
-    expect(html).toContain('<img src="https://github.com/example/basic" alt="github" />');
+    expect(html).toContain('<img src="https://github.com/example/basic" alt="github">');
     expect(html.replace(/<[^>]+>/g, "")).toContain("[dependencies]");
     expect(html.replace(/<[^>]+>/g, "")).toContain("#[derive(Widget)]");
     expect(unresolved).toEqual(["`Hidden`"]);
