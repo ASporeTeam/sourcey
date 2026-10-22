@@ -6,7 +6,8 @@
  */
 import { posix } from "node:path";
 import type { NavbarLink } from "../../config.js";
-import { firstHeadingText } from "../../utils/markdown.js";
+import { firstHeadingText, headingInfo, lexMarkdown } from "../../utils/markdown.js";
+import type { Tokens } from "marked";
 import { identityKey } from "../components.js";
 import type { Call, ConfigValue } from "../config-writer.js";
 import type { Diagnostics } from "../diagnostics.js";
@@ -276,13 +277,23 @@ function documentFrontmatter(doc: DocusaurusDoc, slug: string | undefined, text:
   const set: Record<string, string | boolean> = {};
   if (slug) set.slug = slug;
   // Docusaurus titles a page from frontmatter, an opening heading, or its ID; native from frontmatter or its first heading.
-  if (typeof data.title !== "string" && firstHeadingText(text.slice(readFrontmatter(text).bodyStart), 1) !== doc.title) set.title = doc.title;
-  if (doc.label !== doc.title) set.navTitle = doc.label;
+  const body = text.slice(readFrontmatter(text).bodyStart);
+  // A page that opens with its own heading shows that heading, its frontmatter title only naming it elsewhere.
+  const opening = openingHeading(body);
+  const shown = typeof data.title === "string" && opening && opening !== data.title ? opening : doc.title;
+  if (shown !== doc.title || (typeof data.title !== "string" && firstHeadingText(body, 1) !== doc.title)) set.title = shown;
+  if (doc.label !== shown) set.navTitle = doc.label;
   if (doc.unlisted) set.hideInMenu = true;
   const uncarried = UNCARRIED.filter((key) => data[key] !== undefined);
   if (uncarried.length) diagnostics.review({ file: doc.file, code: "docusaurus-frontmatter", message: `Frontmatter ${uncarried.join(", ")} has no native equivalent and is removed` });
   if (data.tags !== undefined) diagnostics.error({ file: doc.file, code: "docusaurus-frontmatter", message: "Tags publish tag pages, which have no native equivalent yet" });
   return { set, remove: [...CONSUMED, ...uncarried].filter((key) => data[key] !== undefined) };
+}
+
+/** The level-one heading a document opens with, after any imports, exports and comments, as Docusaurus reads its content title. */
+function openingHeading(body: string): string | undefined {
+  const first = lexMarkdown(body).find((token) => token.type !== "space" && !(token.type === "html" && /^\s*<!--/.test(token.raw)) && !(token.type === "paragraph" && /^\s*(import|export)\s/.test(token.raw)));
+  return first?.type === "heading" && (first as Tokens.Heading).depth === 1 ? headingInfo(first as Tokens.Heading).text.trim() || undefined : undefined;
 }
 
 /** Generated category index pages become authored pages listing their section. */

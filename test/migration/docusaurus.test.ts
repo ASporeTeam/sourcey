@@ -111,6 +111,13 @@ describe("Docusaurus number prefixes", () => {
 });
 
 describe("sourcey migrate docusaurus", () => {
+  it("titles a page by the heading it opens with, as Docusaurus shows it, keeping its frontmatter title as the navigation label", async () => {
+    await withProject({ ...site, "docs/intro.md": "---\ntitle: Introduction\nsidebar_position: 1\n---\n\n# The Example Platform\n\nIt starts here.\n" }, async (root) => {
+      await migrateProject({ framework: "docusaurus", root });
+      expect(await read(root, "docs/intro.md")).toBe('---\ntitle: The Example Platform\nnavTitle: Introduction\n---\n\n# The Example Platform\n\nIt starts here.\n');
+    });
+  });
+
   it("converts docs, sidebars, routes, admonitions, components and pages, and verifies the native build", async () => {
     await withProject(site, async (root) => {
       const report = await migrateProject({ framework: "docusaurus", root });
