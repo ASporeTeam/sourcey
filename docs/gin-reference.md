@@ -17,6 +17,7 @@ from a single pinned commit.
 | Public API entries documented | 431 (types, functions, methods, constants, variables) |
 | Source files in the snapshot | 53 |
 | Generator | Sourcey (godoc adapter, snapshot mode) |
+| Rendered at | `/docs/gin-api/` (the **Gin reference** tab) |
 | Snapshot | `docs/gin-reference.godoc.json` (committed, digest-pinned) |
 
 ## Why this is a snapshot and not a live crawl
