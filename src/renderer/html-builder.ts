@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { buildAssets } from "./assets.js";
-import { writeArtifacts } from "./writer.js";
+import { openOutput } from "./writer.js";
 import { safeOutputPath, type RouteTable } from "../core/site-model.js";
 import { english } from "../core/messages.js";
 import { resolve } from "node:path";
@@ -26,8 +26,12 @@ function sharedDigest(value: object | undefined): string | undefined {
   return digest;
 }
 let referenceSequence = 0;
-function renderCached(page: SitePage, options: RenderOptions, navigation: SiteNavigation, site: SiteConfig, siteDigest: string, cache: PageRenderCache, outputPath = page.outputPath): Buffer {
+function renderCached(page: SitePage, options: RenderOptions, navigation: SiteNavigation, site: SiteConfig, siteDigest: string, cache: PageRenderCache | undefined, outputPath = page.outputPath): Buffer {
   const current = page.currentPage;
+  // Keep finished UTF-8 bytes, not Preact's tree of concatenated JS strings.
+  // The same bytes feed the writer, HTTP hosts and unchanged-page cache.
+  const render = () => Buffer.from(renderPage(current.kind === "spec" ? current.spec : undefined, options, navigation, current, site));
+  if (!cache) return render();
   let content: unknown;
   if (current.kind === "spec") {
     const { spec, view } = current;
@@ -55,9 +59,7 @@ function renderCached(page: SitePage, options: RenderOptions, navigation: SiteNa
   const key = createHash("sha256").update(siteDigest).update(JSON.stringify([content, optionKey, navigation])).digest("hex");
   const cached = cache.get(outputPath);
   if (cached?.key === key) return cached.html;
-  // Keep finished UTF-8 bytes, not Preact's tree of concatenated JS strings.
-  // The same bytes feed the writer, HTTP hosts and unchanged-page cache.
-  const html = Buffer.from(renderPage(current.kind === "spec" ? current.spec : undefined, options, navigation, current, site));
+  const html = render();
   cache.set(outputPath, { key, html });
   return html;
 }
@@ -114,59 +116,125 @@ export function createRenderOptions(
   };
 }
 
+export interface SiteArtifactOptions {
+  routes?: RouteTable;
+  /** Rendered pages kept across compilations; only a rebuilding host keeps one. */
+  cache?: PageRenderCache;
+  embeddable?: boolean;
+  landingPage?: boolean;
+  ogImages?: Map<string, Buffer>;
+  /** Social cards still to draw, each just before the page that names it is rendered. */
+  cards?: ReadonlyMap<SitePage, () => Promise<Buffer | undefined>>;
+  extraFiles?: Map<string, string | Buffer>;
+}
+
+/** Cards drawn ahead of the page being rendered, so a page waits for none. */
+const CARDS_AHEAD = 32;
+
 /** Low-level renderer; SourceySite owns compilation and its artifact inventory. */
 export async function buildSite(
   pages: SitePage[], navigation: SiteNavigation, outputDir: string, site: SiteConfig,
-  options?: { routes?: RouteTable; cache?: PageRenderCache; embeddable?: boolean; landingPage?: boolean; ogImages?: Map<string, Buffer>; extraFiles?: Map<string, string | Buffer> },
+  options?: SiteArtifactOptions,
 ): Promise<BuildOutput> {
-  const files = await renderSiteArtifacts(pages, navigation, site, options);
-  await writeArtifacts(outputDir, files);
+  await writeSiteArtifacts(outputDir, siteArtifacts(pages, navigation, site, options));
   return { htmlPath: resolve(outputDir, "index.html"), outputDir: resolve(outputDir) };
 }
 
+/** Every artifact in memory at once, for a host that serves them. */
 export async function renderSiteArtifacts(
   pages: SitePage[], navigation: SiteNavigation, site: SiteConfig,
-  options?: { routes?: RouteTable; cache?: PageRenderCache; embeddable?: boolean; landingPage?: boolean; ogImages?: Map<string, Buffer>; extraFiles?: Map<string, string | Buffer> },
+  options?: SiteArtifactOptions,
 ): Promise<Map<string, string | Buffer>> {
-  const cache = options?.cache ?? new Map();
+  const files = new Map<string, string | Buffer>();
+  for await (const [path, body] of siteArtifacts(pages, navigation, site, options)) files.set(path, body);
+  return files;
+}
+
+/**
+ * Write artifacts as they are produced: each is staged to disk and dropped,
+ * with a few writes in flight while the next page renders.
+ */
+export async function writeSiteArtifacts(outputDir: string, artifacts: AsyncIterable<[string, string | Buffer]>): Promise<void> {
+  const output = await openOutput(outputDir);
+  const writing = new Set<Promise<void>>();
+  try {
+    for await (const [path, body] of artifacts) {
+      const write: Promise<void> = output.put(path, body).finally(() => writing.delete(write));
+      write.catch(() => {});
+      writing.add(write);
+      if (writing.size >= 16) await Promise.race(writing);
+    }
+    await Promise.all(writing);
+    await output.commit();
+  } catch (error) {
+    await Promise.allSettled(writing);
+    await output.abort();
+    throw error;
+  }
+}
+
+/**
+ * A site's artifacts, one at a time: each page is rendered only when it is
+ * reached, and its card drawn just ahead of it, so no host need hold every
+ * page of a site at once.
+ */
+export async function* siteArtifacts(
+  pages: SitePage[], navigation: SiteNavigation, site: SiteConfig,
+  options?: SiteArtifactOptions,
+): AsyncGenerator<[string, string | Buffer]> {
+  const cache = options?.cache;
   const assets = await buildAssets(site.theme.name, pages.some(page =>
     page.currentPage.kind === "spec" && page.currentPage.tryIt !== false && page.currentPage.spec.operations.some(op => !op.hidden && !op.mcpExtras)));
   const siteDigest = createHash("sha256").update(JSON.stringify(site)).digest("hex");
-  const files = new Map<string, string | Buffer>();
   const folded = new Set<string>();
-  const put = (path: string, body: string | Buffer) => {
+  const written = new Set<string>();
+  const claim = <T extends string | Buffer>(path: string, body: T): [string, T] => {
     safeOutputPath(path);
     const key = path.normalize("NFC").toLowerCase();
     if (folded.has(key)) throw new Error(`Output collision: ${path}`);
-    folded.add(key); files.set(path, body);
+    folded.add(key); written.add(path);
+    return [path, body];
   };
+  const drawing = new Map<SitePage, Promise<Buffer | undefined>>();
+  let ahead = 0;
   for (const page of pages) {
+    for (; ahead < pages.length && drawing.size < CARDS_AHEAD; ahead++) {
+      const draw = options?.cards?.get(pages[ahead]);
+      if (draw) drawing.set(pages[ahead], draw());
+    }
+    const card = drawing.get(page);
+    if (card) {
+      drawing.delete(page);
+      const png = await card;
+      // A card that could not be drawn leaves its page without one.
+      if (png) yield claim(page.ogImagePath!, png);
+      else page.ogImagePath = undefined;
+    }
     const optionsForPage = createRenderOptions(page, site, { embeddable: options?.embeddable, assets: assets.paths });
     const activeNav = projectNavigation(page.navigation ?? navigation, page.tabSlug, page.pageSlug);
-    put(page.outputPath, renderCached(page, optionsForPage, activeNav, site, siteDigest, cache));
+    yield claim(page.outputPath, renderCached(page, optionsForPage, activeNav, site, siteDigest, cache));
   }
   for (const alias of options?.landingPage === false ? [] : options?.routes?.aliases ?? []) {
     const page = alias.page;
-    put(alias.outputPath, renderCached(page, createRenderOptions(page, site, { embeddable: options?.embeddable, assets: assets.paths }),
+    yield claim(alias.outputPath, renderCached(page, createRenderOptions(page, site, { embeddable: options?.embeddable, assets: assets.paths }),
       projectNavigation(page.navigation ?? navigation, page.tabSlug, page.pageSlug), site, siteDigest, cache, alias.outputPath));
   }
   const redirects = [...options?.routes?.redirects.values() ?? []].filter(route => route.outputPath);
   for (const route of redirects) {
     const target = escapeXml(route.to);
     const literal = JSON.stringify(route.to).replace(/</g, "\\u003c");
-    put(route.outputPath!, `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><meta http-equiv="refresh" content="0;url=${target}"><link rel="canonical" href="${escapeXml(toAbsoluteUrl(route.to, site.siteUrl))}"><title>Page moved</title></head><body><p>This page has moved. <a href="${target}">Continue to the page</a>.</p><script>const target=${literal},url=new URL(target,location.href);if(!target.includes('?'))url.search=location.search;if(!target.includes('#'))url.hash=location.hash;location.replace(url.href)</script></body></html>`);
+    yield claim(route.outputPath!, `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><meta http-equiv="refresh" content="0;url=${target}"><link rel="canonical" href="${escapeXml(toAbsoluteUrl(route.to, site.siteUrl))}"><title>Page moved</title></head><body><p>This page has moved. <a href="${target}">Continue to the page</a>.</p><script>const target=${literal},url=new URL(target,location.href);if(!target.includes('?'))url.search=location.search;if(!target.includes('#'))url.hash=location.hash;location.replace(url.href)</script></body></html>`);
   }
-  if (redirects.length) put("_redirects", redirects.map(route => `${route.publicPath} ${route.to} ${route.status}`).join("\n") + "\n");
-  for (const [path, body] of assets.files) put(path, body);
+  if (redirects.length) yield claim("_redirects", redirects.map(route => `${route.publicPath} ${route.to} ${route.status}`).join("\n") + "\n");
+  for (const [path, body] of assets.files) yield claim(path, body);
   const urls = pages.filter(p => options?.routes ? options.routes.byOutputPath.get(p.outputPath)?.index : p.status !== 404 && p.context.version.index !== false && p.contentLocale === p.context.locale).map(page => {
     const publicPath = page.publicPath ?? toPublicPath(page.outputPath, site.baseUrl, site.prettyUrls);
     return `  <url><loc>${escapeXml(site.siteUrl ? toAbsoluteUrl(publicPath, site.siteUrl) : publicPath)}</loc></url>`;
   });
-  put("sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>`);
-  for (const [path, body] of options?.ogImages ?? []) put(path, body);
-  for (const [path, body] of options?.extraFiles ?? []) put(path, body);
-  for (const path of cache.keys()) if (!files.has(path)) cache.delete(path);
-  return files;
+  yield claim("sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>`);
+  for (const [path, body] of options?.ogImages ?? []) yield claim(path, body);
+  for (const [path, body] of options?.extraFiles ?? []) yield claim(path, body);
+  if (cache) for (const path of cache.keys()) if (!written.has(path)) cache.delete(path);
 }
 
 function resolveRenderHref(pathOrUrl: string, assetBase: string, site: SiteConfig): string {

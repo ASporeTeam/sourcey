@@ -19,7 +19,6 @@ import type { SitePage } from "./core/site-model.js";
 import { generateExports } from "./exports/index.js";
 import { pageMetadata } from "./core/page-metadata.js";
 import { collectSiteDiagnostics, type SiteDiagnostic } from "./core/site-diagnostics.js";
-import { BUILD_JOB_SLOTS } from "./core/build-jobs.js";
 import { closeDiagramRenderer } from "./core/diagrams.js";
 import { contentTypeForPath, outputPathFromRequestPath } from "./renderer/static-files.js";
 import {
@@ -34,6 +33,8 @@ import {
 interface CompilationCache {
   pages: PageRenderCache;
   searches: Map<string, { key: string } & ReturnType<typeof buildSearchArtifacts>>;
+  /** Social cards, drawn as the site's artifacts are produced. */
+  cards?: Map<SitePage, () => Promise<Buffer | undefined>>;
 }
 /** Derived outputs live for exactly the immutable compilation that owns them. */
 const compilationCaches = new WeakMap<SourceySiteArtifacts, CompilationCache>();
@@ -63,7 +64,6 @@ export interface SourceySiteArtifacts {
   extraFiles: Map<string, string | Buffer>;
   mediaTypes: Map<string, string>;
   responseHeaders: Map<string, Record<string, string>>;
-  ogImages: Map<string, Buffer>;
   changelogDiagnostics: ChangelogDiagnostic[];
   godocDiagnostics: GodocLoaderDiagnostic[];
   rustdocDiagnostics: RustdocLoaderDiagnostic[];
@@ -147,11 +147,7 @@ export async function buildSourceySite(
   for (const page of pages) {
     page.searchIndexes = searchSelections.get(page.context.key) ?? [];
   }
-  const ogImages = new Map<string, Buffer>();
-
-  if (options.generateOgImages !== false) {
-    await attachOgImages(pages, config, site, extraFiles, ogImages);
-  }
+  if (options.generateOgImages !== false) cache.cards = await planOgImages(pages, config, site, extraFiles);
 
   const result: SourceySiteArtifacts = {
     config,
@@ -166,7 +162,6 @@ export async function buildSourceySite(
     mediaTypes: exports.mediaTypes,
     responseHeaders: exports.responseHeaders,
     extraFiles,
-    ogImages,
     changelogDiagnostics: assembled.changelogDiagnostics,
     godocDiagnostics: assembled.godocDiagnostics,
     rustdocDiagnostics: assembled.rustdocDiagnostics,
@@ -191,14 +186,14 @@ export async function writeSourceySite(
     const path = relative(output, await canonicalInputPath(source));
     if (!path || !path.startsWith("..") && !isAbsolute(path)) throw new Error(`Output directory would encompass source input: ${source}`);
   }
-  await buildSiteHtml(site.pages, site.navigation, site.outputDir, site.site, {
+  // Written as produced, page by page, rather than rendered whole first.
+  await drawingCards(() => buildSiteHtml(site.pages, site.navigation, site.outputDir, site.site, {
     routes: site.assembly.routes,
-    cache: compilationCaches.get(site)?.pages,
     embeddable: options.embeddable,
     landingPage: options.landingPage,
-    ogImages: site.ogImages,
+    cards: compilationCaches.get(site)?.cards,
     extraFiles: site.extraFiles,
-  });
+  }));
 }
 
 export function collectSourceyWatchPaths(config: ResolvedConfig, configPath?: string): string[] {
@@ -234,13 +229,17 @@ export function collectSourceyWatchPaths(config: ResolvedConfig, configPath?: st
   return Array.from(paths);
 }
 
-async function attachOgImages(
+/**
+ * Each page's social card, ready to draw: the page names its card now, and
+ * the card is drawn as the site's artifacts are produced, just before its
+ * page, so the build never holds every card at once.
+ */
+async function planOgImages(
   pages: SitePage[],
   config: ResolvedConfig,
   site: SiteConfig,
   extraFiles: Map<string, string | Buffer>,
-  ogImages: Map<string, Buffer>,
-): Promise<void> {
+): Promise<Map<SitePage, () => Promise<Buffer | undefined>> | undefined> {
   if (config.ogImage) {
     const staticOg = config.ogImage;
     if (
@@ -258,12 +257,10 @@ async function attachOgImages(
         page.ogImagePath = ogPath;
       }
     }
-    return;
+    return undefined;
   }
 
-  pages = pages.filter(page => page.status !== 404);
   const { embedRemoteLogo, generateOgImage } = await import("./og/generate-og-image.js");
-  const { closeCardDrawer } = await import("./og/draw-card.js");
   // The card is dark, so it draws the logo the site shows in dark mode.
   let logo = site.logo?.dark ?? site.logo?.light;
   if (logo && /^https?:\/\//.test(logo)) logo = await embedRemoteLogo(logo);
@@ -274,33 +271,25 @@ async function attachOgImages(
     logo = `data:${contentTypeForPath(path)};base64,${Buffer.from(body).toString("base64")}`;
   }
 
-  // As many cards in flight as the build's image budget allows; the worker
-  // that lays them out ends with the last, and frees what it held.
-  const queue = [...pages];
-  await Promise.all(Array.from({ length: BUILD_JOB_SLOTS }, async () => {
-    for (let page = queue.shift(); page; page = queue.shift()) {
-      const ogMeta = describePageForOg(page, site, config.changelog.ogImages);
-      if (!ogMeta) continue;
-
-      try {
-        const ogPath = `_og/${page.outputPath.replace(/\.html$/, ".png")}`;
-        const png = await generateOgImage({
-          title: ogMeta.title,
-          description: ogMeta.description,
-          siteName: config.name,
-          theme: config.theme,
-          logo,
-          logoMark: site.logo?.mark,
-        });
-
-        page.ogImagePath = ogPath;
-        ogImages.set(ogPath, png);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Sourcey: skipping OG image for ${page.outputPath}: ${message}`);
-      }
-    }
-  })).finally(closeCardDrawer);
+  const cards = new Map<SitePage, () => Promise<Buffer | undefined>>();
+  for (const page of pages) {
+    const ogMeta = describePageForOg(page, site, config.changelog.ogImages);
+    if (!ogMeta) continue;
+    page.ogImagePath = `_og/${page.outputPath.replace(/\.html$/, ".png")}`;
+    cards.set(page, () => generateOgImage({
+      title: ogMeta.title,
+      description: ogMeta.description,
+      siteName: config.name,
+      theme: config.theme,
+      logo,
+      logoMark: site.logo?.mark,
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Sourcey: skipping OG image for ${page.outputPath}: ${message}`);
+      return undefined;
+    }));
+  }
+  return cards;
 }
 
 function describePageForOg(
@@ -331,5 +320,16 @@ export async function updateSourceySite(previous: SourceySiteArtifacts, changedP
   return buildSourceySite({ config, outputDir: previous.outputDir, previous: structural ? undefined : previous, changedPaths, generateOgImages: false, signal: options.signal });
 }
 export async function sourceyArtifacts(site: SourceySiteArtifacts, options: SourceySiteWriteOptions = {}) {
-  return renderSiteArtifacts(site.pages, site.navigation, site.site, { ...options, routes: site.assembly.routes, cache: compilationCaches.get(site)?.pages, extraFiles: site.extraFiles, ogImages: site.ogImages });
+  const compilation = compilationCaches.get(site);
+  return drawingCards(() => renderSiteArtifacts(site.pages, site.navigation, site.site, { ...options, routes: site.assembly.routes, cache: compilation?.pages, extraFiles: site.extraFiles, cards: compilation?.cards }));
+}
+
+/** The worker that lays cards out ends with the last of them, and frees what it held. */
+async function drawingCards<T>(produce: () => Promise<T>): Promise<T> {
+  try {
+    return await produce();
+  } finally {
+    const { closeCardDrawer } = await import("./og/draw-card.js");
+    await closeCardDrawer();
+  }
 }

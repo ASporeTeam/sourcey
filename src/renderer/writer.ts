@@ -46,22 +46,30 @@ async function plainOutputPath(
 
 interface Change {
   target: string;
-  body?: string | Buffer;
   existed: boolean;
   staged?: string;
   backup?: string;
   installed?: boolean;
 }
 
+export interface OutputWriter {
+  /** Stage one artifact. Its bytes go to disk now and are not kept. */
+  put(path: string, body: string | Buffer): Promise<void>;
+  /** Promote every staged artifact and prune what the generation no longer has. */
+  commit(): Promise<void>;
+  /** Discard what was staged; the live output is untouched. */
+  abort(): Promise<void>;
+}
+
 /**
- * Own standalone output exclusively. Preflight all conflicts before promotion;
- * retain replaced/pruned files until the new inventory commits, so an ordinary
- * filesystem failure can roll the generation back. Astro never uses this writer.
+ * Own standalone output exclusively. Artifacts stream into a staging
+ * directory as they are produced, so a site is never held in memory whole;
+ * the live output is untouched until commit, which checks every prune
+ * conflict before promotion and retains replaced and pruned files until the
+ * new inventory commits, so an ordinary filesystem failure can roll the
+ * generation back. Astro never uses this writer.
  */
-export async function writeArtifacts(
-  outputDir: string,
-  files: ReadonlyMap<string, string | Buffer>,
-): Promise<void> {
+export async function openOutput(outputDir: string): Promise<OutputWriter> {
   const root = resolve(outputDir);
   if (root === resolve("/") || root === resolve(process.cwd()))
     throw new Error(`Refusing to own source directory: ${root}`);
@@ -95,55 +103,81 @@ export async function writeArtifacts(
   const next: Record<string, string> = Object.create(null);
   const changes: Change[] = [];
   const folded = new Set<string>();
-  const entries = [...files];
-  for (let start = 0; start < entries.length; start += 32) {
-    const prepared = await Promise.all(
-      entries.slice(start, start + 32).map(async ([path, body]): Promise<Change | undefined> => {
-        safeOutputPath(path);
-        if (path === inventoryName || path.startsWith(".sourcey-write-"))
-          throw new Error(`Reserved output path: ${path}`);
-        const key = path.normalize("NFC").toLowerCase();
-        if (folded.has(key)) throw new Error(`Output collision: ${path}`);
-        folded.add(key);
-        const hash = (next[path] = digest(body)),
-          target = resolve(root, path);
-        await plainOutputPath(root, target, directories);
-        const actual = await existing(target);
-        if (actual !== undefined && !Object.hasOwn(previous, path))
-          throw new Error(`Refusing to overwrite unowned output: ${target}`);
-        if (actual && digest(actual) === hash) return undefined;
-        return { target, body, existed: actual !== undefined };
-      }),
-    );
-    for (const change of prepared) if (change) changes.push(change);
-  }
-  // A prune conflict must leave every page and the inventory untouched.
-  for (const [path, hash] of Object.entries(previous)) {
-    if (Object.hasOwn(next, path)) continue;
-    const target = resolve(root, path);
+  let staging: Promise<string> | undefined;
+  let promoting = false;
+  const stage = () => (staging ??= mkdir(root, { recursive: true }).then(() => mkdtemp(join(root, ".sourcey-write-"))));
+  // Once promotion starts it owns the staging directory: it removes it, or
+  // keeps it as the recovery copy when a rollback fails.
+  const discard = async () => {
+    if (staging && !promoting) await rm(await staging, { recursive: true, force: true });
+  };
+
+  async function put(path: string, body: string | Buffer): Promise<void> {
+    safeOutputPath(path);
+    if (path === inventoryName || path.startsWith(".sourcey-write-"))
+      throw new Error(`Reserved output path: ${path}`);
+    const key = path.normalize("NFC").toLowerCase();
+    if (folded.has(key)) throw new Error(`Output collision: ${path}`);
+    folded.add(key);
+    const hash = (next[path] = digest(body)),
+      target = resolve(root, path);
     await plainOutputPath(root, target, directories);
     const actual = await existing(target);
-    if (actual && digest(actual) !== hash)
-      throw new Error(`Refusing to prune modified output: ${target}`);
-    if (actual) changes.push({ target, existed: true });
+    if (actual !== undefined && !Object.hasOwn(previous, path))
+      throw new Error(`Refusing to overwrite unowned output: ${target}`);
+    if (actual && digest(actual) === hash) return;
+    // Staging cannot replace a live artifact.
+    const change: Change = { target, existed: actual !== undefined, staged: join(await stage(), `${changes.length}.next`) };
+    changes.push(change);
+    await writeFile(change.staged!, body);
   }
-  // Artifact completion order is not part of the output generation's identity.
-  const nextInventory = JSON.stringify(Object.fromEntries(Object.entries(next).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)));
-  if (inventory?.toString("utf8") !== nextInventory)
-    changes.push({ target: inventoryPath, body: nextInventory, existed: inventory !== undefined });
-  if (!changes.length) return;
 
-  await mkdir(root, { recursive: true });
-  const staging = await mkdtemp(join(root, ".sourcey-write-"));
+  async function commit(): Promise<void> {
+    // A prune conflict must leave every page and the inventory untouched.
+    for (const [path, hash] of Object.entries(previous)) {
+      if (Object.hasOwn(next, path)) continue;
+      const target = resolve(root, path);
+      await plainOutputPath(root, target, directories);
+      const actual = await existing(target);
+      if (actual && digest(actual) !== hash)
+        throw new Error(`Refusing to prune modified output: ${target}`);
+      if (actual) changes.push({ target, existed: true });
+    }
+    // Artifact completion order is not part of the output generation's identity.
+    const nextInventory = JSON.stringify(Object.fromEntries(Object.entries(next).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)));
+    if (inventory?.toString("utf8") !== nextInventory) {
+      const change: Change = { target: inventoryPath, existed: inventory !== undefined, staged: join(await stage(), `${changes.length}.next`) };
+      changes.push(change);
+      await writeFile(change.staged!, nextInventory);
+    }
+    if (!changes.length) return discard();
+    const directory = await stage();
+    promoting = true;
+    await promote(directory, changes);
+  }
+
+  return { put, commit, abort: discard };
+}
+
+/** Write a whole generation at once; see `openOutput`. */
+export async function writeArtifacts(
+  outputDir: string,
+  files: ReadonlyMap<string, string | Buffer>,
+): Promise<void> {
+  const output = await openOutput(outputDir);
+  try {
+    for (const [path, body] of files) await output.put(path, body);
+    await output.commit();
+  } catch (error) {
+    await output.abort();
+    throw error;
+  }
+}
+
+async function promote(staging: string, changes: Change[]): Promise<void> {
   const created = new Set<string>();
   let recovered = true;
   try {
-    // Staging cannot replace a live artifact.
-    for (const [i, change] of changes.entries()) {
-      if (change.body === undefined) continue;
-      change.staged = join(staging, `${i}.next`);
-      await writeFile(change.staged, change.body);
-    }
     try {
       for (const [i, change] of changes.entries()) {
         const first = await mkdir(dirname(change.target), { recursive: true });

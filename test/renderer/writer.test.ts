@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeArtifacts } from "../../src/renderer/writer.js";
+import { openOutput, writeArtifacts } from "../../src/renderer/writer.js";
 
 const fault = vi.hoisted(() => ({ promotion: "", rollback: "", staging: false, cleanup: false }));
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -60,13 +60,38 @@ async function fixture() {
   );
   return root;
 }
-async function generation(root: string) {
+async function generation(root: string, liveOnly = false) {
   const result: Record<string, string> = {};
-  for (const name of await readdir(root)) result[name] = await readFile(join(root, name), "utf8");
+  for (const name of await readdir(root)) {
+    if (liveOnly && name.startsWith(".sourcey-write-")) continue;
+    result[name] = await readFile(join(root, name), "utf8");
+  }
   return result;
 }
 
 describe("standalone output publication", () => {
+  it("stages artifacts as they stream in and changes the live output only on commit", async () => {
+    const root = await fixture();
+    // While a generation streams in, its staging directory sits beside the live files.
+    const live = () => generation(root, true);
+    const before = await live();
+    const abandoned = await openOutput(root);
+    await abandoned.put("index.html", "abandoned index");
+    await abandoned.put("draft.html", "draft page");
+    await abandoned.abort();
+    expect(await generation(root)).toEqual(before);
+    expect((await readdir(root)).some((name) => name.startsWith(".sourcey-write-"))).toBe(false);
+    const output = await openOutput(root);
+    await output.put("index.html", "new index");
+    await output.put("guide.html", "new guide");
+    expect(await live()).toEqual(before);
+    await output.commit();
+    const after = await generation(root);
+    expect(after["index.html"]).toBe("new index");
+    expect(after["guide.html"]).toBe("new guide");
+    expect(Object.keys(after).sort()).toEqual([".sourcey-output.json", "guide.html", "index.html"]);
+  });
+
   it("checks every prune conflict before replacing any output", async () => {
     const root = await fixture();
     await writeFile(join(root, "retired.html"), "edited outside compiler");

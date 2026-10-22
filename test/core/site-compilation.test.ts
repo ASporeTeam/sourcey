@@ -78,7 +78,8 @@ describe("native compilation", () => {
       expect(html).toContain(cold.site.logo!.dark!);
     }
     const { default: sharp } = await import("sharp");
-    const png = [...cold.ogImages.values()][0];
+    const card = cold.pages.find(page => page.ogImagePath)!.ogImagePath!;
+    const png = files.get(card) as Buffer;
     expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     // The social image is dark, so it draws the logo the site shows in dark mode.
     const pixels = await sharp(png).extract({ left: 80, top: 80, width: 24, height: 24 }).removeAlpha().raw().toBuffer();
