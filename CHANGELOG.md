@@ -29,6 +29,7 @@
 - A Swagger 2.0 document converts to OpenAPI 3 before its references are resolved, as the converter is written to, so a type it uses in many places stays one type rather than a copy at every use: a 0.2 MB Kubernetes API had grown to 25 MB on the way, and its build now takes a second and 150 MB less. A reference to a type inside itself now links to that type where it read `any`. As Swagger 2.0 specifies, keywords written beside a `$ref` are ignored.
 - Markdown keeps what it draws through sanitizing: an ordered list's starting number, a task list's checkboxes, `~~strikethrough~~`, and a code theme's italic and bold. The sanitizer had removed them on every page, so a list numbered from 3 read from 1 and a checklist lost its boxes.
 - A page's Markdown is sanitized only where its author wrote HTML. The build's own HTML, its headings, highlighted code and built-in components, joins the page as itself, rather than being written into the page's Markdown, read again as Markdown and sanitized: every page went through the sanitizer whole, highlighted code and all. A component a site defines is still sanitized, as are images and frames from anywhere but the web or the site. An 838-page site builds in 7.5 s, from 9.2 s.
+- A page's Markdown is read once for the local files and HTML it names. Markdown that names neither, as most does, is kept as written, rather than read twice more to rewrite nothing, and a link's label is rewritten from what was read with the link rather than read again.
 
 ## 3.8.3 - 2026-10-21
 

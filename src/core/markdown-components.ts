@@ -707,12 +707,16 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
       if (node.kind === "component") { result.push({ ...node, resolved: { ...node.resolved, content: await assets(node.resolved.content) } }); continue; }
       if (node.kind !== "markdown") { result.push(node); continue; }
       const images = new Set<string>();
+      let html = false;
       forEachToken(lexMarkdown(node.value), token => {
+        if (token.type === "html") html = true;
         if (token.type !== "image" && token.type !== "link") return;
         const href = (token as Tokens.Image | Tokens.Link).href;
         if (/^(?:[a-z][\w+.-]*:|\/|#)/i.test(href)) return;
         if (token.type === "image" || STATIC_ASSET_EXTENSIONS.has(extname(href.split(/[?#]/)[0]).toLowerCase())) images.add(href);
       });
+      // Most Markdown names no local file and holds no HTML, and is kept as written.
+      if (!images.size && !html) { result.push(node); continue; }
       async function mediaUrl(href: string, link: boolean): Promise<string> {
         if (/^(?:[a-z][\w+.-]*:|\/|#)/i.test(href)) return href;
         const [, path, suffix] = href.match(/^([^?#]*)(.*)$/s)!;
@@ -721,8 +725,8 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
       }
       const urls = new Map<string, string>();
       for (const image of images) urls.set(image, await mediaUrl(image, false));
-      const linked = rewriteMarkdownDestinations(node.value, href => urls.get(href) ?? href);
-      const value = await rewriteMarkdownHtml(linked, html => rewriteHtmlUrls(html, (href, tag) => mediaUrl(href, tag === "a")));
+      const linked = urls.size ? rewriteMarkdownDestinations(node.value, href => urls.get(href) ?? href) : node.value;
+      const value = html ? await rewriteMarkdownHtml(linked, html => rewriteHtmlUrls(html, (href, tag) => mediaUrl(href, tag === "a"))) : linked;
       result.push({ ...node, value });
     }
     return result;

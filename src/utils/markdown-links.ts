@@ -1,4 +1,4 @@
-import type { Tokens } from "marked";
+import type { Token, Tokens } from "marked";
 import { forEachToken, lexMarkdown } from "./markdown.js";
 import { inlineCodeEnd } from "./markdown-syntax.js";
 function markerPrefix(input: string, kind: string): string {
@@ -61,21 +61,23 @@ function restoreMarkers(input: string, saved: readonly string[], prefix: string)
 export function rewriteMarkdownDestinations(markdown: string, rewrite: (href: string) => string): string {
   const fenced = protectFencedCodeBlocks(markdown);
   const inline = protectInlineCodeSpans(fenced.text);
-  function rewriteLinks(source: string): string {
+  /** Each link and image among `tokens` as rewritten, in `text`, the source they were read from. */
+  function rewriteLinks(text: string, tokens: Token[]): string {
     const replacements = new Map<string, string>();
-    forEachToken(lexMarkdown(source), token => {
+    forEachToken(tokens, token => {
       if (token.type !== "link" && token.type !== "image") return;
       const link = token as Tokens.Link | Tokens.Image;
       const target = rewrite(link.href);
-      const label = token.type === "link" && link.text !== link.raw ? rewriteLinks(link.text) : link.text;
+      // A link's label was read with it: the images and links inside are its own tokens.
+      const label = token.type === "link" && link.text !== link.raw ? rewriteLinks(link.text, link.tokens ?? []) : link.text;
       if (target === link.href && label === link.text) return;
       const destination = /[\s()<>]/.test(target) ? `<${target.replace(/>/g, "%3E")}>` : target;
       const title = link.title ? ` ${JSON.stringify(link.title)}` : "";
       replacements.set(link.raw, `${token.type === "image" ? "!" : ""}[${label}](${destination}${title})`);
     });
-    return replaceEach(source, replacements);
+    return replaceEach(text, replacements);
   }
-  const links = rewriteLinks(inline.text);
+  const links = rewriteLinks(inline.text, lexMarkdown(inline.text));
   return restoreMarkers(restoreMarkers(links, inline.spans, inline.prefix), fenced.blocks, fenced.prefix);
 }
 
