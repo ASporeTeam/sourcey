@@ -4,7 +4,7 @@ import { convertToOpenApi3 } from "../../src/core/converter.js";
 import { parseSpec } from "../../src/core/parser.js";
 import { normalizeSpec } from "../../src/core/normalizer.js";
 import { resolve } from "node:path";
-import type { NormalizedSpec } from "../../src/core/types.js";
+import type { NormalizedSpec, ParsedSpec } from "../../src/core/types.js";
 
 const FIXTURES = resolve(import.meta.dirname, "../fixtures");
 
@@ -16,6 +16,23 @@ async function loadAndNormalize(fixture: string): Promise<NormalizedSpec> {
 }
 
 describe("normalizeSpec", () => {
+  it("normalizes a component once wherever it is used the same way, and keeps a component named \"\" apart from an unnamed use", () => {
+    // The parser shares one object for every use of a component.
+    const owner = { type: "object", "x-ref-name": "Owner", properties: { name: { type: "string" } } };
+    const blank = { type: "object", properties: { id: { type: "string" } } };
+    const returns = (schema: object) => ({ responses: { "200": { description: "OK", content: { "application/json": { schema } } } } });
+    const spec = normalizeSpec({
+      source: "inline.json",
+      document: { openapi: "3.0.3", info: { title: "Shared", version: "1" }, paths: { "/a": { get: returns(owner) }, "/b": { get: returns(owner) }, "/c": { get: returns(blank) } }, components: { schemas: { Owner: owner, "": blank } } },
+    } as unknown as ParsedSpec);
+    const body = (index: number) => spec.operations[index].responses[0].content!["application/json"].schema!;
+    expect(body(0)).toBe(body(1));
+    expect(body(0)).toMatchObject({ refName: "Owner", properties: { name: { type: "string" } } });
+    expect(spec.schemas[""].name).toBe("");
+    expect(body(2).name).toBeUndefined();
+    expect(body(2).properties!.id.type).toBe("string");
+  });
+
   it("expands a recursive component wherever it is used and links it where it would repeat", async () => {
     const spec = await loadAndNormalize("recursive-schema.yaml");
     const body = spec.operations[0].requestBody!.content["application/json"].schema!;

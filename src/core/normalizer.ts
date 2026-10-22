@@ -45,11 +45,16 @@ export function normalizeSpec(parsed: ParsedSpec): NormalizedSpec {
   const doc = parsed.document;
 
   const components = (doc.components?.schemas ?? {}) as Components;
-  const schemas = normalizeSchemas(components);
+  let schemas, operations, webhooks;
+  try {
+    schemas = normalizeSchemas(components);
+    operations = normalizeOperations(components, doc.paths, doc.security);
+    webhooks = normalizeWebhooks(components, doc.webhooks);
+  } finally {
+    normalized.delete(components);
+  }
   const securitySchemes = normalizeSecuritySchemes(doc.components?.securitySchemes);
   const servers = normalizeServers(doc.servers);
-  const operations = normalizeOperations(components, doc.paths, doc.security);
-  const webhooks = normalizeWebhooks(components, doc.webhooks);
   const tags = normalizeTags(doc.tags, operations);
 
   return {
@@ -505,11 +510,32 @@ function normalizeSchemas(schemas: Components): Record<string, NormalizedSchema>
 }
 
 /**
+ * Schemas already normalized for a document, by source object, name and the
+ * components on the way to them. The parser shares one object for every use
+ * of a component, and a schema normalizes the same wherever it has the same
+ * name and path, so each such place is normalized once and its result shared,
+ * rather than a type used across a large API being copied at every use.
+ * Normalized schemas are never changed afterwards.
+ */
+const normalized = new WeakMap<Components, WeakMap<object, Map<string, NormalizedSchema>>>();
+
+/**
  * `path` names the components on the way to this schema. A reference the
  * parser left in place (a recurring component) expands like any other off
  * that path, and stays a named link where the component would repeat.
  */
 function normalizeSchema(schema: Record<string, unknown>, components: Components, name?: string, path: readonly string[] = name ? [name] : []): NormalizedSchema {
+  let bySchema = normalized.get(components);
+  if (!bySchema) normalized.set(components, (bySchema = new WeakMap()));
+  let byPlace = bySchema.get(schema);
+  if (!byPlace) bySchema.set(schema, (byPlace = new Map()));
+  const place = JSON.stringify([name ?? null, path]);
+  let result = byPlace.get(place);
+  if (!result) byPlace.set(place, (result = normalizeSchemaAt(schema, components, name, path)));
+  return result;
+}
+
+function normalizeSchemaAt(schema: Record<string, unknown>, components: Components, name: string | undefined, path: readonly string[]): NormalizedSchema {
   const recurring = typeof schema.$ref === "string" ? /^#\/components\/schemas\/([^/]+)$/.exec(schema.$ref)?.[1] : undefined;
   const target = recurring && decodeURIComponent(recurring).replace(/~1/g, "/").replace(/~0/g, "~");
   if (target && components[target] && !path.includes(target)) {

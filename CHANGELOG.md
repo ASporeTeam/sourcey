@@ -19,6 +19,7 @@
 - A Swagger 2.0 document converts without being written out as YAML first. The converter kept that text only for validators' messages, and writing a large dereferenced document took over a second.
 - `sourcey build` writes the site as it renders it: each page, and the social image drawn just before it, goes to disk and is let go, rather than the whole site's HTML and images being held until the last page renders. The output directory still changes all at once, when every file is ready, and is rolled back on a failure as before. `SourceySiteArtifacts` no longer carries `ogImages`: the images are among the files `writeSourceySite` writes and the in-memory artifacts a host renders.
 - Code is highlighted by Oniguruma, the regex engine its grammars are written for, rather than by Shiki's JavaScript translation of them, which read some patterns differently: SQL's `SUM(` and other functions written against an opening bracket are coloured as functions now. Highlighting takes half the time and a fifth of the memory it did.
+- An API reference normalizes each schema once for every place it is used the same way, and shares the result, rather than copying a component into every operation that returns it. A 1,781-operation API held a third of the schema memory it did. References render as before.
 
 ## 3.8.3 - 2026-10-21
 
