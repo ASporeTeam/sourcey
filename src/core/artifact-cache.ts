@@ -42,6 +42,12 @@ async function packageFile(name: string, importer: string): Promise<string | und
   return undefined;
 }
 
+/** Tuples of names in one order wherever they were found from. */
+function inOrder(a: readonly (string | null)[], b: readonly (string | null)[]): number {
+  const x = a.join("\0"), y = b.join("\0");
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
 /**
  * The installed packages, rather than a version label, establish transform
  * identity: each package by its manifest's bytes and every file's size and
@@ -57,6 +63,9 @@ async function transformIdentity(dependencies: string[]): Promise<string> {
     pending = (async () => {
       const files: [string, string][] = [],
         edges: [string, string, string | null][] = [];
+      // Directories and packages are read all at once and put in order
+      // after, so the walk waits on the file system once per level of a
+      // closure rather than once for each of its thousands of files.
       async function walk(
         root: string,
         prefix: string,
@@ -65,19 +74,17 @@ async function transformIdentity(dependencies: string[]): Promise<string> {
         const canonical = await realpath(root);
         if (ancestors.has(canonical)) throw new Error(`Artifact dependency cycle: ${root}`);
         const branch = new Set([...ancestors, canonical]);
-        for (const entry of (await readdir(root, { withFileTypes: true })).sort((a, b) =>
-          a.name.localeCompare(b.name),
-        )) {
-          if (entry.name === "node_modules" || entry.name === ".git") continue;
-          const path = join(root, entry.name),
-            name = `${prefix}/${entry.name}`;
-          const info = entry.isSymbolicLink() ? await stat(path) : entry;
-          if (info.isDirectory()) await walk(path, name, branch);
-          else if (info.isFile()) files.push([name, path]);
-        }
+        await Promise.all(
+          (await readdir(root, { withFileTypes: true })).map(async (entry) => {
+            if (entry.name === "node_modules" || entry.name === ".git") return;
+            const path = join(root, entry.name),
+              name = `${prefix}/${entry.name}`;
+            const info = entry.isSymbolicLink() ? await stat(path) : entry;
+            if (info.isDirectory()) await walk(path, name, branch);
+            else if (info.isFile()) files.push([name, path]);
+          }),
+        );
       }
-      await walk(moduleTree, "engine");
-      files.push(["engine/package.json", join(engine, "package.json")]);
       const visited = new Set<string>();
       async function visit(name: string, importer: string): Promise<void> {
         if (isBuiltin(name)) return;
@@ -90,30 +97,28 @@ async function transformIdentity(dependencies: string[]): Promise<string> {
           optionalDependencies?: Record<string, string>;
           peerDependencies?: Record<string, string>;
         };
-        await walk(dirname(path), path);
-        for (const dependency of Object.keys({
-          ...pkg.dependencies,
-          ...pkg.optionalDependencies,
-          ...pkg.peerDependencies,
-        }).sort())
-          await visit(dependency, path);
+        await Promise.all([
+          walk(dirname(path), path),
+          ...Object.keys({
+            ...pkg.dependencies,
+            ...pkg.optionalDependencies,
+            ...pkg.peerDependencies,
+          }).map((dependency) => visit(dependency, path)),
+        ]);
       }
-      for (const dependency of [...dependencies].sort())
-        await visit(dependency, join(engine, "package.json"));
-      const hashes: [string, string][] = [];
-      for (let start = 0; start < files.length; start += 32)
-        hashes.push(
-          ...(await Promise.all(
-            files
-              .slice(start, start + 32)
-              .map(async ([name, path]): Promise<[string, string]> => {
-                if (basename(path) === "package.json") return [name, sha(await readFile(path))];
-                const info = await stat(path);
-                return [name, `${info.size}:${info.mtimeMs}`];
-              }),
-          )),
-        );
-      return sha(JSON.stringify([process.version, process.platform, process.arch, edges, hashes]));
+      await Promise.all([
+        walk(moduleTree, "engine"),
+        ...dependencies.map((dependency) => visit(dependency, join(engine, "package.json"))),
+      ]);
+      files.push(["engine/package.json", join(engine, "package.json")]);
+      const hashes = await Promise.all(
+        files.sort(inOrder).map(async ([name, path]): Promise<[string, string]> => {
+          if (basename(path) === "package.json") return [name, sha(await readFile(path))];
+          const info = await stat(path);
+          return [name, `${info.size}:${info.mtimeMs}`];
+        }),
+      );
+      return sha(JSON.stringify([process.version, process.platform, process.arch, edges.sort(inOrder), hashes]));
     })();
     identities.set(key, pending);
     pending.catch(() => identities.delete(key));

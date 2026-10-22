@@ -34,6 +34,7 @@
 - Sourcey's own scripts and styles ship built in the package, and a site's build reads them rather than bundling them with Vite and Tailwind whenever its cache is empty: a cold build of a 493-page site takes 0.7 s less CPU time and 30 MB less memory. The published scripts no longer name the machine that bundled them. Rolldown had headed each module's code with its path, so a site's `sourcey-search.js` carried the builder's home or temporary directory; a site's own components are bundled without those paths too.
 - A build finds the links its broken-fragment check follows by reading each page's anchors from the HTML it wrote, rather than parsing every page again: on a 493-page site that check took a tenth of a second.
 - A page's Markdown is lexed once where it used to be lexed twice: the title and summary its frontmatter leaves out are read from one lexing of the page, and its headings from the same lexing that finds its local files.
+- The build cache reads the packages a diagram or social image is drawn with all at once, rather than one directory and one file at a time, so a build with a diagram waits a tenth of a second less before drawing it, cached or not. What it checks is unchanged.
 
 ## 3.8.3 - 2026-10-21
 
