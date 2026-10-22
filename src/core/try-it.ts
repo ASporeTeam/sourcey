@@ -1,7 +1,10 @@
 import type { NormalizedOperation, SecurityScheme, ServerDefinition } from "./types.js";
 
+/** What the console reads of an operation: how to call it. Its responses and prose stay on the page. */
+export type ConsoleOperation = Pick<NormalizedOperation, "method" | "path" | "parameters" | "requestBody" | "security">;
+
 export interface ConsoleData {
-  operation: NormalizedOperation;
+  operation: ConsoleOperation;
   servers: ServerDefinition[];
   securitySchemes: Record<string, SecurityScheme>;
   languages: string[];

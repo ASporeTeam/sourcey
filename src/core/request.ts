@@ -1,7 +1,7 @@
 import { effectiveSchema, isRecord, omittedField, validateValue, type ValueIssue } from "./schema.js";
+import type { ConsoleOperation } from "./try-it.js";
 import type {
   EncodingObject,
-  NormalizedOperation,
   NormalizedParameter,
   NormalizedSchema,
   SecurityScheme,
@@ -31,7 +31,7 @@ export interface RequestDescription {
   issues: RequestIssue[];
 }
 export interface RequestContext {
-  operation: NormalizedOperation;
+  operation: ConsoleOperation;
   servers: ServerDefinition[];
   securitySchemes: Record<string, SecurityScheme>;
   baseUrl: string;
@@ -49,7 +49,7 @@ const reserved = /%(?:3A|2F|3F|23|5B|5D|40|21|24|26|27|28|29|2A|2B|2C|3B|3D)/gi;
 const valueEncoder = (allow?: boolean) => (value: unknown) =>
   allow ? encode(value).replace(reserved, (v) => decodeURIComponent(v)) : encode(value);
 
-export function initialDraft(operation: NormalizedOperation): RequestDraft {
+export function initialDraft(operation: ConsoleOperation): RequestDraft {
   const parameters: Record<string, unknown> = {};
   for (const p of operation.parameters) {
     const media = p.content ? Object.values(p.content)[0] : undefined;

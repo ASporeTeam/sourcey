@@ -8,6 +8,8 @@ import { buildSourceySite } from "../src/site.js";
 import { renderPage } from "../src/renderer/static-renderer.js";
 import { createRenderOptions } from "../src/renderer/html-builder.js";
 import { consoleArtifactPath } from "../src/renderer/try-it.js";
+import { parseShared } from "../src/core/shared-json.js";
+import type { ConsoleData } from "../src/core/try-it.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -119,11 +121,13 @@ describe("interactive reference integration", () => {
         path.startsWith("_sourcey/try-it/"),
       );
       expect(artifacts).toHaveLength(2);
-      const data = JSON.parse(String(artifacts.find(([path]) => path.includes("items"))![1]));
+      const data = parseShared<ConsoleData>(String(artifacts.find(([path]) => path.includes("items"))![1]));
       expect(data.credentials).toBe("same-origin");
       expect(Object.keys(data.securitySchemes)).toEqual(["Used"]);
       expect(data.operation.path).toBe("/items");
       expect(data).not.toHaveProperty("operations");
+      // The console reads how to call the operation; its responses stay on the page.
+      expect(Object.keys(data.operation).sort()).toEqual(["method", "parameters", "path", "security"]);
     },
   );
   it("disables the console and data at site scope while allowing a tab override", async () => {
@@ -135,7 +139,7 @@ describe("interactive reference integration", () => {
     const on = await assemble("default", false, { credentials: "include" });
     expect(on.html("api")).toContain("data-try-it-trigger");
     const data = [...on.site.extraFiles].find(([path]) => path.startsWith("_sourcey/try-it/"))!;
-    expect(JSON.parse(String(data[1])).credentials).toBe("include");
+    expect(parseShared<{ credentials: string }>(String(data[1])).credentials).toBe("include");
   });
   it("validates credentials configuration rather than silently changing policy", async () => {
     await expect(assemble("default", { credentials: "invalid" } as never)).rejects.toThrow("tryIt");

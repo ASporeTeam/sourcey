@@ -1,5 +1,6 @@
 /** Delegated bootstrap only. Console code, Preact and operation data load on activation. */
 import { showRequestUrl } from "../components/try-it/request-url.js";
+import { parseShared } from "../core/shared-json.js";
 
 const originalUrls = new WeakMap<Element, Node[]>();
 
@@ -9,7 +10,7 @@ async function loadConsole(button: HTMLElement) {
     fetch(new URL(button.dataset.tryItData!, document.baseURI)),
   ]);
   if (!response.ok) throw new Error("Could not load this operation.");
-  return [module, await response.json()] as const;
+  return [module, parseShared(await response.text())] as const;
 }
 
 /** The console's asset names as the page carries them now. */

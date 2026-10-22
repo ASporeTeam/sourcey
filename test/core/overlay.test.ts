@@ -115,7 +115,8 @@ describe("OpenAPI Overlay 1.0", () => {
     expect(files.get("api/openapi.json")!.toString()).toContain("List your pets");
     expect(files.get("api/openapi.json")!.toString()).not.toContain("Private operation");
     expect([...files].some(([path, body]) => path.endsWith(".md") && body.toString().includes("Keep this editorial detail."))).toBe(true);
-    expect([...files].some(([path, body]) => path.startsWith("_sourcey/try-it/") && body.toString().includes("List your pets"))).toBe(true);
+    // A console for each operation the effective spec keeps, and none for the one it removed.
+    expect([...files.keys()].filter(path => path.startsWith("_sourcey/try-it/")).map(path => path.split("/").pop()!.replace(/-[0-9a-f]{64}\.json$/, ""))).toEqual(["operation-pets-get"]);
     expect(collectSourceyWatchPaths(config)).toContain(overlayPath);
 
     const warm = await buildSourceySite({ config, previous: first, generateOgImages: false });

@@ -28,8 +28,9 @@ export function consoleData(
   languages: string[],
   options?: TryItConfig,
 ): ConsoleData {
+  const { method, path, parameters, requestBody, security } = operation;
   return {
-    operation,
+    operation: { method, path, parameters, ...(requestBody && { requestBody }), security },
     servers: operation.servers ?? spec.servers,
     securitySchemes: Object.fromEntries(
       [...new Set(operation.security.flatMap((r) => Object.keys(r)))]

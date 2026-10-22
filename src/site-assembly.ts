@@ -38,6 +38,7 @@ import { markdownPages } from "./adapters/shared.js";
 import type { SiteConfig } from "./renderer/context.js";
 import { joinHref, normalizeBaseUrl, toPrettyLink, toPublicPath, toPublicUrl, type LinkStyle } from "./site-url.js";
 import { consoleArtifactPath, consoleData } from "./renderer/try-it.js";
+import { stringifyShared } from "./core/shared-json.js";
 import { staticMediaAsset } from "./core/media.js";
 import type { ArtifactBody } from "./core/source-file.js";
 
@@ -404,7 +405,7 @@ export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCa
     for (const operation of page.currentPage.spec.operations) {
       if (operation.hidden || operation.mcpExtras) continue;
       const scope = page.currentPage.specKey ?? page.tabSlug;
-      extraFiles.set(consoleArtifactPath(scope, operation), JSON.stringify(
+      extraFiles.set(consoleArtifactPath(scope, operation), stringifyShared(
         consoleData(operation, page.currentPage.spec, scope, config.codeSamples, page.currentPage.tryIt)));
     }
   }
