@@ -286,7 +286,8 @@ function ContentFooter() {
           Docs by Sourcey
         </a>
       </div>
-      <div class="flex items-center gap-4">
+      {/* Many links wrap onto a second line rather than widening the page past a narrow screen. */}
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         {editUrl && (
           <a
             href={editUrl}
