@@ -19,9 +19,14 @@ export async function convertToOpenApi3(parsed: ParsedSpec): Promise<ParsedSpec>
 
   // Break circular references (from dereferencing) before converting,
   // and enable anchors mode so swagger2openapi handles any remaining ones.
-  const cleanDoc = JSON.parse(JSON.stringify(doc)) as Record<string, unknown>;
+  const text = JSON.stringify(doc);
+  const cleanDoc = JSON.parse(text) as Record<string, unknown>;
   preserveFormFieldSchemas(cleanDoc);
   const result = await convertObj(cleanDoc, {
+    // The source text, kept only for validators' messages. Without it
+    // swagger2openapi writes the whole dereferenced document out as YAML,
+    // which took over a second on a large Kubernetes API.
+    text,
     patch: true,
     warnOnly: true,
     direct: true,

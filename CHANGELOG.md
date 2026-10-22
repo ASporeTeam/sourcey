@@ -16,6 +16,7 @@
 - `sourcey migrate docusaurus` keeps a navbar link to a page of the site (`to`), as it keeps one to another site (`href`), rather than dropping it without a word.
 - Social images are drawn on worker threads, as many at once as the build's image budget allows, rather than one or two at a time on the main thread, and each takes a third of the time: the card's background glow is drawn as one gradient rather than the masked pattern satori made of it, which took resvg three times as long as the rest of the card. Images look as before. A cold build of an 838-page site went from 32 s to 14 s.
 - An operation or schema is searched by its own words and its fields' names, titles, descriptions and values, each named type's once, as the reference draws it, rather than by a dump of the whole normalized document. The dump repeated a type nested many times over at every level and listed the document's own keys, so "type", "format" and "properties" matched every operation; on a Kubernetes API one operation's search text was 5.9 MB and `documents.json` was 61 MB. It is now 6.5 MB, and builds take less time and memory.
+- A Swagger 2.0 document converts without being written out as YAML first. The converter kept that text only for validators' messages, and writing a large dereferenced document took over a second.
 
 ## 3.8.3 - 2026-10-21
 
