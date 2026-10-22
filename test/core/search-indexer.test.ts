@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildSearchIndex } from "../../src/core/search-indexer.js";
+import { buildSearchIndex, referenceSearchText } from "../../src/core/search-indexer.js";
 import type { DocsPage } from "../../src/core/markdown-loader.js";
 import type { SiteNavigation } from "../../src/core/navigation.js";
-import type { NormalizedOperation, NormalizedSpec } from "../../src/core/types.js";
+import type { NormalizedOperation, NormalizedSchema, NormalizedSpec } from "../../src/core/types.js";
 
 describe("buildSearchIndex", () => {
   it("preserves generated symbol metadata for client-side ranking", () => {
@@ -92,5 +92,29 @@ describe("buildSearchIndex", () => {
     const reference = buildSearchIndex(new Map([["api", spec]]), documents, authored, "/", [], false, targets)
       .filter(entry => entry.start !== undefined && entry.tab === "API").sort((a, b) => a.start! - b.start!);
     expect(reference.map(entry => entry.title)).toEqual(["Pets API", "List pets", "List stores", "Add a pet"]);
+  });
+});
+
+describe("referenceSearchText", () => {
+  it("reads an operation's words and its fields' once per named type, without the document's own keys", () => {
+    // A Kubernetes-style type nested at every level, as a normalized document repeats it.
+    const condition = (depth: number): NormalizedSchema => ({
+      name: "Condition", type: "object", description: "A condition observed on the resource.",
+      properties: {
+        status: { type: "string", enum: ["True", "False", "Unknown"] },
+        ...(depth ? { nested: condition(depth - 1) } : {}),
+      },
+    });
+    const operation: NormalizedOperation = {
+      operationId: "ApplicationSetService_Create", summary: "Create an application set", method: "post", path: "/api/v1/applicationsets",
+      tags: ["ApplicationSetService"], deprecated: false, security: [],
+      parameters: [{ name: "upsert", in: "query", required: false, deprecated: false, description: "Replace one that exists.", schema: { type: "boolean" } }],
+      requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { conditions: { type: "array", items: condition(40) } } } } } },
+      responses: [{ statusCode: "200", description: "The created set.", headers: { "X-Trace": { name: "X-Trace", in: "header", required: false, deprecated: false, description: "Trace identifier." } } }],
+    };
+    const words = referenceSearchText(operation).split(" ");
+    for (const word of ["ApplicationSetService_Create", "/api/v1/applicationsets", "upsert", "conditions", "Condition", "status", "Unknown", "nested", "Trace"]) expect(words).toContain(word);
+    expect(words.filter(word => word === "observed")).toHaveLength(1);
+    for (const key of ["properties", "type", "operationId", "required"]) expect(words).not.toContain(key);
   });
 });

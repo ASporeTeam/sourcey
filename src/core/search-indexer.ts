@@ -1,4 +1,4 @@
-import type { NormalizedSpec } from "./types.js";
+import type { MediaTypeContent, NormalizedOperation, NormalizedParameter, NormalizedSchema, NormalizedSpec } from "./types.js";
 import type { DocsPage } from "./markdown-loader.js";
 import { readingOrder, type SiteNavigation } from "./navigation.js";
 import type { PrettyUrls } from "../site-url.js";
@@ -247,20 +247,79 @@ function summarizeVersion(
 }
 
 const referenceText = new WeakMap<object, string>();
-/** One full-text projection per immutable normalized operation/schema. */
-export function referenceSearchText(value: unknown): string {
-  if (value && typeof value === "object") {
-    const cached = referenceText.get(value);
-    if (cached !== undefined) return cached;
-  }
+/**
+ * The words a reader finds an operation or schema by, once per immutable
+ * normalized value: its names, path, tags and descriptions, and the names,
+ * titles, descriptions and values of every field it takes and returns. A named
+ * type's fields are read once, as the reference draws them once, so a type
+ * nested many times over adds its words once rather than at every level.
+ */
+export function referenceSearchText(value: NormalizedOperation | NormalizedSchema): string {
+  const cached = referenceText.get(value);
+  if (cached !== undefined) return cached;
+  const words: string[] = [];
+  const named = new Set<string>();
   const seen = new WeakSet<object>();
-  function text(node: unknown): string {
-    if (typeof node === "string" || typeof node === "number") return String(node);
-    if (!node || typeof node !== "object" || seen.has(node)) return "";
+  const add = (...parts: unknown[]) => {
+    for (const part of parts) if (typeof part === "string" ? part : typeof part === "number") words.push(String(part));
+  };
+  const schema = (node: NormalizedSchema | undefined): void => {
+    if (!node || seen.has(node)) return;
     seen.add(node);
-    return Object.entries(node).map(([key, child]) => key + " " + text(child)).join(" ");
-  }
-  const result = text(value);
-  if (value && typeof value === "object") referenceText.set(value, result);
+    const name = node.refName ?? node.name;
+    if (name) {
+      if (named.has(name)) return;
+      named.add(name);
+    }
+    add(name, node.title, node.description, node.const, ...node.enum ?? [], ...node.enumNames ?? [], ...node.enumDescriptions ?? []);
+    for (const [field, child] of Object.entries(node.properties ?? {})) {
+      add(field);
+      schema(child);
+    }
+    if (typeof node.additionalProperties === "object") schema(node.additionalProperties);
+    schema(node.items);
+    schema(node.not);
+    for (const child of [...node.allOf ?? [], ...node.anyOf ?? [], ...node.oneOf ?? []]) schema(child);
+  };
+  const media = (content: Record<string, MediaTypeContent> | undefined) => {
+    for (const entry of Object.values(content ?? {})) schema(entry.schema);
+  };
+  const parameter = (entry: NormalizedParameter) => {
+    add(entry.name, entry.description);
+    schema(entry.schema);
+    media(entry.content);
+  };
+  const operation = (op: NormalizedOperation): void => {
+    add(op.operationId, op.summary, op.description, op.method, op.path, ...op.tags);
+    op.parameters.forEach(parameter);
+    if (op.requestBody) {
+      add(op.requestBody.description);
+      media(op.requestBody.content);
+    }
+    for (const response of op.responses) {
+      add(response.statusCode, response.summary, response.description);
+      media(response.content);
+      Object.values(response.headers ?? {}).forEach(parameter);
+    }
+    schema(op.mcpExtras?.outputSchema);
+    for (const callback of Object.values(op.callbacks ?? {})) {
+      add(callback.expression);
+      callback.operations.forEach(operation);
+    }
+  };
+  if ("method" in value && "path" in value) operation(value);
+  else schema(value);
+  const result = words.join(" ");
+  referenceText.set(value, result);
   return result;
+}
+
+/** The words a reference's overview is found by: its title and descriptions, servers, tags and security schemes. */
+export function referenceOverviewSearchText(spec: NormalizedSpec): string {
+  return [
+    spec.info.title, spec.info.summary, spec.info.description,
+    ...spec.servers.flatMap(server => [server.url, server.description]),
+    ...spec.tags.flatMap(tag => [tag.name, tag.summary, tag.description]),
+    ...Object.entries(spec.securitySchemes).flatMap(([name, scheme]) => [name, scheme.name, scheme.description]),
+  ].filter(Boolean).join(" ");
 }

@@ -1,5 +1,5 @@
 import { pageMetadata } from "../core/page-metadata.js";
-import { referenceSearchText } from "../core/search-indexer.js";
+import { referenceOverviewSearchText, referenceSearchText } from "../core/search-indexer.js";
 import { createHash } from "node:crypto";
 import type { NormalizedOperation, NormalizedSchema, NormalizedSpec } from "../core/types.js";
 import type { ResolvedSiteContext, SitePage } from "../core/site-model.js";
@@ -186,7 +186,7 @@ export function collectReadableDocuments(pages: SitePage[], site: SiteConfig): R
           contentVersion: page.context?.version.id,
           versionScope: page.context?.scope,
           kind: "page",
-          searchText: page.currentPage.kind === "spec" ? referenceSearchText({ info: page.currentPage.spec.info, servers: page.currentPage.spec.servers, tags: page.currentPage.spec.tags.map(tag => ({ name: tag.name, summary: tag.summary, description: tag.description, externalDocs: tag.externalDocs })), securitySchemes: page.currentPage.spec.securitySchemes }) : body,
+          searchText: page.currentPage.kind === "spec" ? referenceOverviewSearchText(page.currentPage.spec) : body,
           title,
           description: metadata.description,
           tab: page.tabSlug,
