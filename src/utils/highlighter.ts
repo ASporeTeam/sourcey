@@ -1,6 +1,7 @@
 import type { CodeFenceMetadata } from "./markdown.js";
 import { createHighlighterCore, type HighlighterCore } from "shiki/core";
 import { createOnigurumaEngine } from "shiki/engine/oniguruma";
+import { INITIAL, Theme, type StateStack } from "shiki/textmate";
 import js from "shiki/langs/javascript.mjs";
 import ts from "shiki/langs/typescript.mjs";
 import bash from "shiki/langs/bash.mjs";
@@ -41,37 +42,112 @@ const highlighter = await ((shared[CACHE_KEY] as Promise<HighlighterCore> | unde
     engine: createOnigurumaEngine(import("shiki/wasm")),
   })));
 
+const languages = new Set(highlighter.getLoadedLanguages());
+
 /**
- * Highlight code with Shiki (synchronous, build-time).
- * Uses dual-theme output: light theme inline + dark theme via CSS vars.
- * Switch themes with `.dark` class on a parent element.
- *
- * The HTML uses `--shiki-dark` CSS custom properties so dark mode
- * works via CSS (no JS theme switching needed at runtime).
+ * The two code themes as the tokenizer matches them. A page shows the first
+ * in light mode and the second in dark, each through its own CSS variables.
+ */
+const themes = ([["light", "github-light-default"], ["dark", "dark-plus"]] as const).map(([name, id]) => {
+  const resolved = highlighter.getTheme(id);
+  const theme = Theme.createFromRawTheme(resolved);
+  const { foregroundId, fontStyle } = theme.getDefaults();
+  return { name, id, theme, colors: theme.getColorMap(), replacements: resolved.colorReplacements, fg: resolved.fg, bg: resolved.bg, defaults: { foreground: foregroundId, fontStyle } };
+});
+const PRE = `<pre class="shiki shiki-themes ${themes.map(({ id }) => id).join(" ")}" style="${[
+  ...themes.map(({ name, fg }) => `--shiki-${name}:${fg}`),
+  ...themes.map(({ name, bg }) => `--shiki-${name}-bg:${bg}`),
+].join(";")}" tabindex="0"><code>`;
+
+/** The tokenizer's font style bits; `NOT_SET` leaves a scope's parent's style. */
+const NOT_SET = -1, ITALIC = 1, BOLD = 2, UNDERLINE = 4, STRIKETHROUGH = 8;
+interface Style { foreground: number; fontStyle: number }
+
+/** A token's style attribute in both themes: each theme's colour and font, unset ones inherited, as Shiki writes it. */
+function tokenStyle(styles: readonly Style[]): string {
+  const variants = styles.map(({ foreground, fontStyle }, index) => {
+    const { colors, replacements } = themes[index];
+    const color = colors[foreground];
+    const variant: Record<string, string> = {};
+    if (color) variant.color = replacements?.[color.toLowerCase()] || color;
+    if (fontStyle & ITALIC) variant["font-style"] = "italic";
+    if (fontStyle & BOLD) variant["font-weight"] = "bold";
+    const decoration = [fontStyle & UNDERLINE ? "underline" : "", fontStyle & STRIKETHROUGH ? "line-through" : ""].filter(Boolean).join(" ");
+    if (decoration) variant["text-decoration"] = decoration;
+    return variant;
+  });
+  const keys = [...new Set(variants.flatMap((variant) => Object.keys(variant)))];
+  return variants.flatMap((variant, index) => keys.map((key) => `--shiki-${themes[index].name}${key === "color" ? "" : `-${key}`}:${variant[key] || "inherit"}`)).join(";");
+}
+
+/**
+ * A scope path and its style in both themes, folded from the root as the
+ * tokenizer folds it: each scope's matching rule sets what it names and
+ * leaves the rest to its parent. One tokenizing of a block reads both themes.
+ */
+interface Scope { readonly scopeName: string; readonly parent: Scope | null; styles: Style[]; style: string; children?: Map<string, Scope> }
+const roots = new Map<string, Scope>();
+function scope(parent: Scope | null, scopeName: string): Scope {
+  const siblings = parent ? (parent.children ??= new Map()) : roots;
+  let node = siblings.get(scopeName);
+  if (node) return node;
+  node = { scopeName, parent, styles: [], style: "" };
+  // A theme matches a path by its scope name and its parents' alone.
+  const path = node as unknown as Parameters<Theme["match"]>[0];
+  node.styles = themes.map(({ theme, defaults }, index) => {
+    const inherited = parent?.styles[index] ?? defaults;
+    const matched = theme.match(path);
+    return { foreground: matched?.foregroundId || inherited.foreground, fontStyle: matched && matched.fontStyle !== NOT_SET ? matched.fontStyle : inherited.fontStyle };
+  });
+  node.style = tokenStyle(node.styles);
+  siblings.set(scopeName, node);
+  return node;
+}
+/** Code in each theme's own default colour and font is left as text, which takes the block's colour. */
+const plain = themes.every(({ colors, defaults, fg }) => colors[defaults.foreground]?.toLowerCase() === fg.toLowerCase())
+  ? tokenStyle(themes.map(({ defaults }) => defaults)) : undefined;
+
+const escapeCode = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * Highlight code at build time, in both code themes from one tokenizing. Each
+ * token carries `--shiki-light` and `--shiki-dark`, which the theme's CSS
+ * reads in light and dark mode, so the page switches with no script.
  */
 export function highlightCode(code: string, lang?: string, metadata?: CodeFenceMetadata): string {
   function lineClasses(line: number): string[] {
     if (!metadata) return [];
     return [metadata.highlight.includes(line) && "highlighted", metadata.focus.length && (metadata.focus.includes(line) ? "focused" : "unfocused"), metadata.add.includes(line) && "diff-added", metadata.remove.includes(line) && "diff-removed"].filter((value): value is string => typeof value === "string");
   }
-  const resolved = lang && highlighter.getLoadedLanguages().includes(lang) ? lang : "text";
 
-  if (resolved === "text") {
-    const escaped = code
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    const lines = escaped.split("\n").map((l, index) => `<span class="line ${lineClasses(index + 1).join(" ")}"><span>${l}</span></span>`).join("\n");
+  if (!lang || !languages.has(lang)) {
+    const lines = escapeCode(code).split("\n").map((l, index) => `<span class="line ${lineClasses(index + 1).join(" ")}"><span>${l}</span></span>`).join("\n");
     return `<pre class="shiki" tabindex="0"><code>${lines}</code></pre>`;
   }
 
-  return highlighter.codeToHtml(code, {
-    lang: resolved,
-    themes: {
-      light: "github-light-default",
-      dark: "dark-plus",
-    },
-    defaultColor: false,
-    transformers: [{ line(node, line) { this.addClassToHast(node, lineClasses(line).join(" ")); } }],
+  const grammar = highlighter.getLanguage(lang);
+  let state: StateStack = INITIAL;
+  const lines = code.split(/\r?\n/).map((line, index) => {
+    const open = `<span class="${["line", ...lineClasses(index + 1)].join(" ")}">`;
+    // An empty line is not tokenized and leaves the grammar's state where it was, as Shiki leaves it.
+    if (!line) return `${open}</span>`;
+    const { tokens, ruleStack } = grammar.tokenizeLine(line, state, 500);
+    state = ruleStack;
+    let body = "", run = "", runStyle: string | undefined;
+    const flush = () => { if (run) body += runStyle === undefined || runStyle === plain ? escapeCode(run) : `<span style="${runStyle}">${escapeCode(run)}</span>`; };
+    for (const token of tokens) {
+      const text = line.slice(token.startIndex, token.endIndex);
+      if (!text) continue;
+      // Whitespace shows no colour, so it joins the run beside it.
+      if (/^\s+$/.test(text)) { run += text; continue; }
+      let node: Scope | null = null;
+      for (const name of token.scopes) node = scope(node, name);
+      const style = node!.style;
+      if (runStyle !== undefined && style !== runStyle) { flush(); run = ""; }
+      run += text; runStyle = style;
+    }
+    flush();
+    return `${open}${body}</span>`;
   });
+  return `${PRE}${lines.join("\n")}</code></pre>`;
 }

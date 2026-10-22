@@ -5,6 +5,8 @@
 @source "../../client/**/*.{ts,js}";
 @source "../../core/**/*.{ts,js}";
 @source "../../utils/**/*.{ts,js}";
+/* The highlighter writes theme colours, never utility classes; its font words are not classes. */
+@source not "../../utils/highlighter.{ts,js}";
 
 /* Dark mode via .dark class on <html> */
 @custom-variant dark (&:where(.dark, .dark *));

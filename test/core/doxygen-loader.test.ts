@@ -132,7 +132,8 @@ Defined in src/turn/client.h:166
 
   it("merges the include with the declaration into one code block", () => {
     expect(html.match(/prose-code-block/g)).toHaveLength(2);
-    expect(html).toMatch(/#include[\s\S]*class<\/span><span[^>]*> Client/);
+    const first = html.match(/prose-code-block[\s\S]*?<\/pre>/)![0].replace(/<[^>]+>/g, "");
+    expect(first).toMatch(/#include[\s\S]*class Client/);
   });
 
   it("renders relations as a list and Defined in as metadata, not a quotation or body text", () => {
