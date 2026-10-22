@@ -3,19 +3,40 @@ import { readFile, realpath } from "node:fs/promises";
 import { dirname, extname, isAbsolute, posix, relative, resolve } from "node:path";
 import { load } from "js-yaml";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { convertSwagger } from "./converter.js";
 import type { InputReader } from "./loader.js";
 import type { LoadedSpec, OpenApiDocument, ParsedSpec } from "./types.js";
 
 /**
- * Dereference a loaded spec document.
- * All $ref pointers are resolved (local, remote, circular).
+ * A loaded spec as OpenAPI 3, with every $ref resolved (local, remote,
+ * circular). Swagger 2.0 converts first, while its references are still
+ * references.
  *
  * Uses the document source as the base URI, but honors OpenAPI 3.2's
  * `$self` field when present so relative references resolve canonically.
  */
-export async function parseSpec(
+export function parseSpec(
   loaded: LoadedSpec,
   options: { publishBundle?: boolean; input?: InputReader } = {},
+): Promise<ParsedSpec> {
+  return dereferenceSpec(loaded, options, true);
+}
+
+/**
+ * A loaded spec in its own OpenAPI or Swagger version, with every $ref
+ * resolved: the document as a reference generator reading it shows it.
+ */
+export function parseSourceSpec(
+  loaded: LoadedSpec,
+  options: { input?: InputReader } = {},
+): Promise<ParsedSpec> {
+  return dereferenceSpec(loaded, options, false);
+}
+
+async function dereferenceSpec(
+  loaded: LoadedSpec,
+  options: { publishBundle?: boolean; input?: InputReader },
+  convert: boolean,
 ): Promise<ParsedSpec> {
   try {
     const parser = new $RefParser();
@@ -27,9 +48,14 @@ export async function parseSpec(
           { resolve: resolver },
         )) as unknown as Record<string, unknown>)
       : undefined;
+    // Swagger 2.0 converts while its references are still references, one
+    // document with its external files bundled in, so its types stay shared.
+    const document = convert && loaded.version === "swagger-2.0"
+      ? await convertSwagger((await new $RefParser().bundle(resolveDocumentUri(loaded), structuredClone(loaded.raw) as never, { resolve: resolver })) as unknown as Record<string, unknown>)
+      : structuredClone(loaded.raw);
     const dereferenced = await parser.dereference(
       resolveDocumentUri(loaded),
-      structuredClone(loaded.raw) as never,
+      document as never,
       {
         dereference: {
           circular: "ignore",

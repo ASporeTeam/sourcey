@@ -3,10 +3,9 @@
  * normaliser, so a converter maps the source's URLs and fragments onto what
  * the native reference publishes.
  */
-import { convertToOpenApi3 } from "../core/converter.js";
 import { loadSpec } from "../core/loader.js";
 import { normalizeSpec } from "../core/normalizer.js";
-import { parseSpec } from "../core/parser.js";
+import { parseSourceSpec, parseSpec } from "../core/parser.js";
 import { operationAnchors, operationKey } from "../core/reference-identity.js";
 import type { NormalizedOperation, SecurityScheme } from "../core/types.js";
 import type { ProjectFiles } from "./project-files.js";
@@ -42,13 +41,14 @@ export interface ApiReference {
 }
 
 export async function readApiReference(project: ProjectFiles, spec: string): Promise<ApiReference> {
-  const parsed = await parseSpec(await loadSpec(/^https?:\/\//.test(spec) ? spec : project.absolute(spec)));
+  const loaded = await loadSpec(/^https?:\/\//.test(spec) ? spec : project.absolute(spec));
+  const parsed = await parseSourceSpec(loaded);
   const document = parsed.document as unknown as {
     paths?: Record<string, SourceObject | undefined>;
     tags?: { name: string; description?: string; externalDocs?: unknown }[];
     webhooks?: SourceObject;
   };
-  const native = normalizeSpec(await convertToOpenApi3(parsed));
+  const native = normalizeSpec(await parseSpec(loaded));
   const nativeOperations = new Map(native.operations.map((operation) => [operationKey(operation), operation]));
   const operations: ReferenceOperation[] = [];
   for (const [path, pathItem = {}] of Object.entries(document.paths ?? {})) {

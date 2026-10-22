@@ -1,38 +1,42 @@
 import type { ParsedSpec } from "./types.js";
 
 /**
- * Convert a Swagger 2.0 spec to OpenAPI 3.0 format.
- * If the spec is already OpenAPI 3.x, returns it as-is.
- *
- * Expects the spec to already be dereferenced (all $refs resolved).
+ * A parsed spec as OpenAPI 3: one the parser already converted, or an
+ * OpenAPI 3.x document, as it is; a dereferenced Swagger 2.0 document passed
+ * in directly is converted here.
  */
 export async function convertToOpenApi3(parsed: ParsedSpec): Promise<ParsedSpec> {
   const doc = parsed.document;
+  if (typeof doc.openapi === "string" && doc.openapi.startsWith("3.")) return parsed;
+  const document = await convertSwagger(doc as Record<string, unknown>);
+  return { document: document as ParsedSpec["document"], source: parsed.source, publicDocument: parsed.publicDocument };
+}
 
-  // Already OpenAPI 3.x — return as-is
-  if (typeof doc.openapi === "string" && doc.openapi.startsWith("3.")) {
-    return parsed;
-  }
-
-  // Swagger 2.0 — convert to OpenAPI 3.0
+/**
+ * Convert a Swagger 2.0 document to OpenAPI 3.0 before its references are
+ * resolved, as the converter is written to, so the types it shares stay
+ * shared once they are: converting a dereferenced document copied each type
+ * at every use, 0.2 MB of Kubernetes API into 25 MB.
+ */
+export async function convertSwagger(document: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { convertObj } = await import("swagger2openapi");
-
-  // Break circular references (from dereferencing) before converting,
-  // and enable anchors mode so swagger2openapi handles any remaining ones.
-  const text = JSON.stringify(doc);
-  const cleanDoc = JSON.parse(text) as Record<string, unknown>;
-  preserveFormFieldSchemas(cleanDoc);
-  const result = await convertObj(cleanDoc, {
+  // Converted as a copy: the converter rewrites what it reads, and an object
+  // the source uses twice, such as one parameter list for two paths, must be
+  // rewritten once for each.
+  const text = JSON.stringify(document);
+  const copy = JSON.parse(text) as Record<string, unknown>;
+  preserveFormFieldSchemas(copy);
+  const result = await convertObj(copy, {
     // The source text, kept only for validators' messages. Without it
-    // swagger2openapi writes the whole dereferenced document out as YAML,
-    // which took over a second on a large Kubernetes API.
+    // swagger2openapi writes the whole document out as YAML first.
     text,
     patch: true,
     warnOnly: true,
     direct: true,
     anchors: true,
-    // The normalizer consumes dereferenced values. Do not introduce shared
-    // request-body references after the parser has resolved the input.
+    // Each operation keeps its request body, as the form-field fix below
+    // reads it, rather than one shared through components/requestBodies.
+    // Schema references stay references either way.
     resolveInternal: true,
   });
 
@@ -51,11 +55,7 @@ export async function convertToOpenApi3(parsed: ParsedSpec): Promise<ParsedSpec>
     }
   }
 
-  return {
-    document: result as ParsedSpec["document"],
-    source: parsed.source,
-    publicDocument: parsed.publicDocument,
-  };
+  return result as Record<string, unknown>;
 }
 
 /** Some Swagger producers attach a schema to each named form field. */

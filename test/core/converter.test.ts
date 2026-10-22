@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { loadSpec } from "../../src/core/loader.js";
-import { parseSpec } from "../../src/core/parser.js";
+import { parseSourceSpec, parseSpec } from "../../src/core/parser.js";
 import { convertToOpenApi3 } from "../../src/core/converter.js";
 import { resolve } from "node:path";
 import { normalizeSpec } from "../../src/core/normalizer.js";
@@ -29,6 +29,23 @@ describe("convertToOpenApi3", () => {
       expect(new URLSearchParams(sent?.body as string).get("q")).toBe("Hello world!");
       expect(new URLSearchParams(sent?.body as string).get("target")).toBe("es");
     }
+  });
+
+  it("converts Swagger 2.0 before resolving references, so a type the document shares stays one object", async () => {
+    const raw = {
+      swagger: "2.0", info: { title: "Shared", version: "1" },
+      paths: Object.fromEntries(["/a", "/b"].map(path => [path, { get: { responses: { "200": { description: "OK", schema: { $ref: "#/definitions/Owner" } } } } }])),
+      definitions: { Owner: { type: "object", properties: { name: { type: "string" } } } },
+    };
+    const loaded = { raw, format: "json" as const, version: "swagger-2.0" as const, source: "https://api.example.test/spec" };
+    const parsed = await parseSpec(loaded);
+    expect(parsed.document.openapi).toMatch(/^3\./);
+    const schema = (path: string) => (parsed.document.paths as Record<string, { get: { responses: Record<string, { content: Record<string, { schema: unknown }> }> } }>)[path].get.responses["200"].content["*/*"].schema;
+    expect(schema("/a")).toBe(schema("/b"));
+    const spec = normalizeSpec(parsed);
+    expect(spec.operations[0].responses[0].content!["*/*"].schema).toBe(spec.operations[1].responses[0].content!["*/*"].schema);
+    // A reference generator's own view: the document in its own version.
+    expect((await parseSourceSpec(loaded)).document.swagger).toBe("2.0");
   });
 
   it("converts a Swagger 2.0 spec to OpenAPI 3.0", async () => {

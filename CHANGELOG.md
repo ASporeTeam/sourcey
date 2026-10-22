@@ -26,6 +26,7 @@
 - Diagrams and social images are drawn in processes of their own, which end when their work does and give all their memory back. A worker thread's ending gave back almost none: one Mermaid diagram left the build holding 330 MB, for its DOM and the Mermaid library, until it finished.
 - `sourcey build` collects its garbage sooner: a build renders each page once and keeps little, so it no longer lets the script heap grow well past what it holds before collecting. On an 838-page site its peak went from 1.24 GB to 0.84 GB, for 7% more time.
 - A schema nested along many paths, as a Kubernetes type is, normalizes once wherever it cannot meet itself again, rather than once for every path to it, and a component that nothing references is named by itself, as a referenced one is: its Markdown reads `Type: Order` rather than `Type: unknown`.
+- A Swagger 2.0 document converts to OpenAPI 3 before its references are resolved, as the converter is written to, so a type it uses in many places stays one type rather than a copy at every use: a 0.2 MB Kubernetes API had grown to 25 MB on the way, and its build now takes a second and 150 MB less. A reference to a type inside itself now links to that type where it read `any`. As Swagger 2.0 specifies, keywords written beside a `$ref` are ignored.
 
 ## 3.8.3 - 2026-10-21
 

@@ -949,7 +949,9 @@
                         "description": "accepts document data to be edited.",
                         "schema": {
                             "type": "array",
-                            "$ref": "#/definitions/Documents"
+                            "items": {
+                                "$ref": "#/definitions/Documents"
+                            }
                         }
                     }
                 ],
