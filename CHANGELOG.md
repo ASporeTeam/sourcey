@@ -32,6 +32,7 @@
 - A page's Markdown is read once for the local files and HTML it names. Markdown that names neither, as most does, is kept as written, rather than read twice more to rewrite nothing, and a link's label is rewritten from what was read with the link rather than read again.
 - `sourcey build` loads a library only for a site that uses it: the HTML sanitizer with the first HTML an author wrote, JSONPath with the first overlay, the Doxygen converter with a Doxygen tab and the reference resolver with the first API document. The highlighter loads Shiki's core and its Oniguruma engine, rather than the bundle that lists every language and theme.
 - Sourcey's own scripts and styles ship built in the package, and a site's build reads them rather than bundling them with Vite and Tailwind whenever its cache is empty: a cold build of a 493-page site takes 0.7 s less CPU time and 30 MB less memory. The published scripts no longer name the machine that bundled them. Rolldown had headed each module's code with its path, so a site's `sourcey-search.js` carried the builder's home or temporary directory; a site's own components are bundled without those paths too.
+- A build finds the links its broken-fragment check follows by reading each page's anchors from the HTML it wrote, rather than parsing every page again: on a 493-page site that check took a tenth of a second.
 
 ## 3.8.3 - 2026-10-21
 

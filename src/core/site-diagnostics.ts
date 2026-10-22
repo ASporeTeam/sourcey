@@ -1,4 +1,4 @@
-import { Parser } from "htmlparser2";
+import { decodeHTMLAttribute } from "entities";
 import { pageMetadata } from "./page-metadata.js";
 import { operationKey } from "./reference-identity.js";
 import { identityKey, type RouteTable, type SitePage } from "./site-model.js";
@@ -13,6 +13,12 @@ export interface SiteDiagnostic {
 }
 
 const documentLinks = new WeakMap<object, string[]>();
+/**
+ * Each link in a page's HTML. Sourcey wrote all of it, through its renderer,
+ * its components or the sanitizer, so every attribute is double-quoted with
+ * `"` and `>` escaped inside it, and an attribute scan reads what a parser would.
+ */
+const ANCHOR_HREF = /<a\s(?:[^>]*?\s)?href="([^"]+)"/g;
 
 /** Inspect completed routes and source prose; never infer another site's content graph. */
 export function collectSiteDiagnostics(
@@ -81,8 +87,7 @@ function sourceLinks(page: SitePage): string[] {
   if (cached) return cached;
   const links = new Set<string>();
   if (current.kind === "markdown") {
-    const parser = new Parser({ onopentag(name, attributes) { if (name === "a" && attributes.href) links.add(attributes.href); } });
-    parser.end(current.markdown.html);
+    for (const [, href] of current.markdown.html.matchAll(ANCHOR_HREF)) links.add(decodeHTMLAttribute(href));
   } else {
     const seen = new Set<object>();
     function visit(value: unknown): void {
