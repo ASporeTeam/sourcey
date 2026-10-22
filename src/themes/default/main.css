@@ -147,6 +147,9 @@ html:not(.sourcey-tabs-ready) [data-sourcey-tabs] .directive-tab-panel { display
 .reference-operation-label strong { font-weight:500; color:rgb(var(--color-gray-900)); }
 .reference-operation-summary { font-size:.8125rem; line-height:1.5; color:rgb(var(--color-gray-600)); }
 .reference-operation-arrow { flex-shrink:0; align-self:center; color:rgb(var(--color-gray-400)); }
+/* A long name, such as a model's or a tool's, wraps rather than widening the page past a narrow screen. */
+.reference-operation-links a > strong,.reference-operation-label strong,.operation-intro h2,.reference-page-title { max-width:100%; overflow-wrap:break-word; }
+.reference-operation-links a > span:not(.reference-method),.reference-operation-summary { min-width:0; overflow-wrap:break-word; }
 .dark .reference-operation-links,.dark .reference-operation-links li { border-color:rgb(var(--color-gray-800)); }
 .dark .reference-operation-links a:hover { background:rgb(var(--color-gray-900)); }
 .dark .reference-operation-label strong { color:rgb(var(--color-gray-200)); }

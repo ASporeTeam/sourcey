@@ -28,7 +28,8 @@ export function Definition({ name, schema }: DefinitionProps) {
       <AnchorAliases target={`/definitions/${name}`} />
       <a id={`/definitions/${name}`} />
       <header class={standalone ? "mb-6" : "mb-4"}>
-        <div class="flex items-baseline gap-2">
+        {/* The name is one word, so the type moves below it only where both cannot share a line. */}
+        <div class="flex items-baseline gap-2 flex-wrap">
           <Heading class={`${standalone ? "reference-page-title text-2xl sm:text-3xl tracking-tight" : "text-xl"} font-bold text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))]`}>{name}</Heading>
           <span class="text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))] font-normal">{schema.type ?? "object"}</span>
         </div>

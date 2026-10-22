@@ -220,13 +220,16 @@ function PageNavigation() {
   const labelClass =
     "text-xs text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]";
   const titleClass =
-    "text-sm font-medium text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))] group-hover:text-[rgb(var(--color-primary-ink))] dark:group-hover:text-[rgb(var(--color-primary-light))] transition-colors";
+    "text-sm font-medium [overflow-wrap:break-word] text-[rgb(var(--color-gray-700))] dark:text-[rgb(var(--color-gray-300))] group-hover:text-[rgb(var(--color-primary-ink))] dark:group-hover:text-[rgb(var(--color-primary-light))] transition-colors";
   const base = options.assetBase;
+  // A name with a word too long for half a phone's column, such as an API operation's, may break
+  // inside it rather than widening the page; other names keep their words whole.
+  const breakable = (label: string) => (/\S{18,}/.test(label) ? " min-w-0" : "");
 
   return (
     <nav class="mt-12 flex items-stretch justify-between gap-4" aria-label={options.messages.pagination}>
       {prev ? (
-        <a href={joinHref(base, prev.href)} class={linkClass}>
+        <a href={joinHref(base, prev.href)} class={`${linkClass}${breakable(prev.label)}`}>
           <span class={labelClass}>← {options.messages?.previous ?? "Previous"}</span>
           <span class={titleClass}>{prev.label}</span>
         </a>
@@ -234,7 +237,7 @@ function PageNavigation() {
         <span />
       )}
       {next ? (
-        <a href={joinHref(base, next.href)} class={`${linkClass} text-right ml-auto`}>
+        <a href={joinHref(base, next.href)} class={`${linkClass} text-right ml-auto${breakable(next.label)}`}>
           <span class={labelClass}>{options.messages?.next ?? "Next"} →</span>
           <span class={titleClass}>{next.label}</span>
         </a>
