@@ -321,6 +321,13 @@ describe("sourcey migrate mkdocs", () => {
     });
   });
 
+  it("says Material's analytics are not carried over", async () => {
+    await withProject({ ...site, "mkdocs.yml": `${site["mkdocs.yml"]}\nextra:\n  analytics:\n    provider: google\n    property: G-EXAMPLE\n` }, async (root) => {
+      const report = await migrateProject({ framework: "mkdocs", root, dryRun: true });
+      expect(report.diagnostics.map((item) => item.message)).toContain("Analytics (google G-EXAMPLE) are not carried over");
+    });
+  });
+
   it("reads an !ENV site URL at build time, as MkDocs did", async () => {
     await withProject({ ...site, "mkdocs.yml": site["mkdocs.yml"].replace("site_url: https://example.com/json/", "site_url: !ENV READTHEDOCS_CANONICAL_URL") }, async (root) => {
       const report = await migrateProject({ framework: "mkdocs", root, dryRun: true });

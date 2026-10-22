@@ -85,7 +85,7 @@ interface MkDocsConfig {
   nav?: unknown[];
   exclude_docs?: string;
   theme?: string | MkDocsTheme;
-  extra?: { social?: SocialLink[] };
+  extra?: { social?: SocialLink[]; analytics?: { provider?: string; property?: string } };
   extra_css?: string[];
   extra_javascript?: (string | { path?: string })[];
   markdown_extensions?: unknown[];
@@ -189,6 +189,8 @@ export async function prepareMkDocs(project: ProjectFiles, diagnostics: Diagnost
   };
   const assets = [...(config.extra_css ?? []), ...(config.extra_javascript ?? []).map((item) => (typeof item === "string" ? item : (item.path ?? "")))].filter(Boolean);
   if (assets.length) review(`Custom styles and scripts (${assets.join(", ")}) are not carried over; replace what they do deliberately`);
+  const analytics = config.extra?.analytics;
+  if (analytics) review(`Analytics (${[analytics.provider, analytics.property].filter(Boolean).join(" ") || "extra.analytics"}) are not carried over`);
   await reportHosting(project, diagnostics);
 
   const plan: NativePlan = {
