@@ -507,22 +507,21 @@ export function extractHeadings(input: string): PageHeading[] {
   return headings;
 }
 
-/** Plain text of the first top-level heading at `depth`, if there is one. */
-export function firstHeadingText(input: string, depth: number): string | undefined {
-  const heading = lexMarkdown(input).find(
+/** Plain text of the first top-level heading at `depth`, if there is one, in Markdown or its tokens. */
+export function firstHeadingText(input: string | Token[], depth: number): string | undefined {
+  const heading = (typeof input === "string" ? lexMarkdown(input) : input).find(
     (token): token is Tokens.Heading => token.type === "heading" && token.depth === depth,
   );
   return heading ? headingInfo(heading).text.trim() || undefined : undefined;
 }
 
 /**
- * The summary text of the first paragraph that has any, for a page's
- * description when it sets none.
+ * The summary text of the first paragraph that has any, in Markdown or its
+ * tokens, for a page's description when it sets none.
  */
-export function extractFirstParagraph(input?: string): string {
+export function extractFirstParagraph(input?: string | Token[]): string {
   if (!input) return "";
-  const tokens = lexMarkdown(input);
-  for (const token of tokens) {
+  for (const token of typeof input === "string" ? lexMarkdown(input) : input) {
     if (token.type === "paragraph") {
       // A row of badges or navigation links, joined by separators such as
       // &ensp; or ·, has no prose of its own and is not a summary.

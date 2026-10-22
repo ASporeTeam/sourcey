@@ -9,9 +9,11 @@ import {
   renderMarkdownInline,
   extractFirstParagraph,
   firstHeadingText,
+  lexMarkdown,
   stripMarkdownLinks,
   type PageHeading,
 } from "../utils/markdown.js";
+import type { Token } from "marked";
 import { InputReader } from "./loader.js";
 import { hasAgentContent, openingHasComponent, parseComponents, readableContent, renderContent, componentStyles, contentHeadings, contentAnchors, contentDiagnostics, resolveSectionIndexes, type ContentNode, type NativeComponentDefinition } from "./markdown-components.js";
 import type { NormalizedChangelog } from "./types.js";
@@ -253,8 +255,13 @@ async function loadMarkdownSourceFromBody(
   for (const preprocess of options.preprocess ?? []) sourcePreprocessed = preprocess(sourcePreprocessed, { filePath, sourceRoot: options.sourceRoot });
   const assets = new Map<string, ArtifactBody>();
   const nodes = await parseComponents(sourcePreprocessed, { source: filePath, root: options.configDir ?? options.sourceRoot ?? process.cwd(), input: options.input ?? new InputReader(), components: options.components, assets, baseUrl: options.baseUrl, context: options.context });
-  const componentPreprocessed = readableContent(nodes, "people");
-  const title = meta.title ?? extractFirstHeading(componentPreprocessed) ?? options.title ?? slug;
+  // What the frontmatter leaves out, a title or a summary, is read once from
+  // the page as its readers see it: lexed, so a `#` comment inside a fenced
+  // code block is not a heading.
+  let readable: Token[] | undefined;
+  const read = () => readable ??= lexMarkdown(readableContent(nodes, "people"));
+  const description = typeof meta.description === "string" && meta.description.trim() ? meta.description : undefined;
+  const title = meta.title ?? firstHeadingText(read(), 1) ?? options.title ?? slug;
   const sourcePath = relative(options.configDir ?? process.cwd(), filePath);
   if (meta.layout !== undefined && (typeof meta.layout !== "string" || !LAYOUTS.includes(meta.layout))) throw new Error(`${sourcePath}: layout ${JSON.stringify(meta.layout)} is not doc, page, blank or changelog`);
   // A changelog layout with changelogs turned off is the page as written.
@@ -262,12 +269,12 @@ async function loadMarkdownSourceFromBody(
   const css = meta.css === undefined ? [] : Array.isArray(meta.css) ? meta.css : [meta.css];
   if (css.some(path => typeof path !== "string" || !path || /^[a-z][a-z\d+.-]*:|^\//i.test(path))) throw new Error(`${sourcePath}: css names stylesheets beside the page, such as css: ./home.css`);
   return {
-    kind: "markdown", title, description: normalizeMarkdownDescription(meta.description, componentPreprocessed),
+    kind: "markdown", title, description: description ?? stripMarkdownLinks(extractFirstParagraph(read())).replace(/\s+/g, " ").trim(),
     navTitle: typeof meta.navTitle === "string" ? meta.navTitle : undefined,
     slug: typeof meta.slug === "string" ? meta.slug.replace(/^\/+|\/+$/g, "") || "index" : slug,
     id: typeof meta.id === "string" ? meta.id : undefined, draft: meta.draft === true, hideInMenu: meta.hideInMenu === true,
     ...(layout ? { layout } : {}), ...(css.length ? { css: css.map(path => resolve(dirname(filePath), path as string)) } : {}),
-    assets, nodes, messages: options.context?.messages, explicitDescription: typeof meta.description === "string" && Boolean(meta.description.trim()), ...(options.smartypants ? { smartypants: true } : {}),
+    assets, nodes, messages: options.context?.messages, explicitDescription: description !== undefined, ...(options.smartypants ? { smartypants: true } : {}),
     sourcePath, editPath: relative(options.editRoot ?? options.configDir ?? process.cwd(), filePath), sourceRoot: options.sourceRoot ? relative(options.configDir ?? process.cwd(), options.sourceRoot) : undefined,
   };
 }
@@ -306,22 +313,6 @@ function visibleText(html: string): string {
     .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function normalizeMarkdownDescription(description: unknown, markdown: string): string {
-  if (typeof description === "string" && description.trim()) {
-    return description;
-  }
-  return stripMarkdownLinks(extractFirstParagraph(markdown)).replace(/\s+/g, " ").trim();
-}
-
-/**
- * The page's first level-one heading, as plain text, for a fallback title. It
- * reads the lexed document, so a `#` comment inside a fenced code block is not
- * a heading.
- */
-function extractFirstHeading(md: string): string | undefined {
-  return firstHeadingText(md, 1);
 }
 
 /**

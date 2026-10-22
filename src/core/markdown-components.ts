@@ -1,7 +1,7 @@
 import { STATIC_ASSET_EXTENSIONS, staticMediaAsset } from "./media.js";
 import { isNavGroup, walkNavGroups, type SiteTab, type SiteNavGroup } from "./navigation.js";
 import { rewriteMarkdownDestinations, rewriteMarkdownHtml } from "../utils/markdown-links.js";
-import type { Tokens } from "marked";
+import type { Token, Tokens } from "marked";
 import { resolve, dirname, relative, isAbsolute, extname } from "node:path";
 import { toPublicPath } from "../site-url.js";
 import { createHash } from "node:crypto";
@@ -701,6 +701,8 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
     flush(); return nodes;
   }
   const nodes = await parse(markdown);
+  // Markdown kept as written is lexed once: headings are then read from the same tokens.
+  const lexed = options.normalize === false ? undefined : new Map<ContentNode, Token[]>();
   async function assets(nodes: readonly ContentNode[]): Promise<ContentNode[]> {
     const result: ContentNode[] = [];
     for (const node of nodes) {
@@ -708,7 +710,8 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
       if (node.kind !== "markdown") { result.push(node); continue; }
       const images = new Set<string>();
       let html = false;
-      forEachToken(lexMarkdown(node.value), token => {
+      const tokens = lexMarkdown(node.value);
+      forEachToken(tokens, token => {
         if (token.type === "html") html = true;
         if (token.type !== "image" && token.type !== "link") return;
         const href = (token as Tokens.Image | Tokens.Link).href;
@@ -716,7 +719,7 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
         if (token.type === "image" || STATIC_ASSET_EXTENSIONS.has(extname(href.split(/[?#]/)[0]).toLowerCase())) images.add(href);
       });
       // Most Markdown names no local file and holds no HTML, and is kept as written.
-      if (!images.size && !html) { result.push(node); continue; }
+      if (!images.size && !html) { lexed?.set(node, tokens); result.push(node); continue; }
       async function mediaUrl(href: string, link: boolean): Promise<string> {
         if (/^(?:[a-z][\w+.-]*:|\/|#)/i.test(href)) return href;
         const [, path, suffix] = href.match(/^([^?#]*)(.*)$/s)!;
@@ -732,7 +735,7 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
     return result;
   }
   const withAssets = await assets(nodes);
-  return options.normalize === false ? withAssets : normalizeHeadings(withAssets);
+  return lexed ? normalizeHeadings(withAssets, node => lexed.get(node) ?? lexMarkdown(node.value)) : withAssets;
 }
 
 function codeChildren(markdown: string, location: SourceLocation): ContentNode[] {
@@ -836,7 +839,7 @@ export function componentStyles(nodes: readonly ContentNode[]): string[] {
 }
 
 /** Resolve heading and field identity once, in document order, before any output is rendered. */
-function normalizeHeadings(nodes: readonly ContentNode[]): ContentNode[] {
+function normalizeHeadings(nodes: readonly ContentNode[], lex: (node: Extract<ContentNode, { kind: "markdown" }>) => Token[]): ContentNode[] {
   const pending: { node: { id: string; aliases?: string[] }; automatic: boolean; previousId?: string }[] = [];
   function expand(nodes: readonly ContentNode[]): ContentNode[] {
     return nodes.flatMap<ContentNode>(node => {
@@ -852,7 +855,7 @@ function normalizeHeadings(nodes: readonly ContentNode[]): ContentNode[] {
         const copy = { ...node }; pending.push({ node: copy, automatic: false }); return [copy];
       }
       if (node.kind !== "markdown") return [node];
-      return lexMarkdown(node.value).map(token => {
+      return lex(node).map(token => {
         if (token.type !== "heading") return { kind: "markdown" as const, value: token.raw };
         const heading = headingInfo(token as Tokens.Heading);
         const node: Extract<ContentNode, { kind: "heading" }> = { kind: "heading", level: (token as Tokens.Heading).depth, text: heading.markdown, id: heading.id };
