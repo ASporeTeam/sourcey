@@ -125,9 +125,9 @@ describe("native compilation", () => {
     const readerLink = document.readerMarkdown!.match(/\[the detail\]\(([^)]+)\)/)![1];
     expect(new URL(readerLink, `https://docs.example.test${page.publicPath}`).pathname).toBe("/docs/other/");
     expect(document.markdown).toContain("AgentExclusiveToken");
-    expect(first.extraFiles.get("guide/index.md")).toContain("AgentExclusiveToken");
+    expect(first.extraFiles.get("guide/index.md")?.toString()).toContain("AgentExclusiveToken");
     expect(first.llmsFullTxt).toContain("AgentExclusiveToken");
-    expect(first.extraFiles.get("documents.json")).toContain("AgentExclusiveToken");
+    expect(first.extraFiles.get("documents.json")?.toString()).toContain("AgentExclusiveToken");
     await writeFile(guide, "# Human guide\n\nA useful description for the person reading.\n\n## Installation\n\nUpdated instructions.\n");
     const edited = await updateSourceySite(first, [guide]);
     const next = edited.pages.find(page => page.identity.document === "guide")!.currentPage;
@@ -148,7 +148,7 @@ describe("native compilation", () => {
     expect(page.markdown.html).toContain('class="sourcey-diagram sourcey-diagram-unrendered"');
     expect(page.markdown.html).not.toContain("<picture");
     expect(JSON.stringify(cold.searchRows)).toContain("branch develop");
-    expect(cold.extraFiles.get("workflow.md")).toContain("```mermaid\ngitGraph");
+    expect(cold.extraFiles.get("workflow.md")?.toString()).toContain("```mermaid\ngitGraph");
     const unchanged = await updateSourceySite(cold, []);
     expect(unchanged.contentDiagnostics).toEqual(cold.contentDiagnostics);
     await writeFile(guide, "# Workflow\n\nThe diagram was replaced by a description.\n");

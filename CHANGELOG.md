@@ -20,6 +20,7 @@
 - `sourcey build` writes the site as it renders it: each page, and the social image drawn just before it, goes to disk and is let go, rather than the whole site's HTML and images being held until the last page renders. The output directory still changes all at once, when every file is ready, and is rolled back on a failure as before. `SourceySiteArtifacts` no longer carries `ogImages`: the images are among the files `writeSourceySite` writes and the in-memory artifacts a host renders.
 - Code is highlighted by Oniguruma, the regex engine its grammars are written for, rather than by Shiki's JavaScript translation of them, which read some patterns differently: SQL's `SUM(` and other functions written against an opening bracket are coloured as functions now. Highlighting takes half the time and a fifth of the memory it did.
 - An API reference normalizes each schema once for every place it is used the same way, and shares the result, rather than copying a component into every operation that returns it. A 1,781-operation API held a third of the schema memory it did. References render as before.
+- A site's `llms.txt` and `llms-full.txt` are generated once, rather than once for the file and again for the build's result, and machine exports are held as the UTF-8 bytes they are written as, rather than as text the script heap held at two bytes a character once one curly quote appeared.
 
 ## 3.8.3 - 2026-10-21
 

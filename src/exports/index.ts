@@ -32,10 +32,13 @@ export function generateExports(
   const claimed = new Set(pages.map(page => page.outputPath));
   const files = new Map<string, string | Buffer>();
   const mediaTypes = new Map<string, string>();
+  // Kept as UTF-8 bytes, as they are written: as text, a whole export is
+  // held two bytes a character once one character, such as a curly quote,
+  // falls outside Latin-1, and it counts against the script heap.
   const put = (path: string, body: string, type: string) => {
     if (files.has(path) || assembled.extraFiles.has(path) || claimed.has(path))
       throw new Error(`Generated output collision: ${path}`);
-    files.set(path, body);
+    files.set(path, Buffer.from(body));
     mediaTypes.set(path, type);
   };
   const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
@@ -61,6 +64,8 @@ export function generateExports(
     });
     if (prefix || context.locale === context.defaultLocale && context.isDefaultVersion) projections.set(prefix, members);
   }
+  // The site's own indexes are its root projection's, generated once.
+  let llmsTxt = "", llmsFullTxt = "";
   for (const [prefix, selected] of projections) {
     const within = (path: string) => prefix ? `${prefix}/${path}` : path;
     if (enabled.markdown) {
@@ -71,13 +76,19 @@ export function generateExports(
       }) });
       put(within("documents.json"), json(index), "application/json; charset=utf-8");
     }
-    if (enabled.llms.index) put(within("llms.txt"), generateLlmsTxt(selected, navigation, name, enabled.markdown), "text/plain; charset=utf-8");
-    if (enabled.llms.full) put(within("llms-full.txt"), generateLlmsFullTxt(selected, name), "text/plain; charset=utf-8");
+    if (enabled.llms.index) {
+      const text = generateLlmsTxt(selected, navigation, name, enabled.markdown);
+      put(within("llms.txt"), text, "text/plain; charset=utf-8");
+      if (!prefix) llmsTxt = text;
+    }
+    if (enabled.llms.full) {
+      const text = generateLlmsFullTxt(selected, name);
+      put(within("llms-full.txt"), text, "text/plain; charset=utf-8");
+      if (!prefix) llmsFullTxt = text;
+    }
   }
   /** A page is described by the index that lists it: its own version's and language's. */
   const llmsIndex = (context: ResolvedSiteContext | undefined) => [context && exportRoot(context), "llms.txt"].filter(Boolean).join("/");
-  const llmsTxt = enabled.llms.index ? generateLlmsTxt(rootDocuments, navigation, name, enabled.markdown) : "";
-  const llmsFullTxt = enabled.llms.full ? generateLlmsFullTxt(rootDocuments, name) : "";
 
   const resources: DiscoveryResource[] = [];
   if (
