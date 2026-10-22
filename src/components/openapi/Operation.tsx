@@ -1,4 +1,5 @@
 import { useContext } from "preact/hooks";
+import { Breakable, bareName } from "../ui/Breakable.js";
 import type { NormalizedOperation, NormalizedRequestBody } from "../../core/types.js";
 import { operationAnchor, operationFieldRoot, referenceFieldPath, operationSectionAnchor, operationSections, type OperationSection } from "../../core/reference-identity.js";
 import { SECTION_LABELS } from "./outline.js";
@@ -72,7 +73,7 @@ function OperationIdentity({ operation: op }: OperationProps) {
       <header class="mb-6">
         <div class="flex items-baseline gap-2 flex-wrap">
           <Heading class={`${standalone ? "reference-page-title " : ""}text-2xl sm:text-3xl text-[rgb(var(--color-gray-900))] dark:text-[rgb(var(--color-gray-200))] tracking-tight font-bold mb-2`}>
-            {op.summary ? <Markdown content={op.summary} inline /> : op.path}
+            {op.summary ? bareName(op.summary) ? <Breakable text={op.summary} /> : <Markdown content={op.summary} inline /> : op.path}
           </Heading>
           {op.deprecated && <DeprecatedBadge />}
           {mcp?.annotations && <AnnotationBadges annotations={mcp.annotations} />}
@@ -124,7 +125,7 @@ function SplitOperationIdentity({ operation: op }: OperationProps) {
       <header class="operation-split-header">
         <div class="flex items-baseline gap-2 flex-wrap">
           <Heading class={`${standalone ? "reference-page-title " : ""}operation-split-title`}>
-            {op.summary ? <Markdown content={op.summary} inline /> : op.path}
+            {op.summary ? bareName(op.summary) ? <Breakable text={op.summary} /> : <Markdown content={op.summary} inline /> : op.path}
           </Heading>
           {op.deprecated && <DeprecatedBadge />}
           {mcp?.annotations && <AnnotationBadges annotations={mcp.annotations} />}

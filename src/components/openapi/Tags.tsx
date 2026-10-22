@@ -1,4 +1,5 @@
 import { useContext } from "preact/hooks";
+import { Breakable } from "../ui/Breakable.js";
 import { OptionsContext, SpecContext } from "../../renderer/context.js";
 import { operationAnchor, operationKey, tagAnchor } from "../../core/reference-identity.js";
 import type { NormalizedTag } from "../../core/types.js";
@@ -67,7 +68,7 @@ export function Tags({ tags, showOperations = true }: TagsProps) {
                 )}
                 <ExternalDocsLink docs={tag.externalDocs} />
               </div>
-              {links.length > 0 && <ul class="reference-operation-links">{links.map(op => <li id={anchored.has(op) ? operationAnchor(op, spec) : undefined}><a href={targets?.operations[operationKey(op)]?.href ?? `#${operationAnchor(op, spec)}`}><span class={`reference-method method-${op.method}`}>{op.method.toUpperCase()}</span><span class="reference-operation-label"><strong>{op.summary ?? op.path}</strong>{op.mcpExtras && op.description && <span class="reference-operation-summary">{op.description.split(/\n\s*\n/)[0]}</span>}</span><svg class="reference-operation-arrow" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12h14m-6-6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round" /></svg></a></li>)}</ul>}
+              {links.length > 0 && <ul class="reference-operation-links">{links.map(op => <li id={anchored.has(op) ? operationAnchor(op, spec) : undefined}><a href={targets?.operations[operationKey(op)]?.href ?? `#${operationAnchor(op, spec)}`}><span class={`reference-method method-${op.method}`}>{op.method.toUpperCase()}</span><span class="reference-operation-label"><strong><Breakable text={op.summary ?? op.path} /></strong>{op.mcpExtras && op.description && <span class="reference-operation-summary">{op.description.split(/\n\s*\n/)[0]}</span>}</span><svg class="reference-operation-arrow" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12h14m-6-6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round" /></svg></a></li>)}</ul>}
               {bodies.map((op) => (
                 <Operation key={`${op.method}-${op.path}`} operation={op} />
               ))}

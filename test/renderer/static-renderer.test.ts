@@ -382,6 +382,17 @@ describe("renderPage (spec)", () => {
     expect(renderSpec(spec, defaultOptions)).toMatch(/<h2[^>]*>Pet<\/h2>/);
   });
 
+  it("breaks a snake_case name after its underscores, and reads prose as written", () => {
+    const operation = (summary: string, path: string) => ({ method: "post" as const, path, summary, tags: ["tools"], parameters: [], responses: [], security: [], deprecated: false });
+    const operations = [operation("list_applications", "/list"), operation("Sync an application", "/sync")];
+    const spec = createMinimalSpec({ tags: [{ name: "tools", operations }], operations });
+    const html = renderSpec(spec, defaultOptions);
+    // In the navigation and the heading; a code sample's one-line title stays as written.
+    expect(html).toMatch(/break-words[^"]*">list_<wbr\/>applications<\/span>/);
+    expect(html).toMatch(/>list_<wbr\/>applications<\/h2>/);
+    expect(html).toContain(">Sync an application<");
+  });
+
   it("prefixes a version with v only where it is a number", () => {
     const label = (version: string) => {
       const spec = createMinimalSpec({ info: { title: "Test API", version } });

@@ -1,4 +1,5 @@
 import { useContext } from "preact/hooks";
+import { Breakable } from "../ui/Breakable.js";
 import { NavigationContext, OptionsContext, PageContext, SiteContext } from "../../renderer/context.js";
 import { changelogNavigation } from "../changelog/navigation.js";
 import { SocialIcon, linkLabel } from "../ui/SocialIcon.js";
@@ -80,7 +81,7 @@ function NavGroup({ group, activePageSlug, base }: {
     const sections = group.items.filter(isNavGroup).filter(leadsAnywhere);
     return <>
       <a href={joinHref(base, group.href)} class={`nav-link${current ? " active" : ""}`} aria-current={current ? "location" : undefined}>
-        <span class="flex-1 break-words [word-break:break-word]">{group.label}</span>
+        <span class="flex-1 break-words [word-break:break-word]"><Breakable text={group.label} /></span>
       </a>
       {sections.length > 0 && <ul class="pl-3 mt-px space-y-px">{sections.map(section => (
         <li key={section.id ?? section.label}><NavGroup group={section} activePageSlug={activePageSlug} base={base} /></li>
@@ -97,7 +98,7 @@ function NavGroup({ group, activePageSlug, base }: {
     ? leadsAnywhere(item) && <li key={item.id ?? item.label} class={isRow(item) ? undefined : "pl-3 pt-3"}><NavGroup group={item} activePageSlug={activePageSlug} base={base} /></li>
     : <li key={item.id}><a href={joinHref(base, item.href)} class={`nav-link${item.id === activePageSlug ? " active" : ""}`}
         aria-current={item.id === activePageSlug ? (item.href.includes("#") ? "location" : "page") : undefined}>
-        {item.method && <MethodPill method={item.method} />}<span class="flex-1 break-words [word-break:break-word]">{item.label}</span>
+        {item.method && <MethodPill method={item.method} />}<span class="flex-1 break-words [word-break:break-word]"><Breakable text={item.label} /></span>
       </a></li>)}</ul>;
   const active = current || [...walkNavItems([group])].some(item => item.id === activePageSlug);
   if (!collapsible) return <>{group.label && label}{contents}</>;

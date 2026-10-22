@@ -7,6 +7,7 @@
 - A schema no longer opens a type inside itself, or draws a very large type out to the depth limit. A field of the type it sits in reads "Same fields as" and links up to where that type is drawn. A schema that would draw more than 500 field rows, as large Kubernetes custom resources do, draws each named type once, at its shallowest place, and links its other fields there: one such operation was 21 MB of HTML that stopped 1,026 times at "Max depth reached", and is now 1 MB with every field reachable. Generated examples leave out a property that would repeat its own type, rather than printing `"[circular]"`, and an example longer than 400 lines shows each named object type once. Schemas below that size draw as before.
 - A reference's version is prefixed with "v" only where it is a number, so a version named `latest` no longer reads "vlatest".
 - Pages fit a phone's screen where they name long identifiers. A type, a model's name, a page title, a link in prose, a description in a reference's list, or the name in a previous or next link that has a word too long for its column wraps inside that word, rather than widening the page; a model's type moves below its name where the two cannot share a line. Pages whose words fit draw as before.
+- A snake_case name, such as an MCP tool's, breaks after an underscore in the navigation, a reference's lists and its page heading, rather than inside a word.
 
 ## 3.8.3 - 2026-10-21
 
