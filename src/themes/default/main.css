@@ -1,12 +1,11 @@
 @import "tailwindcss" source(none);
 @plugin "@tailwindcss/typography";
 
+/* Tailwind reads what writes its utilities: the components and the client scripts. The
+   engine's other markup, in core and utils, is styled by the theme's own classes, and its
+   code's words (filter, grid, italic) are not classes. */
 @source "../../components/**/*.{tsx,js}";
 @source "../../client/**/*.{ts,js}";
-@source "../../core/**/*.{ts,js}";
-@source "../../utils/**/*.{ts,js}";
-/* The highlighter writes theme colours, never utility classes; its font words are not classes. */
-@source not "../../utils/highlighter.{ts,js}";
 
 /* Dark mode via .dark class on <html> */
 @custom-variant dark (&:where(.dark, .dark *));
