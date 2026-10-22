@@ -139,6 +139,12 @@ html:not(.sourcey-tabs-ready) [data-sourcey-tabs] .directive-tab-panel { display
 .sourcey-diagram-unrendered figcaption { margin-block-end:.5rem; font-size:.8rem; color:rgb(var(--color-gray-500)); }
 .directive-tab:focus-visible { outline:1px solid rgb(var(--color-primary)/.6); outline-offset:-3px; border-radius:4px; }
 
+/* A site name longer than the header has room for, as on a phone, stays on one line and ends in an ellipsis. */
+.sourcey-header-brand,.sourcey-header-brand .sourcey-logo { min-width:0; }
+.sourcey-header-brand .sourcey-logo { max-width:100%; }
+/* The padding, taken back by the margin, keeps a glyph that draws past its box, such as a bold k, from being clipped. */
+.sourcey-header-brand .sourcey-logo:not(:has(> picture)),.sourcey-header-brand .sourcey-logo > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:2px; margin:-2px; }
+
 .reference-operation-links { list-style:none; padding:0; border-top:1px solid rgb(var(--color-gray-200)/.6); }
 .reference-operation-links li { border-bottom:1px solid rgb(var(--color-gray-200)/.6); }
 .reference-operation-links a { display:flex; align-items:baseline; gap:.75rem; padding:.85rem .5rem; font-size:.85rem; border-radius:.375rem; }

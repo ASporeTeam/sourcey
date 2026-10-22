@@ -8,6 +8,7 @@
 - A reference's version is prefixed with "v" only where it is a number, so a version named `latest` no longer reads "vlatest".
 - Pages fit a phone's screen where they name long identifiers. A type, a model's name, a page title, a link in prose, a description in a reference's list, or the name in a previous or next link that has a word too long for its column wraps inside that word, rather than widening the page; a model's type moves below its name where the two cannot share a line. Pages whose words fit draw as before.
 - A snake_case name, such as an MCP tool's, breaks after an underscore in the navigation, a reference's lists and its page heading, rather than inside a word.
+- A site name longer than the header has room for, as on a phone, stays on one line and ends in an ellipsis, rather than wrapping to three lines that crowd the header's controls.
 
 ## 3.8.3 - 2026-10-21
 
