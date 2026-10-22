@@ -82,8 +82,8 @@ export class InputReader {
     if (!entry) {
       let pending = this.pendingFiles.get(key);
       if (!pending) {
-        pending = hashFile(key, this.signal).then(({ digest, size, head }) => {
-          const value = { file: new SourceFile(key, digest, size), head };
+        pending = hashFile(key, this.signal).then(({ digest, size, head, identity }) => {
+          const value = { file: new SourceFile(key, digest, size, identity), head };
           this.files.set(key, value);
           return value;
         });

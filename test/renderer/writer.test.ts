@@ -79,12 +79,12 @@ describe("standalone output publication", () => {
     await writeFile(image, Buffer.alloc(300_000, 7));
     const hashed = await hashFile(image);
     const output = await openOutput(root);
-    await output.put("media/image.bin", new SourceFile(image, hashed.digest, hashed.size));
+    await output.put("media/image.bin", new SourceFile(image, hashed.digest, hashed.size, hashed.identity));
     await output.commit();
     expect(await readFile(join(root, "media/image.bin"))).toEqual(Buffer.alloc(300_000, 7));
     await writeFile(image, "edited after hashing");
     const changed = await openOutput(root);
-    await expect(changed.put("media/other.bin", new SourceFile(image, hashed.digest, hashed.size))).rejects.toThrow("Source file changed during the build");
+    await expect(changed.put("media/other.bin", new SourceFile(image, hashed.digest, hashed.size, hashed.identity))).rejects.toThrow("Source file changed during the build");
     await changed.abort();
     expect(await readdir(join(root, "media"))).toEqual(["image.bin"]);
     expect((await readdir(root)).some((name) => name.startsWith(".sourcey-write-"))).toBe(false);

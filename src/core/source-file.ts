@@ -1,5 +1,5 @@
-import { createReadStream } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { createReadStream, type Stats } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 
 /**
@@ -12,7 +12,13 @@ export class SourceFile {
     readonly path: string,
     readonly digest: string,
     readonly size: number,
+    private readonly identity: string,
   ) {}
+
+  /** Whether the file on disk is still the one that was hashed. */
+  unchanged(info: Stats): boolean {
+    return identityOf(info) === this.identity;
+  }
 
   /** The file's bytes, as they were when it was hashed. */
   async read(): Promise<Buffer> {
@@ -25,8 +31,15 @@ export class SourceFile {
 /** What an artifact holds: text, bytes, or a file to copy them from. */
 export type ArtifactBody = string | Buffer | SourceFile;
 
-/** A file's SHA-256, size and first bytes, read once as a stream. */
-export async function hashFile(path: string, signal?: AbortSignal): Promise<{ digest: string; size: number; head: Buffer }> {
+/** A file on disk: its inode, size and change time, which every write moves and none can set back. */
+const identityOf = (info: Stats) => `${info.dev}:${info.ino}:${info.size}:${info.ctimeMs}`;
+
+/**
+ * A file's SHA-256, size, first bytes and identity on disk, read once as a
+ * stream. A file written to while it is read fails.
+ */
+export async function hashFile(path: string, signal?: AbortSignal): Promise<{ digest: string; size: number; head: Buffer; identity: string }> {
+  const identity = identityOf(await stat(path));
   const hash = createHash("sha256");
   let size = 0, head = Buffer.alloc(0);
   for await (const chunk of createReadStream(path, { signal }) as AsyncIterable<Buffer>) {
@@ -34,7 +47,8 @@ export async function hashFile(path: string, signal?: AbortSignal): Promise<{ di
     if (head.length < 80) head = Buffer.concat([head, chunk.subarray(0, 80 - head.length)]);
     size += chunk.length;
   }
-  return { digest: hash.digest("hex"), size, head };
+  if (identityOf(await stat(path)) !== identity) throw new Error(`Source file changed during the build: ${path}`);
+  return { digest: hash.digest("hex"), size, head, identity };
 }
 
 /** Bytes for a host that serves the site from memory. */

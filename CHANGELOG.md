@@ -35,6 +35,7 @@
 - A build finds the links its broken-fragment check follows by reading each page's anchors from the HTML it wrote, rather than parsing every page again: on a 493-page site that check took a tenth of a second.
 - A page's Markdown is lexed once where it used to be lexed twice: the title and summary its frontmatter leaves out are read from one lexing of the page, and its headings from the same lexing that finds its local files.
 - The build cache reads the packages a diagram or social image is drawn with all at once, rather than one directory and one file at a time, so a build with a diagram waits a tenth of a second less before drawing it, cached or not. What it checks is unchanged.
+- `sourcey build` clones a file it publishes unchanged into the output where the file system can, as APFS, Btrfs and XFS can, and copies it in one call elsewhere, rather than streaming its bytes through the build and hashing them a second time: a public directory of 143 MB is published without being read again or taking its size again on disk. A file that changes after it was hashed still fails the build, now found by its inode, size and change time, which every write moves; a file written while it is being hashed fails too.
 
 ## 3.8.3 - 2026-10-21
 

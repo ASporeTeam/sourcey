@@ -1,19 +1,19 @@
 import {
+  copyFile,
   mkdir,
   readFile,
   rename,
   rm,
+  stat,
   writeFile,
   readdir,
   mkdtemp,
   rmdir,
   lstat,
 } from "node:fs/promises";
-import { createReadStream, createWriteStream } from "node:fs";
+import { constants } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { safeOutputPath } from "../core/site-model.js";
 import { hashFile, SourceFile, type ArtifactBody } from "../core/source-file.js";
 
@@ -36,12 +36,13 @@ async function existingDigest(path: string): Promise<string | undefined> {
     throw error;
   }
 }
-/** Copy a source file into staging, checking it is still the file that was hashed. */
+/**
+ * Clone a source file into staging, where the file system can, or copy it,
+ * and check it is still the file that was hashed: its bytes are not read again.
+ */
 async function copySource(source: SourceFile, target: string): Promise<void> {
-  const hash = createHash("sha256");
-  const hashing = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); done(null, chunk); } });
-  await pipeline(createReadStream(source.path), hashing, createWriteStream(target));
-  if (hash.digest("hex") !== source.digest) throw new Error(`Source file changed during the build: ${source.path}`);
+  await copyFile(source.path, target, constants.COPYFILE_FICLONE);
+  if (!source.unchanged(await stat(source.path))) throw new Error(`Source file changed during the build: ${source.path}`);
 }
 
 /** A lexical child path must also stay inside the owned tree on disk. */
