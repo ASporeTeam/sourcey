@@ -39,7 +39,7 @@ export default defineConfig({
       },
       {
         tab: "Gin reference",
-        slug: "gin-reference",
+        slug: "gin-api",
         source: godoc({
           module: "./gin-src",
           packages: ["./..."],
