@@ -1,4 +1,3 @@
-import { $RefParser } from "@apidevtools/json-schema-ref-parser";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, extname, isAbsolute, posix, relative, resolve } from "node:path";
 import { load } from "js-yaml";
@@ -38,6 +37,7 @@ async function dereferenceSpec(
   options: { publishBundle?: boolean; input?: InputReader },
   convert: boolean,
 ): Promise<ParsedSpec> {
+  const { $RefParser } = await import("@apidevtools/json-schema-ref-parser");
   try {
     const parser = new $RefParser();
     const resolver = { http: false as const, file: createConfinedFileResolver(loaded, options.input) };

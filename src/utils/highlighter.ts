@@ -1,5 +1,6 @@
 import type { CodeFenceMetadata } from "./markdown.js";
-import { createHighlighterCore, createOnigurumaEngine, type HighlighterCore } from "shiki";
+import { createHighlighterCore, type HighlighterCore } from "shiki/core";
+import { createOnigurumaEngine } from "shiki/engine/oniguruma";
 import js from "shiki/langs/javascript.mjs";
 import ts from "shiki/langs/typescript.mjs";
 import bash from "shiki/langs/bash.mjs";

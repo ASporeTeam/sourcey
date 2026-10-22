@@ -1,4 +1,5 @@
-import sanitizeHtml from "sanitize-html";
+import { createRequire } from "node:module";
+import type SanitizeHtml from "sanitize-html";
 
 const BASE_URL = "https://sourcey.invalid/";
 const EXPLICIT_SCHEME_RE = /^[a-z][a-z\d+.-]*:/i;
@@ -89,8 +90,12 @@ const SHIKI_FONT_STYLE = /^(italic|normal|inherit)$/;
 const SHIKI_FONT_WEIGHT = /^(bold|normal|inherit|[1-9]00)$/;
 const SHIKI_TEXT_DECORATION = /^(underline|line-through|none|inherit)$/;
 
+const require = createRequire(import.meta.url);
+
 /** `linkSchemes` are further link schemes the build resolves after rendering, such as `operation`. */
 export function sanitizeRenderedHtml(input: string, linkSchemes: readonly string[] = []): string {
+  // The sanitizer loads with the first HTML an author wrote; many sites have none.
+  const sanitizeHtml = require("sanitize-html") as typeof SanitizeHtml;
   return sanitizeHtml(input, {
     nonBooleanAttributes: sanitizeHtml.defaults.nonBooleanAttributes.filter(
       (name) => name !== "hidden",

@@ -1,4 +1,4 @@
-import { generate } from "moxygen";
+import type { generate } from "moxygen";
 import type { DoxygenIndexStyle, ResolvedDoxygenConfig } from "../config.js";
 import {
   DEFAULT_CALLOUTS,
@@ -179,6 +179,7 @@ export async function loadDoxygenTab(
   const markdownOptions = siteMarkdownOptions(callouts.icons, callouts.messages);
   let generated: Awaited<ReturnType<typeof generate>>;
   try {
+    const { generate } = await import("moxygen");
     generated = await generate({
       directory: config.xml,
       language: config.language,

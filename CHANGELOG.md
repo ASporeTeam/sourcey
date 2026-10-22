@@ -30,6 +30,7 @@
 - Markdown keeps what it draws through sanitizing: an ordered list's starting number, a task list's checkboxes, `~~strikethrough~~`, and a code theme's italic and bold. The sanitizer had removed them on every page, so a list numbered from 3 read from 1 and a checklist lost its boxes.
 - A page's Markdown is sanitized only where its author wrote HTML. The build's own HTML, its headings, highlighted code and built-in components, joins the page as itself, rather than being written into the page's Markdown, read again as Markdown and sanitized: every page went through the sanitizer whole, highlighted code and all. A component a site defines is still sanitized, as are images and frames from anywhere but the web or the site. An 838-page site builds in 7.5 s, from 9.2 s.
 - A page's Markdown is read once for the local files and HTML it names. Markdown that names neither, as most does, is kept as written, rather than read twice more to rewrite nothing, and a link's label is rewritten from what was read with the link rather than read again.
+- `sourcey build` loads a library only for a site that uses it: the HTML sanitizer with the first HTML an author wrote, JSONPath with the first overlay, the Doxygen converter with a Doxygen tab and the reference resolver with the first API document. The highlighter loads Shiki's core and its Oniguruma engine, rather than the bundle that lists every language and theme.
 
 ## 3.8.3 - 2026-10-21
 

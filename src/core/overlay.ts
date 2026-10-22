@@ -1,4 +1,4 @@
-import { evaluate, NormalizedPath } from "@swaggerexpert/jsonpath";
+import { createRequire } from "node:module";
 import { loadDocument, type InputReader } from "./loader.js";
 import type { LoadedSpec } from "./types.js";
 import type { ResolvedOpenApiSource } from "../adapters/types.js";
@@ -40,8 +40,12 @@ export async function applyOverlays(loaded: LoadedSpec, source: ResolvedOpenApiS
   return diagnostics;
 }
 
+const require = createRequire(import.meta.url);
+
 /** Overlay 1.0, applied in place to a document owned by the caller. */
 export function applyOverlay(document: Record<string, unknown>, value: unknown, file: string, unmatched: Unmatched = "error"): OverlayDiagnostic[] {
+  // JSONPath loads with the first overlay; most sites have none.
+  const { evaluate, NormalizedPath } = require("@swaggerexpert/jsonpath") as typeof import("@swaggerexpert/jsonpath");
   const overlay = validateOverlay(value, file);
   const diagnostics: OverlayDiagnostic[] = [];
   for (const [index, action] of overlay.actions.entries()) {
