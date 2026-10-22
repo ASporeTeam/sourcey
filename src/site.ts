@@ -137,15 +137,18 @@ export async function buildSourceySite(
   const manifests = new Map<string, string>();
   for (const context of config.contexts) {
     const rows = rowsByContext.get(context.key) ?? [];
-    const key = createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+    const hash = createHash("sha256");
+    for (const row of rows) hash.update(JSON.stringify(row)).update("\0");
+    const key = hash.digest("hex");
     let search = previousCache?.searches.get(context.key);
     if (search?.key !== key) {
       search = { key, ...buildSearchArtifacts(rows) };
     }
     cache.searches.set(context.key, search);
     for (const [path, body] of search.files) extraFiles.set(path, body);
+    // One address for every build: a page names it, and it names this build's files.
     const manifest = `_search/context-${createHash("sha256").update(context.key).digest("hex").slice(0,16)}.json`;
-    extraFiles.set(manifest, JSON.stringify({ index: search.path.split("/").pop() }));
+    extraFiles.set(manifest, JSON.stringify(search.entry));
     manifests.set(context.key, manifest);
   }
   const searchSelections = new Map(config.contexts.map(context => [context.key, [...new Set(config.contexts

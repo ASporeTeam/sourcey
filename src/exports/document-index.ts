@@ -1,6 +1,7 @@
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { createSearch } from "../core/search-query.js";
+import { rankSearch, typosOf } from "../core/search-query.js";
+import { indexSearch } from "../core/search-artifacts.js";
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a documentation record");
@@ -49,7 +50,7 @@ export async function openDocumentation(directory: string) {
     throw new Error("Index resolves outside the built documentation.");
   const index = parseDocumentationIndex(JSON.parse(await readFile(indexPath, "utf8")));
   const byId = new Map(index.documents.map((entry) => [entry.id, entry]));
-  const search = createSearch(index.documents.map(entry => ({ ...entry, content: entry.description,
+  const search = indexSearch(index.documents.map(entry => ({ ...entry, content: entry.description,
     qualifiedName: entry.symbols?.map(s => s.name).join(" ") })));
   return {
     index,
@@ -63,7 +64,10 @@ export async function openDocumentation(directory: string) {
       return { entry, text: await readFile(path, "utf8") };
     },
     search(query: string, limit = 10): DocumentationEntry[] {
-      return search.query(query, Math.max(1, Math.min(20, limit)));
+      // A query that matches nothing as written is read again with typos in any letter.
+      let ranked = rankSearch(search, query, typosOf(query, search.terms));
+      if (!ranked.length) ranked = rankSearch(search, query, typosOf(query, search.terms, true));
+      return ranked.slice(0, Math.max(1, Math.min(20, limit))).map(({ id }) => index.documents[id]);
     },
     symbols(name: string, limit = 10) {
       const needle = name.toLowerCase().trim();

@@ -10,6 +10,9 @@
     var entries = [];
     var activeIndex = -1;
     var filtered = [];
+    // Results arrive a batch at a time: the next is read as the list nears its end.
+    var hasMore = false;
+    var loadingMore = null;
     var indexLoaded = false;
     var returnFocus;
 
@@ -44,7 +47,7 @@
           })
           .then(function (loaded) {
             engine = loaded;
-            entries = loaded.rows.map(function (e) { return Object.assign({}, e, { summary: e.qualifiedName || e.title, tag: e.owner || e.tab }); });
+            entries = loaded.rows.map(shown);
             indexLoaded = true;
           }).finally(function () { loading = null; });
       }
@@ -127,6 +130,7 @@
       if (!indexLoaded) return;
       var request = ++querySequence;
       var q = query.toLowerCase().trim();
+      hasMore = false;
       if (!q) {
         // Where each part of the site starts, under the part's name.
         filtered = entries.map(function (e) {
@@ -134,22 +138,51 @@
         });
       } else {
         try {
-          var matches = await engine.query(q);
+          var found = await engine.query(q);
           if (request !== querySequence || !dialog.open) return;
-          filtered = matches.map(function(e) { return Object.assign({}, e, { summary: e.qualifiedName || e.title, tag: e.owner || e.tab }); });
+          filtered = found.rows.map(shown);
+          hasMore = found.more;
         } catch {
           if (request !== querySequence) return;
-          engine.dispose(); indexLoaded = false; entries = [];
-          showFailure();
+          failed();
           return;
         }
       }
 
       activeIndex = filtered.length ? 0 : -1;
       render();
+      fill();
     }
 
-    function render() {
+    function shown(e) { return Object.assign({}, e, { summary: e.qualifiedName || e.title, tag: e.owner || e.tab }); }
+    function failed() {
+      engine.dispose(); indexLoaded = false; entries = []; hasMore = false;
+      showFailure();
+    }
+
+    /** The current query's next results, appended where the list ends. */
+    function loadMore() {
+      if (!hasMore) return Promise.resolve();
+      if (loadingMore) return loadingMore;
+      var request = querySequence;
+      loadingMore = engine.more().then(function (found) {
+        if (request !== querySequence || !dialog.open) return;
+        filtered = filtered.concat(found.rows.map(shown));
+        hasMore = found.more;
+        render(false);
+        fill();
+      }, function () {
+        if (request === querySequence) failed();
+      }).finally(function () { loadingMore = null; });
+      return loadingMore;
+    }
+    /** A list with room below its last result reads on until it fills or ends. */
+    function fill() {
+      if (hasMore && results.scrollHeight - results.scrollTop - results.clientHeight < 120) loadMore();
+    }
+
+    /** `follow`, unless false, keeps the active result in view. */
+    function render(follow) {
       var html = "";
       var lastCategory = "";
 
@@ -204,7 +237,7 @@
       if (!filtered.length) showStatus(dialog.getAttribute("data-empty"));
 
       // Scroll active result into view
-      var activeEl = results.querySelector(".search-result.active");
+      var activeEl = follow !== false && results.querySelector(".search-result.active");
       if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
     }
 
@@ -233,6 +266,10 @@
       }
       if (e.key === "ArrowDown") {
         e.preventDefault();
+        if (activeIndex === filtered.length - 1 && hasMore) {
+          loadMore().then(function () { activeIndex = Math.min(activeIndex + 1, filtered.length - 1); render(); });
+          return;
+        }
         activeIndex = Math.min(activeIndex + 1, filtered.length - 1);
         render();
         return;
@@ -261,6 +298,8 @@
         showResults(input.value);
       }, 100);
     });
+
+    results.addEventListener("scroll", fill, { passive: true });
 
     results.addEventListener("click", function (e) {
       var result = e.target.closest(".search-result");

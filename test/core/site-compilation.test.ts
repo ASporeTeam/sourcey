@@ -7,7 +7,9 @@ import { GODOC_SCHEMA_VERSION } from "../../src/core/godoc-types.js";
 import { resolveConfigFromRaw, loadConfig } from "../../src/config.js";
 import { buildSourceySite, collectSourceyWatchPaths, updateSourceySite, writeSourceySite, sourceyArtifacts } from "../../src/site.js";
 import { loadMarkdownPage } from "../../src/core/markdown-loader.js";
-import { createSearch } from "../../src/core/search-query.js";
+import { rankSearch } from "../../src/core/search-query.js";
+import { buildSearchArtifacts, indexSearch } from "../../src/core/search-artifacts.js";
+import { loadSearchIndex } from "../../src/client/search-index.js";
 import { writeArtifacts } from "../../src/renderer/writer.js";
 import { openDocumentation } from "../../src/exports/document-index.js";
 import { engineAsset, engineHref } from "../built-site.js";
@@ -784,12 +786,18 @@ describe("native compilation", () => {
     expect(withRemoval.pages.filter(page => page.currentPage.kind !== "not-found").map(p => p.pageSlug)).toEqual(["guide/one"]);
   }));
 
-  it("uses the same deterministic Unicode/CJK search and prefers an exact symbol", () => {
-    const rows = [{ title: "Guide", searchText: "A very long body about iced cheese and 配置服务" }, { title: "widget", qualifiedName: "icey::widget", searchText: "A symbol" }];
-    const engine = createSearch(rows);
-    expect(engine.query("iced cheese")[0]).toBe(rows[0]);
-    expect(engine.query("配置")[0]).toBe(rows[0]);
-    expect(engine.query("icey::widget")[0]).toBe(rows[1]);
-    expect(createSearch(rows, JSON.parse(JSON.stringify(engine.toJSON()))).query("iced cheese")).toEqual([rows[0]]);
+  it("uses the same deterministic Unicode/CJK search and prefers an exact symbol", async () => {
+    const rows = [{ title: "Guide", searchText: "A very long body about iced cheese and 配置服务", url: "/guide/", tab: "Docs", category: "Pages" },
+      { title: "widget", qualifiedName: "icey::widget", searchText: "A symbol", url: "/widget/", tab: "Docs", category: "Symbols" }];
+    const index = indexSearch(rows);
+    const first = (query: string) => rankSearch(index, query)[0]?.id;
+    expect(first("iced cheese")).toBe(0);
+    expect(first("配置")).toBe(0);
+    expect(first("icey::widget")).toBe(1);
+    // The browser ranks from the published files as the build ranks in memory.
+    const { entry, files } = buildSearchArtifacts(rows);
+    const published = await loadSearchIndex("https://docs.test/_search/context.json", (async (url: string) =>
+      new Response(url.endsWith("context.json") ? JSON.stringify(entry) : files.get(new URL(url).pathname.slice(1)))) as typeof fetch);
+    expect(await published.rank("iced cheese")).toEqual(rankSearch(index, "iced cheese"));
   });
 });

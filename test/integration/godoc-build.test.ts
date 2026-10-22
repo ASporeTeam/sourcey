@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { resolveConfigFromRaw } from "../../src/config.js";
 import { buildSiteDocs } from "../../src/index.js";
-import { publishedSearchRows } from "../built-site.js";
+import { publishedSearch, publishedSearchRows } from "../built-site.js";
 
 const FIXTURE_MODULE = resolve(import.meta.dirname, "../fixtures/godoc/basic");
 const OUTPUT_DIR = resolve(import.meta.dirname, "../../.test-output-godoc-build");
@@ -105,19 +105,17 @@ skipWithoutGo("buildSiteDocs (integration) – godoc tab", () => {
     expect(llmsFull).toContain("Widget");
 
     // Search index includes the package symbols
-    const searchIndex = (await publishedSearchRows(OUTPUT_DIR)) as Array<{ title: string; content: string; category: string }>;
+    const searchIndex = await publishedSearchRows(OUTPUT_DIR);
     const titles = searchIndex.map((entry) => entry.title);
     expect(titles.some((t) => t.includes("example.com/basic"))).toBe(true);
     expect(titles).toContain("func New(name string) *Widget");
     expect(titles).toContain("type Widget");
     expect(titles).toContain("Widget.Publish");
     expect(titles).toContain("Example New");
-    expect(
-      searchIndex.some(
-        (entry) =>
-          entry.category === "go function" && entry.content.includes("New constructs a Widget"),
-      ),
-    ).toBe(true);
+    // A symbol is found by the words of its documentation.
+    const search = await publishedSearch(OUTPUT_DIR);
+    const found = await Promise.all((await search.rank("constructs a widget")).map(({ id }) => search.result(id)));
+    expect(found).toContainEqual(expect.objectContaining({ category: "go function", title: "func New(name string) *Widget" }));
     expect(
       searchIndex.some((entry) => entry.category === "go type" && entry.title === "type Widget"),
     ).toBe(true);

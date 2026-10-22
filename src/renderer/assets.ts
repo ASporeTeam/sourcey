@@ -97,7 +97,7 @@ export async function buildAssets(
     build = (packaged ? Promise.resolve(packaged) : cachedArtifacts(
       "engine-assets",
       JSON.stringify([theme, consoleEnabled, mode]),
-      ["vite", "@preact/preset-vite", "@tailwindcss/vite", "preact", "minisearch"],
+      ["vite", "@preact/preset-vite", "@tailwindcss/vite", "preact"],
       async () => {
         const dir = await mkdtemp(join(tmpdir(), "sourcey-assets-"));
         try {

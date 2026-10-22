@@ -255,13 +255,7 @@ describe("buildDocs (integration)", () => {
         outputDir,
       });
 
-      const searchIndex = (await publishedSearchRows(outputDir)) as Array<{
-        title: string;
-        content: string;
-        url: string;
-        tab: string;
-        category: string;
-      }>;
+      const searchIndex = await publishedSearchRows(outputDir);
 
       expect(searchIndex.length).toBeGreaterThan(0);
       expect(searchIndex).toContainEqual(
