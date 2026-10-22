@@ -10,6 +10,7 @@
 - A snake_case name, such as an MCP tool's, breaks after an underscore in the navigation, a reference's lists and its page heading, rather than inside a word.
 - A site name longer than the header has room for, as on a phone, stays on one line and ends in an ellipsis, rather than wrapping to three lines that crowd the header's controls.
 - `sourcey migrate mkdocs` says that Material's analytics (`extra.analytics`) are not carried over, as the Docusaurus converter says of its analytics plugins, rather than leaving them out without a word.
+- A Mermaid flowchart draws its subgraphs: each a titled container around its members, nested ones inside the one around them, coloured as Mermaid's own light and dark themes colour them. They were laid out flat and left out. A `<br>` in a node's label is a line break, drawn in the middle of the node rather than at the top of the diagram, and in a message, note, edge or title, which the renderer draws on one line, it reads as a space rather than as `<br>`.
 
 ## 3.8.3 - 2026-10-21
 

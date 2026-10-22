@@ -8,6 +8,7 @@ import { buildSourceySite, sourceyArtifacts } from "../../src/site.js";
 import { contentDiagnostics, parseComponents, renderContent } from "../../src/core/markdown-components.js";
 import { messagesFor } from "../../src/core/messages.js";
 import { InputReader } from "../../src/core/loader.js";
+import { diagramSvg } from "../../src/core/diagrams.js";
 
 async function guide(body: string) {
   const root = await mkdtemp(join(tmpdir(), "sourcey-components-"));
@@ -117,6 +118,31 @@ describe("indented code", () => {
     expect(page.html).toContain("&lt;Host&gt;:8080");
     expect(page.html).toMatch(/<div class="callout callout-note[^>]*role="note">[\s\S]*?Inside a callout:[\s\S]*?&lt;Port&gt;/);
     expect(page.html.match(/role="note"/g)).toHaveLength(1);
+  });
+});
+
+describe("line breaks in diagram labels", () => {
+  it("draws a flowchart node's <br> as a line break, and reads it as a space where the renderer draws one line", async () => {
+    const lines = (svg: string) => [...svg.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)].map((match) => match[1].replace(/<tspan[^>]*>/g, "|").replace(/<\/tspan>/g, "").replace(/\s+/g, " ").trim());
+    const flowchart = await diagramSvg('graph TB\n  subgraph S["Client<br>Layer"]\n  x["Ever Teams<br/>(React/RN)"] -->|HTTP<br/>WS| y[End]\n  end', false);
+    expect(lines(flowchart)).toEqual(expect.arrayContaining(["|Ever Teams|(React/RN)", "HTTP WS", "Client Layer"]));
+    const sequence = await diagramSvg("sequenceDiagram\n  participant FE as Gauzy Frontend<br/>(Angular)\n  FE->>FE: Create<br/>settings\n  Note over FE: If it exists,<br/>redirect", false);
+    expect(lines(sequence)).toEqual(expect.arrayContaining(["Gauzy Frontend (Angular)", "Create settings", "If it exists, redirect"]));
+    for (const svg of [flowchart, sequence]) expect(svg).not.toMatch(/&lt;br/i);
+  });
+
+  it("draws a flowchart's subgraphs around their members, an inner one over the one around it", async () => {
+    const svg = await diagramSvg('graph LR\n  subgraph Outer["Server Layer"]\n    subgraph Inner["Core"]\n      a[A] --> b[B]\n    end\n    c[C]\n  end\n  d[D] --> a\n  Inner --> c', false);
+    const boxes = [...svg.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" rx="4"[^>]*><\/rect><text[^>]*>([^<]*)<\/text>/g)].map(([, x, y, width, height, title]) => ({ title, x: +x, y: +y, right: +x + +width, bottom: +y + +height }));
+    expect(boxes.map((box) => box.title)).toEqual(["Server Layer", "Core"]);
+    const [outer, inner] = boxes;
+    expect(inner.x).toBeGreaterThan(outer.x);
+    expect(inner.right).toBeLessThan(outer.right);
+    // Node A sits inside Core, which sits inside Server Layer; D sits outside both.
+    const node = (label: string) => { const match = svg.match(new RegExp(`<text x="([\\d.]+)" y="([\\d.]+)"[^>]*>${label}</text>`)); return { x: Number(match![1]), y: Number(match![2]) }; };
+    const a = node("A"), d = node("D");
+    expect(a.x > inner.x && a.x < inner.right && a.y > inner.y && a.y < inner.bottom).toBe(true);
+    expect(d.x < outer.x || d.x > outer.right).toBe(true);
   });
 });
 
