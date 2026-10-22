@@ -1,7 +1,6 @@
 import { Worker } from "node:worker_threads";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BUILD_JOB_SLOTS } from "../core/build-jobs.js";
 
 const fontFiles = ["Inter-Regular.ttf", "Inter-Bold.ttf"].map((file) =>
   resolve(dirname(fileURLToPath(import.meta.url)), "fonts", file),
@@ -17,61 +16,51 @@ export interface CardDrawing {
 }
 
 type Request = { resolve(png: Buffer): void; reject(error: Error): void };
-const drawing = new Map<Worker, Request>();
-const idle: Worker[] = [];
-const waiting: Array<(worker: Worker) => void> = [];
-let workers = 0;
+let worker: Worker | undefined;
+let sequence = 0;
+const requests = new Map<number, Request>();
 
-function release(worker: Worker): void {
-  const next = waiting.shift();
-  if (next) return next(worker);
-  worker.unref();
-  idle.push(worker);
-}
-
-function start(): Worker {
-  workers++;
-  const worker = new Worker(new URL("./card-worker.js", import.meta.url), {
+function drawer(): Worker {
+  if (worker) return worker;
+  const started = new Worker(new URL("./card-worker.js", import.meta.url), {
     workerData: { fontFiles },
     // Loaders carry over; a worker refuses the process's own heap and stack sizes.
     execArgv: process.execArgv.filter((arg) => !/^--(input-type|max-old-space-size|max-semi-space-size|stack-size)\b/.test(arg)),
   });
-  worker.on("message", ({ png, error }: { png?: Uint8Array; error?: string }) => {
-    const request = drawing.get(worker);
-    drawing.delete(worker);
+  started.on("message", ({ id, png, error }: { id: number; png?: Uint8Array; error?: string }) => {
+    const request = requests.get(id);
+    requests.delete(id);
     if (error) request?.reject(new Error(error));
     else request?.resolve(Buffer.from(png!.buffer, png!.byteOffset, png!.byteLength));
-    release(worker);
+    if (!requests.size) started.unref();
   });
-  worker.on("error", (error) => {
-    workers--;
-    drawing.get(worker)?.reject(error instanceof Error ? error : new Error(String(error)));
-    drawing.delete(worker);
-    const at = idle.indexOf(worker);
-    if (at >= 0) idle.splice(at, 1);
-    // A card waiting on the pool takes a fresh worker in place of the lost one.
-    const next = waiting.shift();
-    if (next) next(start());
+  started.on("error", (error) => {
+    for (const request of requests.values()) request.reject(error instanceof Error ? error : new Error(String(error)));
+    requests.clear();
+    if (worker === started) worker = undefined;
   });
-  return worker;
-}
-
-async function acquire(): Promise<Worker> {
-  const worker = idle.pop();
-  if (worker) return worker;
-  if (workers < BUILD_JOB_SLOTS) return start();
-  return new Promise((resolve) => waiting.push(resolve));
+  return (worker = started);
 }
 
 /**
- * A card drawn to PNG on a worker thread. Workers start as cards need them, up to
- * the heavy-job budget, and keep their fonts and renderer loaded between cards.
+ * A card drawn to PNG. One worker lays cards out, many at a time, while
+ * native threads rasterise and encode them; it starts with the first card.
  */
-export async function drawCard({ card, ground, width, height }: CardDrawing): Promise<Buffer> {
-  const worker = await acquire();
-  worker.ref();
+export function drawCard({ card, ground, width, height }: CardDrawing): Promise<Buffer> {
+  const instance = drawer();
+  instance.ref();
   return new Promise<Buffer>((resolve, reject) => {
-    drawing.set(worker, { resolve, reject });
-    worker.postMessage({ card, ground, width, height });
+    const id = ++sequence;
+    requests.set(id, { resolve, reject });
+    instance.postMessage({ id, card, ground, width, height });
   });
+}
+
+/** Ends the worker and frees what it holds; the next card starts another. */
+export async function closeCardDrawer(): Promise<void> {
+  const current = worker;
+  worker = undefined;
+  for (const request of requests.values()) request.reject(new Error("Card drawing closed"));
+  requests.clear();
+  if (current) await current.terminate();
 }

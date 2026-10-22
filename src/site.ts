@@ -20,6 +20,7 @@ import { generateExports } from "./exports/index.js";
 import { pageMetadata } from "./core/page-metadata.js";
 import { collectSiteDiagnostics, type SiteDiagnostic } from "./core/site-diagnostics.js";
 import { BUILD_JOB_SLOTS } from "./core/build-jobs.js";
+import { closeDiagramRenderer } from "./core/diagrams.js";
 import { contentTypeForPath, outputPathFromRequestPath } from "./renderer/static-files.js";
 import {
   assembleSite,
@@ -89,6 +90,8 @@ export async function buildSourceySite(
   const cache: CompilationCache = { pages: new Map(previousCache?.pages), searches: new Map() };
 
   const assembled = await assembleSite(config, options.previous?.assembly.cache, options.changedPaths, options.signal);
+  // Diagrams are drawn as pages load; their renderer's memory goes with it.
+  await closeDiagramRenderer();
   const site = await buildSiteConfig(config, assembled.cache.reader, assembled.extraFiles);
   const root = config.baseUrl || "/";
   if (assembled.routes.match(root) && !assembled.routes.match(root)!.aliasOf) site.home = root;
@@ -260,6 +263,7 @@ async function attachOgImages(
 
   pages = pages.filter(page => page.status !== 404);
   const { embedRemoteLogo, generateOgImage } = await import("./og/generate-og-image.js");
+  const { closeCardDrawer } = await import("./og/draw-card.js");
   // The card is dark, so it draws the logo the site shows in dark mode.
   let logo = site.logo?.dark ?? site.logo?.light;
   if (logo && /^https?:\/\//.test(logo)) logo = await embedRemoteLogo(logo);
@@ -270,7 +274,8 @@ async function attachOgImages(
     logo = `data:${contentTypeForPath(path)};base64,${Buffer.from(body).toString("base64")}`;
   }
 
-  // As many cards in flight as there are workers to draw them.
+  // As many cards in flight as the build's image budget allows; the worker
+  // that lays them out ends with the last, and frees what it held.
   const queue = [...pages];
   await Promise.all(Array.from({ length: BUILD_JOB_SLOTS }, async () => {
     for (let page = queue.shift(); page; page = queue.shift()) {
@@ -295,7 +300,7 @@ async function attachOgImages(
         console.warn(`Sourcey: skipping OG image for ${page.outputPath}: ${message}`);
       }
     }
-  }));
+  })).finally(closeCardDrawer);
 }
 
 function describePageForOg(

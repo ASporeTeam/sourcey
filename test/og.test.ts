@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { resolveConfigFromRaw } from "../src/config.js";
-import { drawCard } from "../src/og/draw-card.js";
+import { closeCardDrawer, drawCard } from "../src/og/draw-card.js";
 import { embedRemoteLogo, generateOgImage } from "../src/og/generate-og-image.js";
 
 vi.mock("../src/og/draw-card.js", async (original) => {
@@ -34,6 +34,15 @@ describe("social image rendering", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("draws again after the drawer is closed, as each build closes it", async () => {
+    const card = { type: "div", props: { style: { display: "flex", width: "100%", height: "100%" }, children: "Closed" } };
+    const ground = '<rect width="1200" height="630" fill="#0f172a"/>';
+    const first = await drawCard({ card, ground, width: 1200, height: 630 });
+    await closeCardDrawer();
+    expect(await drawCard({ card, ground, width: 1200, height: 630 })).toEqual(first);
+    await closeCardDrawer();
   });
 
   it("reuses the rendered card and changes it only when a visual input changes", async () => {

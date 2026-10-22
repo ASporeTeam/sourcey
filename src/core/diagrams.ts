@@ -1,6 +1,5 @@
 import { Worker } from "node:worker_threads";
 import { createHash } from "node:crypto";
-import sanitizeHtml from "sanitize-html";
 import { heavyBuildJob } from "./build-jobs.js";
 import { cachedArtifacts } from "./artifact-cache.js";
 /** The renderer could not read a diagram's source: a type it does not draw, or invalid syntax. */
@@ -59,6 +58,7 @@ export async function diagramSvg(source: string, dark: boolean): Promise<string>
         () => undefined,
         () => undefined,
       );
+      const { default: sanitizeHtml } = await import("sanitize-html");
       const svg = await job.then((svg) =>
         sanitizeHtml(svg, {
           allowedTags: [
@@ -139,4 +139,13 @@ export async function diagramSvg(source: string, dark: boolean): Promise<string>
     },
   );
   return files.get("diagram.svg")!.toString();
+}
+
+/** Ends the renderer and frees what it holds; the next diagram starts another. */
+export async function closeDiagramRenderer(): Promise<void> {
+  const current = worker;
+  worker = undefined;
+  for (const request of requests.values()) request.reject(new Error("Diagram rendering closed"));
+  requests.clear();
+  if (current) await current.terminate();
 }
