@@ -587,8 +587,8 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
       return images.map(image => ({ ...image, src: toPublicPath(image.src, options.baseUrl) }));
     },
     async diagram(source) {
-      const { diagramSvg } = await import("./diagrams.js");
-      const [light, dark] = await Promise.all([diagramSvg(source, false), diagramSvg(source, true)]);
+      const { diagramSvgs } = await import("./diagrams.js");
+      const { light, dark } = await diagramSvgs(source);
       const result = { light: "", dark: "" };
       for (const mode of ["light", "dark"] as const) {
         const svg = mode === "light" ? light : dark;

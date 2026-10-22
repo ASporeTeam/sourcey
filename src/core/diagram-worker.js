@@ -168,7 +168,8 @@ function drawLabels(svg, labels, dark) {
   return svg.replace(/<\/svg>\s*$/, `${text}</svg>`);
 }
 
-// The build's diagram renderer, in a process of its own: one diagram at a time.
+// The build's diagram renderer, in a process of its own: one diagram at a time,
+// read and laid out once, and drawn in each theme from that layout.
 let queue = Promise.resolve();
 process.on('message', request => {
   queue = queue.then(async () => {
@@ -176,8 +177,8 @@ process.on('message', request => {
       const ir = breakLines(await parse(request.source));
       const positioned = ir.type === 'flowchart' && ir.subgraphs?.length ? await layoutSubgraphs(ir) : await layout(ir, { fontMetrics: metrics });
       const labels = takeMultilineLabels(positioned);
-      const svg = renderSvg(positioned, request.dark ? 'dark' : 'default', request.prefix);
-      process.send({ id: request.id, svg: drawLabels(drawSubgraphs(svg, positioned, request.dark), labels, request.dark) });
+      const draw = (dark) => drawLabels(drawSubgraphs(renderSvg(positioned, dark ? 'dark' : 'default', request.prefixes[dark ? 'dark' : 'light']), positioned, dark), labels, dark);
+      process.send({ id: request.id, light: draw(false), dark: draw(true) });
     } catch (error) {
       process.send({ id: request.id, error: error.message });
     }
