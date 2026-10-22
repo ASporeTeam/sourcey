@@ -451,11 +451,12 @@ async function themeOptions(project: ProjectFiles, site: DocusaurusSite, review:
   };
 }
 
-/** External navbar links; sidebar, version, locale and search items are native navigation. */
+/** Navbar links, to other sites (`href`) and to pages of this one (`to`); sidebar, version, locale and search items are native navigation. */
 function navbarLinks(items: unknown, review: (message: string) => void): NavbarLink[] {
   const links: NavbarLink[] = [];
   for (const item of (items ?? []) as Record<string, unknown>[]) {
-    if (typeof item.href === "string") links.push(navbarLink(networkOf(item.href), item.href, typeof item.label === "string" ? item.label : undefined));
+    const href = typeof item.href === "string" ? item.href : typeof item.to === "string" ? item.to : undefined;
+    if (href) links.push(navbarLink(networkOf(href), href, typeof item.label === "string" ? item.label : undefined));
     else if (Array.isArray(item.items) || item.type === "html") review(`The navbar ${item.type === "html" ? "HTML item" : `menu "${String(item.label ?? "")}"`} is not carried over`);
   }
   return links;

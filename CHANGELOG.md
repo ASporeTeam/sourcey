@@ -12,6 +12,7 @@
 - `sourcey migrate mkdocs` says that Material's analytics (`extra.analytics`) are not carried over, as the Docusaurus converter says of its analytics plugins, rather than leaving them out without a word.
 - A Mermaid flowchart draws its subgraphs: each a titled container around its members, nested ones inside the one around them, coloured as Mermaid's own light and dark themes colour them. They were laid out flat and left out. A `<br>` in a node's label is a line break, drawn in the middle of the node rather than at the top of the diagram, and in a message, note, edge or title, which the renderer draws on one line, it reads as a space rather than as `<br>`.
 - `sourcey migrate docusaurus` titles a page that opens with its own heading by that heading, as Docusaurus shows it, keeping its frontmatter title as its navigation label, rather than showing both titles.
+- `sourcey migrate docusaurus` keeps a navbar link to a page of the site (`to`), as it keeps one to another site (`href`), rather than dropping it without a word.
 
 ## 3.8.3 - 2026-10-21
 

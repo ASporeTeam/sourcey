@@ -318,6 +318,14 @@ describe("sourcey migrate docusaurus", () => {
     });
   });
 
+  it("keeps a navbar link to a page of the site, as it keeps one to another site", async () => {
+    const linked = { ...site, "docusaurus.config.js": (site["docusaurus.config.js"] as string).replace("{ href: 'https://github.com/example/docs', label: 'GitHub' }", "{ to: '/about', label: 'About', position: 'left' }, { href: 'https://github.com/example/docs', label: 'GitHub' }") };
+    await withProject(linked, async (root) => {
+      await migrateProject({ framework: "docusaurus", root });
+      expect(await read(root, "sourcey.config.ts")).toContain('links: [\n      { type: "link", href: "/about", label: "About" },\n      { type: "github", href: "https://github.com/example/docs" },\n    ],');
+    });
+  });
+
   it("keeps the navbar title beside its logo by making the logo a mark", async () => {
     const titled = { ...site, "docusaurus.config.js": (site["docusaurus.config.js"] as string).replace("navbar: { logo:", "navbar: { title: 'Example', logo:") };
     await withProject(titled, async (root) => {
