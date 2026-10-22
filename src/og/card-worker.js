@@ -1,10 +1,9 @@
-// Draws social cards off the main thread. Satori lays each card out as SVG
-// over its ground here; resvg rasterises it and sharp encodes the PNG on
-// native threads, so one worker keeps many cards in flight.
+// Draws social cards in a process of its own. Satori lays each card out as
+// SVG over its ground here; resvg rasterises it and sharp encodes the PNG on
+// native threads, so one process keeps many cards in flight.
 import { readFile } from "node:fs/promises";
-import { setFlagsFromString } from "node:v8";
-import { runInNewContext } from "node:vm";
-import { parentPort, workerData } from "node:worker_threads";
+import process from "node:process";
+import { URL, fileURLToPath } from "node:url";
 import satori from "satori";
 import { renderAsync } from "@resvg/resvg-js";
 import sharp from "sharp";
@@ -12,20 +11,22 @@ import sharp from "sharp";
 // resvg keeps each card's 3 MB of pixels in native memory until the garbage
 // collector finalizes the object holding them, and the collector never counts
 // that memory, so hundreds of cards' pixels pile up between collections. The
-// worker collects every few cards instead, so at most a few cards' pixels wait.
-setFlagsFromString("--expose-gc");
-const collect = runInNewContext("gc");
+// process collects every few cards instead, so at most a few cards' pixels wait.
 const COLLECT_EVERY = 8;
 let cards = 0;
+// Each card is one small image: the process holds no image cache, and each
+// encode takes one thread, as cards already draw several at a time.
+sharp.cache(false);
+sharp.concurrency(1);
 
-const { fontFiles } = workerData;
+const fontFiles = ["Inter-Regular.ttf", "Inter-Bold.ttf"].map((file) => fileURLToPath(new URL(`./fonts/${file}`, import.meta.url)));
 const [regular, bold] = await Promise.all(fontFiles.map((file) => readFile(file)));
 const fonts = [
   { name: "Inter", data: regular, weight: 400, style: "normal" },
   { name: "Inter", data: bold, weight: 700, style: "normal" },
 ];
 
-parentPort.on("message", async ({ id, card, ground, width, height }) => {
+process.on("message", async ({ id, card, ground, width, height }) => {
   try {
     const svg = await satori(card, { width, height, embedFont: true, fonts });
     // The ground is drawn first, beneath everything satori laid out.
@@ -38,9 +39,9 @@ parentPort.on("message", async ({ id, card, ground, width, height }) => {
     });
     const png = await sharp(image.pixels, { raw: { width: image.width, height: image.height, channels: 4 } }).png().toBuffer();
     image = undefined;
-    if (++cards % COLLECT_EVERY === 0) collect();
-    parentPort.postMessage({ id, png });
+    if (++cards % COLLECT_EVERY === 0) globalThis.gc?.();
+    process.send({ id, png });
   } catch (error) {
-    parentPort.postMessage({ id, error: error instanceof Error ? error.message : String(error) });
+    process.send({ id, error: error instanceof Error ? error.message : String(error) });
   }
 });

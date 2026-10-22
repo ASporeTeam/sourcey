@@ -1,4 +1,4 @@
-import { parentPort } from 'node:worker_threads';
+import process from 'node:process';
 import ELK from 'elkjs';
 import { darkTheme, defaultTheme, layout, parse, renderSvg } from '@speajus/mermaid-to-svg';
 
@@ -168,17 +168,18 @@ function drawLabels(svg, labels, dark) {
   return svg.replace(/<\/svg>\s*$/, `${text}</svg>`);
 }
 
+// The build's diagram renderer, in a process of its own: one diagram at a time.
 let queue = Promise.resolve();
-parentPort.on('message', request => {
+process.on('message', request => {
   queue = queue.then(async () => {
     try {
       const ir = breakLines(await parse(request.source));
       const positioned = ir.type === 'flowchart' && ir.subgraphs?.length ? await layoutSubgraphs(ir) : await layout(ir, { fontMetrics: metrics });
       const labels = takeMultilineLabels(positioned);
       const svg = renderSvg(positioned, request.dark ? 'dark' : 'default', request.prefix);
-      parentPort.postMessage({ id: request.id, svg: drawLabels(drawSubgraphs(svg, positioned, request.dark), labels, request.dark) });
+      process.send({ id: request.id, svg: drawLabels(drawSubgraphs(svg, positioned, request.dark), labels, request.dark) });
     } catch (error) {
-      parentPort.postMessage({ id: request.id, error: error.message });
+      process.send({ id: request.id, error: error.message });
     }
   });
 });

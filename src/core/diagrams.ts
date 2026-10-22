@@ -1,4 +1,4 @@
-import { Worker } from "node:worker_threads";
+import { HelperProcess } from "./helper-process.js";
 import { createHash } from "node:crypto";
 import { heavyBuildJob } from "./build-jobs.js";
 import { cachedArtifacts } from "./artifact-cache.js";
@@ -6,33 +6,11 @@ import { cachedArtifacts } from "./artifact-cache.js";
 export class DiagramSourceError extends Error {
   override name = "DiagramSourceError";
 }
-let worker: Worker | undefined;
-let sequence = 0;
-const requests = new Map<number, { resolve(value: string): void; reject(error: Error): void }>();
+/** Mermaid draws in a process of its own: it loads a DOM and the whole Mermaid library to parse a diagram. */
+const renderer = new HelperProcess<{ source: string; dark: boolean; prefix: string }, { svg?: string; error?: string }>(
+  new URL("./diagram-worker.js", import.meta.url),
+);
 let diagramQueue = Promise.resolve();
-function renderer(): Worker {
-  if (worker) return worker;
-  worker = new Worker(new URL("./diagram-worker.js", import.meta.url), {
-    // Loaders carry over; a worker refuses the process's own heap and stack sizes.
-    execArgv: process.execArgv.filter((arg) => !/^--(input-type|max-old-space-size|max-semi-space-size|stack-size)\b/.test(arg)),
-  });
-  worker.on("message", ({ id, svg, error }: { id: number; svg?: string; error?: string }) => {
-    const request = requests.get(id);
-    requests.delete(id);
-    if (request) {
-      if (error) request.reject(new DiagramSourceError(error));
-      else request.resolve(svg!);
-    }
-    if (!requests.size) worker?.unref();
-  });
-  worker.on("error", (error) => {
-    for (const request of requests.values())
-      request.reject(error instanceof Error ? error : new Error(String(error)));
-    requests.clear();
-    worker = undefined;
-  });
-  return worker;
-}
 export async function diagramSvg(source: string, dark: boolean): Promise<string> {
   const key = createHash("sha256")
     .update(JSON.stringify([source, dark]))
@@ -43,16 +21,11 @@ export async function diagramSvg(source: string, dark: boolean): Promise<string>
     ["@speajus/mermaid-to-svg", "sanitize-html"],
     async () => {
       const job = diagramQueue.then(() =>
-        heavyBuildJob(
-          () =>
-            new Promise<string>((resolve, reject) => {
-              const instance = renderer();
-              instance.ref();
-              const id = ++sequence;
-              requests.set(id, { resolve, reject });
-              instance.postMessage({ id, source, dark, prefix: `diagram-${key.slice(0, 16)}` });
-            }),
-        ),
+        heavyBuildJob(async () => {
+          const reply = await renderer.request({ source, dark, prefix: `diagram-${key.slice(0, 16)}` });
+          if (reply.error !== undefined) throw new DiagramSourceError(reply.error);
+          return reply.svg!;
+        }),
       );
       diagramQueue = job.then(
         () => undefined,
@@ -141,11 +114,7 @@ export async function diagramSvg(source: string, dark: boolean): Promise<string>
   return files.get("diagram.svg")!.toString();
 }
 
-/** Ends the renderer and frees what it holds; the next diagram starts another. */
+/** Ends the renderer and gives back what it held; the next diagram starts another. */
 export async function closeDiagramRenderer(): Promise<void> {
-  const current = worker;
-  worker = undefined;
-  for (const request of requests.values()) request.reject(new Error("Diagram rendering closed"));
-  requests.clear();
-  if (current) await current.terminate();
+  await renderer.close();
 }
