@@ -16,6 +16,23 @@ async function loadAndNormalize(fixture: string): Promise<NormalizedSpec> {
 }
 
 describe("normalizeSpec", () => {
+  it("normalizes a type once along every path it cannot recur on, names a component nothing references, and reads a boolean schema", () => {
+    // Shared, as the parser shares one object for every use of a component.
+    const meta = { type: "object", "x-ref-name": "ObjectMeta", properties: { name: { type: "string" } } };
+    const spec = { type: "object", "x-ref-name": "AppSpec", properties: { meta } };
+    const app = { type: "object", "x-ref-name": "App", properties: { meta, spec, extra: true } };
+    const unused = { type: "object", properties: { id: { type: "string" } } };
+    const normalized = normalizeSpec({
+      source: "inline.json",
+      document: { openapi: "3.1.0", info: { title: "Kinds", version: "1" }, paths: { "/apps": { get: { responses: { "200": { description: "OK", content: { "application/json": { schema: app } } } } } } }, components: { schemas: { App: app, AppSpec: spec, ObjectMeta: meta, Unused: unused } } },
+    } as unknown as ParsedSpec);
+    const body = normalized.operations[0].responses[0].content!["application/json"].schema!;
+    // ObjectMeta under App and under App's AppSpec is the same normalized type.
+    expect(body.properties!.meta).toBe(body.properties!.spec.properties!.meta);
+    expect(normalized.schemas.Unused.refName).toBe("Unused");
+    expect(body.properties!.extra).toBeDefined();
+  });
+
   it("normalizes a component once wherever it is used the same way, and keeps a component named \"\" apart from an unnamed use", () => {
     // The parser shares one object for every use of a component.
     const owner = { type: "object", "x-ref-name": "Owner", properties: { name: { type: "string" } } };

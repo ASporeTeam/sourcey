@@ -25,6 +25,7 @@
 - The build cache identifies the packages that draw diagrams, images and assets by each package's manifest and its files' sizes and modification times, rather than by reading every byte of every file they depend on: Mermaid's dependencies alone cost each build a quarter of a second and 150 MB of memory to hash. A patched or relinked package still counts as changed.
 - Diagrams and social images are drawn in processes of their own, which end when their work does and give all their memory back. A worker thread's ending gave back almost none: one Mermaid diagram left the build holding 330 MB, for its DOM and the Mermaid library, until it finished.
 - `sourcey build` collects its garbage sooner: a build renders each page once and keeps little, so it no longer lets the script heap grow well past what it holds before collecting. On an 838-page site its peak went from 1.24 GB to 0.84 GB, for 7% more time.
+- A schema nested along many paths, as a Kubernetes type is, normalizes once wherever it cannot meet itself again, rather than once for every path to it, and a component that nothing references is named by itself, as a referenced one is: its Markdown reads `Type: Order` rather than `Type: unknown`.
 
 ## 3.8.3 - 2026-10-21
 

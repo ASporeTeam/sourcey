@@ -510,14 +510,73 @@ function normalizeSchemas(schemas: Components): Record<string, NormalizedSchema>
 }
 
 /**
- * Schemas already normalized for a document, by source object, name and the
- * components on the way to them. The parser shares one object for every use
- * of a component, and a schema normalizes the same wherever it has the same
- * name and path, so each such place is normalized once and its result shared,
- * rather than a type used across a large API being copied at every use.
- * Normalized schemas are never changed afterwards.
+ * Schemas already normalized for a document. The parser shares one object for
+ * every use of a component, and a schema normalizes the same wherever it has
+ * the same name and the same components on its way that it could meet again
+ * below it (its own, the references it leaves in place and theirs), so each
+ * such place is normalized once and its result shared, rather than a type
+ * used across a large API copied at every use. Normalized schemas are never
+ * changed afterwards.
  */
-const normalized = new WeakMap<Components, WeakMap<object, Map<string, NormalizedSchema>>>();
+interface NormalizedDocument {
+  places: WeakMap<object, Map<string, NormalizedSchema>>;
+  reach: WeakMap<object, ReadonlySet<string>>;
+}
+const normalized = new WeakMap<Components, NormalizedDocument>();
+
+/** What the normalizer descends into, as `normalizeSchemaAt` does. */
+function schemaChildren(schema: Record<string, unknown>): unknown[] {
+  const children: unknown[] = [];
+  if (schema.properties && typeof schema.properties === "object") children.push(...Object.values(schema.properties));
+  if (schema.additionalProperties !== undefined && typeof schema.additionalProperties !== "boolean") children.push(schema.additionalProperties);
+  if (schema.items) children.push(schema.items);
+  for (const key of ["allOf", "anyOf", "oneOf"] as const) if (Array.isArray(schema[key])) children.push(...(schema[key] as unknown[]));
+  if (schema.not) children.push(schema.not);
+  return children;
+}
+
+function recurringTarget(schema: Record<string, unknown>): string | undefined {
+  const recurring = typeof schema.$ref === "string" ? /^#\/components\/schemas\/([^/]+)$/.exec(schema.$ref)?.[1] : undefined;
+  return recurring && decodeURIComponent(recurring).replace(/~1/g, "/").replace(/~0/g, "~");
+}
+
+/** The names a schema's own tree consults, and the references in it the normalizer may follow. */
+const localNames = new WeakMap<object, { names: Set<string>; targets: Set<string> }>();
+function namesWithin(schema: Record<string, unknown>): { names: Set<string>; targets: Set<string> } {
+  let found = localNames.get(schema);
+  if (found) return found;
+  found = { names: new Set(), targets: new Set() };
+  const own = optStr(schema["x-ref-name"]);
+  if (own) found.names.add(own);
+  const target = recurringTarget(schema);
+  if (target) { found.names.add(target); found.targets.add(target); }
+  for (const child of schemaChildren(schema)) {
+    if (!child || typeof child !== "object") continue;
+    const within = namesWithin(child as Record<string, unknown>);
+    for (const name of within.names) found.names.add(name);
+    for (const name of within.targets) found.targets.add(name);
+  }
+  localNames.set(schema, found);
+  return found;
+}
+
+/** Every component name the path could matter for below this schema, following references left in place. */
+function reachOf(schema: Record<string, unknown>, components: Components, document: NormalizedDocument): ReadonlySet<string> {
+  let reach = document.reach.get(schema);
+  if (reach) return reach;
+  const { names, targets } = namesWithin(schema);
+  const all = new Set(names);
+  const queue = [...targets], seen = new Set(queue);
+  for (let target = queue.pop(); target !== undefined; target = queue.pop()) {
+    const component = components[target];
+    if (!component || typeof component !== "object") continue;
+    const within = namesWithin(component);
+    for (const name of within.names) all.add(name);
+    for (const next of within.targets) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+  }
+  document.reach.set(schema, (reach = all));
+  return reach;
+}
 
 /**
  * `path` names the components on the way to this schema. A reference the
@@ -525,19 +584,21 @@ const normalized = new WeakMap<Components, WeakMap<object, Map<string, Normalize
  * that path, and stays a named link where the component would repeat.
  */
 function normalizeSchema(schema: Record<string, unknown>, components: Components, name?: string, path: readonly string[] = name ? [name] : []): NormalizedSchema {
-  let bySchema = normalized.get(components);
-  if (!bySchema) normalized.set(components, (bySchema = new WeakMap()));
-  let byPlace = bySchema.get(schema);
-  if (!byPlace) bySchema.set(schema, (byPlace = new Map()));
-  const place = JSON.stringify([name ?? null, path]);
+  // A schema that is not an object (OpenAPI 3.1 allows `true`) has nothing to share.
+  if (!schema || typeof schema !== "object") return normalizeSchemaAt(schema, components, name, path);
+  let document = normalized.get(components);
+  if (!document) normalized.set(components, (document = { places: new WeakMap(), reach: new WeakMap() }));
+  let byPlace = document.places.get(schema);
+  if (!byPlace) document.places.set(schema, (byPlace = new Map()));
+  const reach = reachOf(schema, components, document);
+  const place = JSON.stringify([name ?? null, path.filter(step => reach.has(step)).sort()]);
   let result = byPlace.get(place);
   if (!result) byPlace.set(place, (result = normalizeSchemaAt(schema, components, name, path)));
   return result;
 }
 
 function normalizeSchemaAt(schema: Record<string, unknown>, components: Components, name: string | undefined, path: readonly string[]): NormalizedSchema {
-  const recurring = typeof schema.$ref === "string" ? /^#\/components\/schemas\/([^/]+)$/.exec(schema.$ref)?.[1] : undefined;
-  const target = recurring && decodeURIComponent(recurring).replace(/~1/g, "/").replace(/~0/g, "~");
+  const target = recurringTarget(schema);
   if (target && components[target] && !path.includes(target)) {
     const expanded = normalizeSchema(components[target], components, undefined, [...path, target]);
     return { ...expanded, description: optStr(schema.description) ?? expanded.description, refName: target };
@@ -579,7 +640,8 @@ function normalizeSchemaAt(schema: Record<string, unknown>, components: Componen
     deprecated: schema.deprecated === true,
     example: schema.example,
     examples: Array.isArray(schema.examples) ? schema.examples : undefined,
-    refName: optStr(schema["x-ref-name"]),
+    // A component is its own named type, referenced from elsewhere or not.
+    refName: optStr(schema["x-ref-name"]) ?? name,
   };
 
   // Object properties
