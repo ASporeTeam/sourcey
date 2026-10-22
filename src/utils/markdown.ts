@@ -449,6 +449,27 @@ export function lexMarkdown(input?: string, definitions?: Links): Token[] {
 }
 
 /**
+ * Lex a document's blocks now, and a block's inline content only when
+ * `inline` asks for it: what finds a page's first heading and paragraph,
+ * without reading the rest of its prose.
+ */
+export function lexBlocks(input: string): { tokens: Token[]; inline(token: Token): void } {
+  const lexer = new Lexer(marked.defaults);
+  const tokens = lexer.blockTokens(input.replace(/\r\n|\r/g, "\n"), lexer.tokens);
+  const queued = new Map(lexer.inlineQueue.map(({ src, tokens }) => [tokens, src]));
+  lexer.inlineQueue = [];
+  return {
+    tokens,
+    inline(token) {
+      const children = (token as { tokens?: Token[] }).tokens, src = children && queued.get(children);
+      if (src === undefined) return;
+      queued.delete(children!);
+      lexer.inlineTokens(src, children);
+    },
+  };
+}
+
+/**
  * A heading's source text: nested link and emphasis tokens contribute their
  * own text, so a linked code span reads `Stateful`, not `` `Stateful` ``.
  * Heading ids derive from it, so it keeps inline HTML and entities as written.
@@ -522,12 +543,14 @@ export function firstHeadingText(input: string | Token[], depth: number): string
 
 /**
  * The summary text of the first paragraph that has any, in Markdown or its
- * tokens, for a page's description when it sets none.
+ * tokens, for a page's description when it sets none. `inline` reads a
+ * paragraph's inline content where the tokens left it unread.
  */
-export function extractFirstParagraph(input?: string | Token[]): string {
+export function extractFirstParagraph(input?: string | Token[], inline?: (token: Token) => void): string {
   if (!input) return "";
   for (const token of typeof input === "string" ? lexMarkdown(input) : input) {
     if (token.type === "paragraph") {
+      inline?.(token);
       // A row of badges or navigation links, joined by separators such as
       // &ensp; or ·, has no prose of its own and is not a summary.
       const prose = textOutsideLinks(token.tokens ?? []).replace(/&#?\w+;/g, "");

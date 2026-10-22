@@ -9,11 +9,10 @@ import {
   renderMarkdownInline,
   extractFirstParagraph,
   firstHeadingText,
-  lexMarkdown,
+  lexBlocks,
   stripMarkdownLinks,
   type PageHeading,
 } from "../utils/markdown.js";
-import type { Token } from "marked";
 import { InputReader } from "./loader.js";
 import { hasAgentContent, openingHasComponent, parseComponents, readableContent, renderContent, componentStyles, contentHeadings, contentAnchors, contentDiagnostics, resolveSectionIndexes, type ContentLinks, type ContentNode, type NativeComponentDefinition } from "./markdown-components.js";
 import type { NormalizedChangelog } from "./types.js";
@@ -260,10 +259,10 @@ async function loadMarkdownSourceFromBody(
   // What the frontmatter leaves out, a title or a summary, is read once from
   // the page as its readers see it: lexed, so a `#` comment inside a fenced
   // code block is not a heading.
-  let readable: Token[] | undefined;
-  const read = () => readable ??= lexMarkdown(readableContent(nodes, "people"));
+  let readable: ReturnType<typeof lexBlocks> | undefined;
+  const read = () => readable ??= lexBlocks(readableContent(nodes, "people"));
   const description = typeof meta.description === "string" && meta.description.trim() ? meta.description : undefined;
-  const title = meta.title ?? firstHeadingText(read(), 1) ?? options.title ?? slug;
+  const title = meta.title ?? firstHeadingText(read().tokens, 1) ?? options.title ?? slug;
   const sourcePath = relative(options.configDir ?? process.cwd(), filePath);
   if (meta.layout !== undefined && (typeof meta.layout !== "string" || !LAYOUTS.includes(meta.layout))) throw new Error(`${sourcePath}: layout ${JSON.stringify(meta.layout)} is not doc, page, blank or changelog`);
   // A changelog layout with changelogs turned off is the page as written.
@@ -271,7 +270,7 @@ async function loadMarkdownSourceFromBody(
   const css = meta.css === undefined ? [] : Array.isArray(meta.css) ? meta.css : [meta.css];
   if (css.some(path => typeof path !== "string" || !path || /^[a-z][a-z\d+.-]*:|^\//i.test(path))) throw new Error(`${sourcePath}: css names stylesheets beside the page, such as css: ./home.css`);
   return {
-    kind: "markdown", title, description: description ?? stripMarkdownLinks(extractFirstParagraph(read())).replace(/\s+/g, " ").trim(),
+    kind: "markdown", title, description: description ?? stripMarkdownLinks(extractFirstParagraph(read().tokens, read().inline)).replace(/\s+/g, " ").trim(),
     navTitle: typeof meta.navTitle === "string" ? meta.navTitle : undefined,
     slug: typeof meta.slug === "string" ? meta.slug.replace(/^\/+|\/+$/g, "") || "index" : slug,
     id: typeof meta.id === "string" ? meta.id : undefined, draft: meta.draft === true, hideInMenu: meta.hideInMenu === true,

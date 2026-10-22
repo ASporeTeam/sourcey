@@ -41,6 +41,7 @@
 - A diagram is read and laid out once and drawn in the light and dark themes from that layout, rather than read and laid out again for each theme. Diagrams are drawn as before.
 - A page's Markdown export is written once the site's routes are known, from its content, rather than written as the page was drawn and lexed whole again to rewrite its links. Loading a page marks the blocks and headings that hold a link the site resolves, 1 to 3% of a site's blocks, and only those are read again, with the page's reference definitions, so a `[text][name]` link resolves wherever its definition is. Exports are as before.
 - The API console's data for an operation holds what the console reads, how to call it, rather than the whole operation with its responses and prose, and writes a type it uses in many places once. Argo CD's console data went from 20.9 MB to 0.9 MB, and its largest operation's, which a reader downloads on opening the console, from 4.4 MB to 96 KB; Gauzy's from 54 MB to 4 MB. The console draws as before.
+- The title and summary a page's frontmatter leaves out are read from its blocks, lexing the inline text only of the paragraphs it reads until one has prose, rather than lexing all of the page's prose to find them. Titles and descriptions are as before.
 
 ## 3.8.3 - 2026-10-21
 
