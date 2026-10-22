@@ -171,7 +171,7 @@ function SpecPageContent({ className = "", bare = false }: { className?: string;
               {connection ? navigation.tabs.find(tab => tab.slug === navigation.activeTabSlug)?.label ?? spec.info.title : spec.info.title}
             </h1>
             {!connection && <span class="text-sm text-[rgb(var(--color-gray-500))] dark:text-[rgb(var(--color-gray-400))]">
-              {/^v\d/i.test(spec.info.version) ? spec.info.version : `v${spec.info.version}`}
+              {/^\d/.test(spec.info.version) ? `v${spec.info.version}` : spec.info.version}
             </span>}
           </div>
           {spec.info.summary && (

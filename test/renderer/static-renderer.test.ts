@@ -382,6 +382,17 @@ describe("renderPage (spec)", () => {
     expect(renderSpec(spec, defaultOptions)).toMatch(/<h2[^>]*>Pet<\/h2>/);
   });
 
+  it("prefixes a version with v only where it is a number", () => {
+    const label = (version: string) => {
+      const spec = createMinimalSpec({ info: { title: "Test API", version } });
+      const html = renderPage(spec, defaultOptions, buildSiteNavigation([buildNavFromSpec(spec, "api")]), { kind: "spec", spec, view: { kind: "overview" } }, defaultSite);
+      return html.match(/reference-page-title[^>]*>[^<]*<\/h1>\s*<span[^>]*>([^<]*)<\/span>/)?.[1].trim();
+    };
+    expect(label("1.0.0")).toBe("v1.0.0");
+    expect(label("v2.0")).toBe("v2.0");
+    expect(label("latest")).toBe("latest");
+  });
+
   it("shows a field's format only where it says more than its type", () => {
     const spec = createMinimalSpec({
       schemas: {
