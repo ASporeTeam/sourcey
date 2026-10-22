@@ -1,6 +1,6 @@
 import { decodeHTML } from "entities";
 import { slug as githubSlug } from "github-slugger";
-import { Marked, Lexer, type Token, type Tokens } from "marked";
+import { Marked, Lexer, type Links, type Token, type Tokens } from "marked";
 import { highlightCode } from "./highlighter.js";
 import { COPY_ICON_SVG } from "./copy-svg.js";
 import { htmlId } from "./html-id.js";
@@ -437,10 +437,15 @@ const marked = createMarkdownParser();
 /**
  * Lex markdown into tokens using the shared Sourcey Marked instance.
  * This keeps directive support and heading parsing aligned with rendering.
+ * `definitions`, a page's reference link definitions, are read with a part
+ * of it lexed alone, so its `[text][name]` links resolve as on the page.
  */
-export function lexMarkdown(input?: string): Token[] {
+export function lexMarkdown(input?: string, definitions?: Links): Token[] {
   if (!input) return [];
-  return marked.lexer(input);
+  if (!definitions) return marked.lexer(input);
+  const lexer = new Lexer(marked.defaults);
+  Object.assign(lexer.tokens.links, definitions);
+  return lexer.lex(input);
 }
 
 /**

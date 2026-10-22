@@ -15,7 +15,7 @@ import {
 } from "../utils/markdown.js";
 import type { Token } from "marked";
 import { InputReader } from "./loader.js";
-import { hasAgentContent, openingHasComponent, parseComponents, readableContent, renderContent, componentStyles, contentHeadings, contentAnchors, contentDiagnostics, resolveSectionIndexes, type ContentNode, type NativeComponentDefinition } from "./markdown-components.js";
+import { hasAgentContent, openingHasComponent, parseComponents, readableContent, renderContent, componentStyles, contentHeadings, contentAnchors, contentDiagnostics, resolveSectionIndexes, type ContentLinks, type ContentNode, type NativeComponentDefinition } from "./markdown-components.js";
 import type { NormalizedChangelog } from "./types.js";
 import type { ArtifactBody } from "./source-file.js";
 
@@ -110,6 +110,8 @@ export type DocsPage = MarkdownPage | ChangelogPage;
 export interface MarkdownSource extends Omit<MarkdownPage, "html" | "markdown" | "headings" | "anchors" | "hideLede" | "componentStyles" | "diagnostics"> {
   messages?: import("./messages.js").UiMessages;
   nodes: readonly ContentNode[];
+  /** The page's reference link definitions, which its `[text][name]` links read. */
+  definitions?: import("marked").Links;
   explicitDescription: boolean;
   smartypants?: boolean;
 }
@@ -253,8 +255,8 @@ async function loadMarkdownSourceFromBody(
 ): Promise<MarkdownSource> {
   let sourcePreprocessed = body;
   for (const preprocess of options.preprocess ?? []) sourcePreprocessed = preprocess(sourcePreprocessed, { filePath, sourceRoot: options.sourceRoot });
-  const assets = new Map<string, ArtifactBody>();
-  const nodes = await parseComponents(sourcePreprocessed, { source: filePath, root: options.configDir ?? options.sourceRoot ?? process.cwd(), input: options.input ?? new InputReader(), components: options.components, assets, baseUrl: options.baseUrl, context: options.context });
+  const assets = new Map<string, ArtifactBody>(), definitions: import("marked").Links = {};
+  const nodes = await parseComponents(sourcePreprocessed, { source: filePath, root: options.configDir ?? options.sourceRoot ?? process.cwd(), input: options.input ?? new InputReader(), components: options.components, assets, definitions, baseUrl: options.baseUrl, context: options.context });
   // What the frontmatter leaves out, a title or a summary, is read once from
   // the page as its readers see it: lexed, so a `#` comment inside a fenced
   // code block is not a heading.
@@ -274,21 +276,36 @@ async function loadMarkdownSourceFromBody(
     slug: typeof meta.slug === "string" ? meta.slug.replace(/^\/+|\/+$/g, "") || "index" : slug,
     id: typeof meta.id === "string" ? meta.id : undefined, draft: meta.draft === true, hideInMenu: meta.hideInMenu === true,
     ...(layout ? { layout } : {}), ...(css.length ? { css: css.map(path => resolve(dirname(filePath), path as string)) } : {}),
-    assets, nodes, messages: options.context?.messages, explicitDescription: description !== undefined, ...(options.smartypants ? { smartypants: true } : {}),
+    assets, nodes, ...(Object.keys(definitions).length && { definitions }), messages: options.context?.messages, explicitDescription: description !== undefined, ...(options.smartypants ? { smartypants: true } : {}),
     sourcePath, editPath: relative(options.editRoot ?? options.configDir ?? process.cwd(), filePath), sourceRoot: options.sourceRoot ? relative(options.configDir ?? process.cwd(), options.sourceRoot) : undefined,
   };
 }
 
+/** A page as drawn, before its Markdown export: its HTML and what its content says of it. */
+export type DrawnDocsPage = Omit<MarkdownPage, "markdown" | "readerMarkdown"> | ChangelogPage;
+
+/**
+ * A page and its Markdown export, drawn from its source, with the export's
+ * links as written. A site draws the page with `drawDocsSource` and writes
+ * the export with `docsExport` once its routes resolve the links.
+ */
 export function renderDocsSource(source: DocsSource, navigation?: import("./navigation.js").SiteTab, documentId = source.slug): DocsPage {
+  const drawn = drawDocsSource(source, navigation, documentId);
+  return drawn.kind === "changelog" ? drawn : { ...drawn, ...docsExport(source as MarkdownSource, navigation, documentId) };
+}
+
+/** A page's HTML, and its title, headings, anchors, styles and diagnostics as its content gives them. */
+export function drawDocsSource(source: DocsSource, navigation?: import("./navigation.js").SiteTab, documentId = source.slug): DrawnDocsPage {
   if (source.kind === "changelog") return source;
   const { nodes: sourceNodes, explicitDescription, messages, smartypants: smart, ...metadata } = source;
+  // The export reads the page's link definitions from its source.
+  delete metadata.definitions;
   const nodes = resolveSectionIndexes(sourceNodes, navigation, documentId);
-  let markdown: string, html: string;
+  let html: string;
   // Content that cannot render, such as a code fence's unknown metadata, names its page.
-  try { markdown = readableContent(nodes); html = renderContent(nodes, messages); }
+  try { html = renderContent(nodes, messages); }
   catch (error) { throw new Error(`${source.sourcePath}: ${(error as Error).message}`, { cause: error }); }
-  const readerMarkdown = hasAgentContent(nodes) ? readableContent(nodes, "people") : undefined;
-  const page = { ...metadata, markdown, ...(readerMarkdown !== undefined ? { readerMarkdown } : {}), headings: contentHeadings(nodes), anchors: contentAnchors(nodes), diagnostics: contentDiagnostics(nodes), componentStyles: componentStyles(nodes) };
+  const page = { ...metadata, headings: contentHeadings(nodes), anchors: contentAnchors(nodes), diagnostics: contentDiagnostics(nodes), componentStyles: componentStyles(nodes) };
   // A page drawn by its author keeps its own heading and opening; the doc frame draws both for it.
   if (source.layout === "page" || source.layout === "blank") return { ...page, html: smart ? smartypants(html) : html };
   let cleanHtml = html.replace(/^\s*<h1([^>]*)>(.*?)<\/h1>\s*/i, (match, attributes: string, inner: string) => {
@@ -306,6 +323,17 @@ export function renderDocsSource(source: DocsSource, navigation?: import("./navi
     else hideLede = true;
   }
   return { ...page, html: smart ? smartypants(cleanHtml) : cleanHtml, ...(hideLede ? { hideLede } : {}) };
+}
+
+/**
+ * A page's Markdown export: for agents, and for readers where the two
+ * differ. `links` resolves the links its content marked as resolvable.
+ */
+export function docsExport(source: MarkdownSource, navigation?: import("./navigation.js").SiteTab, documentId = source.slug, links?: ContentLinks): Pick<MarkdownPage, "markdown" | "readerMarkdown"> {
+  const nodes = resolveSectionIndexes(source.nodes, navigation, documentId);
+  try {
+    return { markdown: readableContent(nodes, "agents", links), ...(hasAgentContent(nodes) && { readerMarkdown: readableContent(nodes, "people", links) }) };
+  } catch (error) { throw new Error(`${source.sourcePath}: ${(error as Error).message}`, { cause: error }); }
 }
 
 function visibleText(html: string): string {

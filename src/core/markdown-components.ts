@@ -1,7 +1,7 @@
 import { STATIC_ASSET_EXTENSIONS, staticMediaAsset } from "./media.js";
 import { isNavGroup, walkNavGroups, type SiteTab, type SiteNavGroup } from "./navigation.js";
 import { rewriteMarkdownDestinations, rewriteMarkdownHtml } from "../utils/markdown-links.js";
-import type { Token, Tokens } from "marked";
+import type { Links, Token, Tokens, TokensList } from "marked";
 import { resolve, dirname, relative, isAbsolute, extname } from "node:path";
 import { toPublicPath } from "../site-url.js";
 import { createHash } from "node:crypto";
@@ -26,9 +26,14 @@ import type { ArtifactBody } from "./source-file.js";
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type StaticAttributes = Readonly<Record<string, JsonValue>>;
 export interface SourceLocation { file: string; offset: number }
+/**
+ * Content as a page holds it. A Markdown block or heading marked `links`
+ * holds a link the site resolves once its routes exist; the rest are read as
+ * written.
+ */
 export type ContentNode =
-  | { kind: "markdown"; value: string }
-  | { kind: "heading"; level: number; text: string; id: string; aliases?: string[] }
+  | { kind: "markdown"; value: string; links?: true }
+  | { kind: "heading"; level: number; text: string; id: string; aliases?: string[]; links?: true }
   | { kind: "label"; text: string; href?: string }
   | { kind: "section-index"; section?: string; layout: "cards" | "list" }
   | { kind: "code"; value: string; language: string; title?: string; metadata?: CodeFenceMetadata }
@@ -84,6 +89,8 @@ export function defineComponent<P, D>(definition: NativeComponentDefinition<P, D
 
 interface ParseOptions {
   ids?: { prefix: string; sequence: number };
+  /** Filled with the page's reference link definitions, as a page-wide lexing reads them. */
+  definitions?: Links;
   normalize?: false;
   context?: NativeContentContext;
   source: string; root: string; input: InputReader; baseUrl?: string;
@@ -310,13 +317,13 @@ function fieldSchema(field: FieldData): import("./types.js").NormalizedSchema | 
   return { type: field.type, default: field.default, minimum: field.min, maximum: field.max };
 }
 /** A field as readable Markdown, in the form readable reference parameters take. */
-function fieldMarkdown(node: ComponentNode, audience: Audience): string {
+function fieldMarkdown(node: ComponentNode, audience: Audience, links?: ContentLinks): string {
   const field = node.resolved.data as FieldData;
   const range = schemaRange({ minimum: field.min, maximum: field.max });
   const facts = [field.type, field.required ? "required" : "optional", field.default !== undefined ? `default \`${String(field.default)}\`` : undefined, range, field.deprecated ? "deprecated" : undefined].filter(Boolean);
   const indent = (value: string) => value.split("\n").map(line => line ? `  ${line}` : line).join("\n");
-  const description = readableContent(node.resolved.content.filter(child => !isField(child)), audience).trim();
-  const nested = fieldsOf(node.resolved.content).map(child => fieldMarkdown(child, audience)).join("\n");
+  const description = readableContent(node.resolved.content.filter(child => !isField(child)), audience, links).trim();
+  const nested = fieldsOf(node.resolved.content).map(child => fieldMarkdown(child, audience, links)).join("\n");
   return [`- \`${field.name}\` (${facts.join(", ")})`, description && indent(description), nested && indent(nested)].filter(Boolean).join("\n");
 }
 /** Content only agents read: machine exports carry it, the page and human search never do. */
@@ -701,8 +708,9 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
     flush(); return nodes;
   }
   const nodes = await parse(markdown);
-  // Markdown kept as written is lexed once: headings are then read from the same tokens.
+  // Markdown kept as written is lexed once: headings and links are then read from the same tokens.
   const lexed = options.normalize === false ? undefined : new Map<ContentNode, Token[]>();
+  const linkDefinitions: Links = {};
   async function assets(nodes: readonly ContentNode[]): Promise<ContentNode[]> {
     const result: ContentNode[] = [];
     for (const node of nodes) {
@@ -711,6 +719,8 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
       const images = new Set<string>();
       let html = false;
       const tokens = lexMarkdown(node.value);
+      // The first definition of a name is the page's, as one lexing of the page reads it.
+      for (const [name, definition] of Object.entries((tokens as TokensList).links)) if (!Object.hasOwn(linkDefinitions, name)) linkDefinitions[name] = definition;
       forEachToken(tokens, token => {
         if (token.type === "html") html = true;
         if (token.type !== "image" && token.type !== "link") return;
@@ -735,7 +745,11 @@ export async function parseComponents(markdown: string, options: ParseOptions): 
     return result;
   }
   const withAssets = await assets(nodes);
-  return lexed ? normalizeHeadings(withAssets, node => lexed.get(node) ?? lexMarkdown(node.value)) : withAssets;
+  if (!lexed) return withAssets;
+  if (options.definitions) Object.assign(options.definitions, linkDefinitions);
+  // A link can be named by a definition anywhere on the page: where one resolves, any block with a bracket may use it.
+  const defined = Object.values(linkDefinitions).some(({ href }) => resolvable(href));
+  return normalizeHeadings(withAssets, node => lexed.get(node) ?? lexMarkdown(node.value), token => defined && token.raw.includes("[") || linksIn(token));
 }
 
 function codeChildren(markdown: string, location: SourceLocation): ContentNode[] {
@@ -751,29 +765,38 @@ function codeChildren(markdown: string, location: SourceLocation): ContentNode[]
 
 /** Who a readable projection is for: machine exports carry agent-only content, readers' surfaces do not. */
 export type Audience = "agents" | "people";
-export function readableContent(nodes: readonly ContentNode[], audience: Audience = "agents"): string {
+/**
+ * How a page's export resolves its links once the site's routes exist:
+ * `markdown` rewrites a block or heading the page marked as holding one;
+ * `text` rewrites any other text, a title or a label, only where it could.
+ */
+export interface ContentLinks { markdown(text: string): string; text(text: string): string }
+export function readableContent(nodes: readonly ContentNode[], audience: Audience = "agents", links?: ContentLinks): string {
+  const read = (children: readonly ContentNode[]) => readableContent(children, audience, links);
+  const prose = (value: string) => (links ? links.text(value) : value);
+  const marked = (value: string, linked?: true) => (links && linked ? links.markdown(value) : value);
   return nodes.map(node => {
-    if (forAgents(node)) return audience === "agents" ? `\n\n${readableContent((node as ComponentNode).resolved.content, audience)}\n\n` : "";
+    if (forAgents(node)) return audience === "agents" ? `\n\n${read((node as ComponentNode).resolved.content)}\n\n` : "";
     if (node.kind === "component" && node.name === "Steps") {
       const steps = node.resolved.content.filter((child): child is Extract<ContentNode, { kind: "component" }> => child.kind === "component" && child.name === "Step");
-      if (steps.length) return "\n\n" + steps.map((step, index) => `${index + 1}. **${title(step.resolved)?.text ?? ""}**\n\n${readableContent(bodyNodes(step.resolved), audience).trim().split("\n").map(line => "   " + line).join("\n")}`).join("\n\n") + "\n\n";
+      if (steps.length) return "\n\n" + steps.map((step, index) => `${index + 1}. **${prose(title(step.resolved)?.text ?? "")}**\n\n${read(bodyNodes(step.resolved)).trim().split("\n").map(line => "   " + line).join("\n")}`).join("\n\n") + "\n\n";
     }
-    if (node.kind === "component" && isField(node)) return `\n\n${fieldMarkdown(node, audience)}\n\n`;
+    if (node.kind === "component" && isField(node)) return `\n\n${fieldMarkdown(node, audience, links)}\n\n`;
     // A callout reads as the GitHub alert Markdown readers know, so it is never taken for the page's prose; a title of its own leads it.
     if (node.kind === "component" && isCallout(node.name)) {
       const { props } = node.resolved.data as ContainerData;
-      const own = text(props.title ?? props.label);
-      const body = `${own ? `**${own}**\n\n` : ""}${readableContent(bodyNodes(node.resolved), audience).trim()}`;
+      const own = prose(text(props.title ?? props.label));
+      const body = `${own ? `**${own}**\n\n` : ""}${read(bodyNodes(node.resolved)).trim()}`;
       return `\n\n> [!${ALERT_TYPE[node.name]}]\n${body.split("\n").map(line => (line ? `> ${line}` : ">")).join("\n")}\n\n`;
     }
     // An intrinsically inline component stays in its sentence, as text.
-    if (node.kind === "component" && node.definition.inline) return node.resolved.content.map(child => child.kind === "label" ? child.text : readableContent([child], audience)).join("").replace(/\s+/g, " ").trim();
+    if (node.kind === "component" && node.definition.inline) return node.resolved.content.map(child => child.kind === "label" ? prose(child.text) : read([child])).join("").replace(/\s+/g, " ").trim();
     if (node.kind === "section-index") return "";
-    if (node.kind === "markdown") return node.value;
-    if (node.kind === "heading") return `\n${"#".repeat(node.level)} ${node.text} {#${node.id}}\n`;
-    if (node.kind === "label") return `\n\n**${node.href ? `[${node.text}](${node.href})` : node.text}**\n\n`;
-    if (node.kind === "code") return `\n\n${node.title ? `**${node.title}**\n\n` : ""}\`\`\`${node.language}\n${node.value}\n\`\`\`\n\n`;
-    return `\n\n${readableContent(node.resolved.content, audience)}\n\n`;
+    if (node.kind === "markdown") return marked(node.value, node.links);
+    if (node.kind === "heading") return `\n${"#".repeat(node.level)} ${marked(node.text, node.links)} {#${node.id}}\n`;
+    if (node.kind === "label") return `\n\n**${prose(node.href ? `[${node.text}](${node.href})` : node.text)}**\n\n`;
+    if (node.kind === "code") return `\n\n${node.title ? `**${prose(node.title)}**\n\n` : ""}\`\`\`${node.language}\n${node.value}\n\`\`\`\n\n`;
+    return `\n\n${read(node.resolved.content)}\n\n`;
   }).join("");
 }
 const renderOptions = new WeakMap<NonNullable<NativeContentContext["messages"]>, MarkdownRenderOptions>();
@@ -839,7 +862,16 @@ export function componentStyles(nodes: readonly ContentNode[]): string[] {
 }
 
 /** Resolve heading and field identity once, in document order, before any output is rendered. */
-function normalizeHeadings(nodes: readonly ContentNode[], lex: (node: Extract<ContentNode, { kind: "markdown" }>) => Token[]): ContentNode[] {
+/** A destination the site resolves: none on the web, in the page, or to mail. */
+const resolvable = (href: string) => !/^(?:https?:\/\/|#|mailto:)/.test(href);
+/** Whether a token holds a link or image the site resolves. */
+function linksIn(token: Token): boolean {
+  let found = false;
+  forEachToken([token], inner => { if ((inner.type === "link" || inner.type === "image") && resolvable((inner as Tokens.Link).href)) found = true; });
+  return found;
+}
+
+function normalizeHeadings(nodes: readonly ContentNode[], lex: (node: Extract<ContentNode, { kind: "markdown" }>) => Token[], linked: (token: Token) => boolean): ContentNode[] {
   const pending: { node: { id: string; aliases?: string[] }; automatic: boolean; previousId?: string }[] = [];
   function expand(nodes: readonly ContentNode[]): ContentNode[] {
     return nodes.flatMap<ContentNode>(node => {
@@ -856,9 +888,9 @@ function normalizeHeadings(nodes: readonly ContentNode[], lex: (node: Extract<Co
       }
       if (node.kind !== "markdown") return [node];
       return lex(node).map(token => {
-        if (token.type !== "heading") return { kind: "markdown" as const, value: token.raw };
+        if (token.type !== "heading") return { kind: "markdown" as const, value: token.raw, ...(linked(token) && { links: true as const }) };
         const heading = headingInfo(token as Tokens.Heading);
-        const node: Extract<ContentNode, { kind: "heading" }> = { kind: "heading", level: (token as Tokens.Heading).depth, text: heading.markdown, id: heading.id };
+        const node: Extract<ContentNode, { kind: "heading" }> = { kind: "heading", level: (token as Tokens.Heading).depth, text: heading.markdown, id: heading.id, ...(linked(token) && { links: true as const }) };
         pending.push({ node, automatic: !heading.explicit, previousId: heading.explicit ? undefined : heading.previousId });
         return node;
       });

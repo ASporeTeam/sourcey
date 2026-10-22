@@ -139,6 +139,30 @@ describe("native compilation", () => {
     expect(document.markdown).toContain("AgentExclusiveToken");
   }));
 
+  it("resolves the export's links where its content holds them: in prose, headings, cards, callout titles and by a definition elsewhere on the page", () => fixture(async root => {
+    await file(root, "guide.md", [
+      "# Guide", "",
+      "Read [the detail][detail] first.", "",
+      '<Note title="See [the other page](other.md)">', "Inside a callout.", "</Note>", "",
+      "## Using [other](other.md)", "",
+      '<Card title="Other" href="other.md">', "A card.", "</Card>", "",
+      "Plain prose, `[not a link](other.md)` in code.", "",
+      "[detail]: other.md", "",
+    ].join("\n"));
+    await file(root, "other.md", "# Other detail\n\nMore information.\n");
+    const config = await resolveConfigFromRaw({ baseUrl: "/docs", prettyUrls: "slash", theme: { fonts: { google: false } }, navigation: { tabs: [{ tab: "Docs", slug: "", source: markdown({ groups: [{ group: "Guides", pages: ["guide", "other"] }] }) }] } }, root);
+    const site = await buildSourceySite({ config, generateOgImages: false });
+    const page = site.pages.find(page => page.identity.document === "guide")!;
+    if (page.currentPage.kind !== "markdown") throw new Error("Expected Markdown");
+    const exported = page.currentPage.markdown.markdown;
+    expect(exported).toContain("Read [the detail](/docs/other/) first.");
+    expect(exported).toContain("**See [the other page](/docs/other/)**");
+    expect(exported).toContain("## Using [other](/docs/other/) {#using-other}");
+    expect(exported).toContain("**[Other](/docs/other/)**");
+    expect(exported).toContain("`[not a link](other.md)` in code.");
+    expect(page.currentPage.markdown.html).toContain('href="/docs/other/"');
+  }));
+
   it("retains refused diagram source and exposes its warning through cold and incremental builds", () => fixture(async root => {
     const source = "# Workflow\n\n```mermaid\ngitGraph\n  commit\n  branch develop\n```\n";
     const guide = await file(root, "workflow.md", source);

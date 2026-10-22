@@ -1,4 +1,4 @@
-import type { Token, Tokens } from "marked";
+import type { Links, Token, Tokens } from "marked";
 import { forEachToken, lexMarkdown } from "./markdown.js";
 import { inlineCodeEnd } from "./markdown-syntax.js";
 function markerPrefix(input: string, kind: string): string {
@@ -57,8 +57,12 @@ function restoreMarkers(input: string, saved: readonly string[], prefix: string)
   return input.replace(new RegExp(`${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\d+)@@`, "g"), (marker, index: string) => saved[Number(index)] ?? marker);
 }
 
-/** Rewrite prose destinations while keeping examples and inline code byte-for-byte. */
-export function rewriteMarkdownDestinations(markdown: string, rewrite: (href: string) => string): string {
+/**
+ * Rewrite prose destinations while keeping examples and inline code
+ * byte-for-byte. `definitions` are the reference definitions of the page
+ * `markdown` is part of.
+ */
+export function rewriteMarkdownDestinations(markdown: string, rewrite: (href: string) => string, definitions?: Links): string {
   const fenced = protectFencedCodeBlocks(markdown);
   const inline = protectInlineCodeSpans(fenced.text);
   /** Each link and image among `tokens` as rewritten, in `text`, the source they were read from. */
@@ -77,7 +81,7 @@ export function rewriteMarkdownDestinations(markdown: string, rewrite: (href: st
     });
     return replaceEach(text, replacements);
   }
-  const links = rewriteLinks(inline.text, lexMarkdown(inline.text));
+  const links = rewriteLinks(inline.text, lexMarkdown(inline.text, definitions));
   return restoreMarkers(restoreMarkers(links, inline.spans, inline.prefix), fenced.blocks, fenced.prefix);
 }
 

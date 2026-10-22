@@ -11,7 +11,7 @@ import { parseSpec } from "./core/parser.js";
 import { normalizeSpec } from "./core/normalizer.js";
 import { normalizeMcpSpec } from "./core/mcp-normalizer.js";
 import { shareReferenceSnapshot } from "./core/reference-snapshot.js";
-import { loadDocsSource, renderDocsSource, slugFromPath, type ContentDiagnostic, type LoadDocsPageOptions } from "./core/markdown-loader.js";
+import { docsExport, drawDocsSource, loadDocsSource, slugFromPath, type ContentDiagnostic, type LoadDocsPageOptions, type MarkdownSource } from "./core/markdown-loader.js";
 import { loadDoxygenTab } from "./core/doxygen-loader.js";
 import { loadGodocTab, type GodocLoaderDiagnostic } from "./core/godoc-loader.js";
 import { loadRustdocTab, type RustdocLoaderDiagnostic } from "./core/rustdoc-loader.js";
@@ -23,6 +23,8 @@ import type { PrettyUrls, Redirect, ResolvedConfig, ResolvedTab } from "./config
 import type { ChangelogPage, DocsPage, DocsSource, MarkdownPage } from "./core/markdown-loader.js";
 import type { ResolvedMarkdownSource } from "./adapters/types.js";
 import type { SiteTab } from "./core/navigation.js";
+import type { ContentLinks } from "./core/markdown-components.js";
+import type { Links } from "marked";
 import type {
   ChangelogDiagnostic,
   NormalizedChangelogVersion,
@@ -78,6 +80,12 @@ export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCa
   const pendingDocuments: { source: DocsSource; sourceKey: string; renderKey: string; page: SitePage; navigation: SiteTab; document: string }[] = [];
   const referenceRedirects = new Map<string, Redirect>();
   const sectionRenders: { page: MarkdownPage; content: () => string }[] = [];
+  // A page is drawn as soon as its navigation is known; its Markdown export is written once the site's routes resolve its links.
+  const exportsOf: PendingExports = new Map();
+  function draw(source: DocsSource, navigation: SiteTab | undefined, document: string): DocsPage {
+    const drawn = drawDocsSource(source, navigation, document);
+    return drawn.kind === "changelog" ? drawn : { ...drawn, markdown: "" };
+  }
   function localizeNavigation(nav: SiteTab, context: ResolvedSiteContext): void {
     const messages = context.localeConfig.messages;
     nav.label = messages?.navigation?.[nav.label] ?? nav.label;
@@ -108,7 +116,9 @@ export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCa
         cache.documents.set(key, source);
         if (source.kind !== "markdown" || source.draft) continue;
         if (source.layout === "doc") throw new Error(`${source.sourcePath}: a site page is drawn as page or blank, not doc`);
-        const markdown = renderDocsSource({ ...source, layout: source.layout ?? "page" }) as MarkdownPage;
+        const sitePage: MarkdownSource = { ...source, layout: source.layout ?? "page" };
+        const markdown = draw(sitePage, undefined, sitePage.slug) as MarkdownPage;
+        exportsOf.set(markdown, { source: sitePage, document: sitePage.slug });
         const page: SitePage = { outputPath: status ? statusPath : pageOutputPath(context.localePath, markdown.slug, config.prettyUrls), currentPage: { kind: "markdown", markdown },
           tabSlug: context.localePath ? `${context.localePath}/${SITE_PAGES}` : SITE_PAGES, pageSlug: markdown.slug, identity: { tab: SITE_PAGES, kind: "markdown", document: slug },
           context, contentLocale, source: file, ...(status ? { status: 404 as const } : {}) };
@@ -249,7 +259,7 @@ export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCa
       const dependency = source.kind === "markdown" ? sectionIndexDependencies(source.nodes, navTab, documentId) : "";
       const key = JSON.stringify([sourceKeys.get(rp.slug), dependency]);
       let rendered = previous?.documents.get(sourceKeys.get(rp.slug)!) === source ? previous.renderedDocuments.get(key) : undefined;
-      if (!rendered) rendered = renderDocsSource(source, navTab, documentId);
+      if (!rendered) rendered = draw(source, navTab, documentId);
       const page = rendered;
       if (page.kind === "changelog") changelogDiagnostics.push(...page.changelog.diagnostics);
       const record = add(context, tab, page.kind === "markdown" ? { kind: "markdown", markdown: page } : { kind: "changelog", changelog: page }, documentId, rp.file, rp.contentLocale ?? context.locale);
@@ -330,7 +340,8 @@ export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCa
     const key = JSON.stringify([sourceKey, dependency]);
     let rendered = previous?.documents.get(sourceKey) === source ? previous.renderedDocuments.get(key) : undefined;
     if (!rendered) rendered = key === pending.renderKey ? (page.currentPage.kind === "markdown" ? page.currentPage.markdown : page.currentPage.kind === "changelog" ? page.currentPage.changelog : undefined) : undefined;
-    rendered ??= renderDocsSource(source, navigation, document);
+    rendered ??= draw(source, navigation, document);
+    if (rendered.kind === "markdown") exportsOf.set(rendered, { source: source as MarkdownSource, navigation, document });
     const anchors = rendered.kind === "markdown" ? rendered.anchors ?? rendered.headings.map(heading => heading.id) : rendered.headings.map(heading => heading.id);
     const compiled = routes.byKey.get(identityKey(page))!;
     if (new Set(anchors).size !== compiled.anchors.size || anchors.some(anchor => !compiled.anchors.has(anchor))) throw new Error(`Navigation-derived content changed route anchors: ${page.outputPath}`);
@@ -382,7 +393,7 @@ export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCa
   for (const context of config.contexts) {
     const members = config.contexts.filter(c => c.locale === context.locale && (c.scope === context.scope ? c.version.id === context.version.id : c.isDefaultVersion));
     const linked = members.flatMap(member => member.tabs).flatMap(tab => targetsByTab.has(tab.slug) ? [{ id: tab.id, targets: targetsByTab.get(tab.slug)! }] : []);
-    resolveInternalLinks(pages.filter(p => p.context.key === context.key), config, cache.linkedDocuments, previous?.linkedDocuments, linked);
+    resolveInternalLinks(pages.filter(p => p.context.key === context.key), config, cache.linkedDocuments, previous?.linkedDocuments, linked, exportsOf);
   }
   const extraFiles = attachChangelogFeeds(pages, config);
   const emittedConsoles = new Set<string>();
@@ -585,8 +596,16 @@ export async function buildSiteConfig(config: ResolvedConfig, input: InputReader
   };
 }
 
+/** The pages drawn from content whose Markdown export is still to write, and what it is written from. */
+type PendingExports = Map<MarkdownPage, { source: MarkdownSource; navigation?: SiteTab; document: string }>;
+
+/**
+ * Resolve each page's links against the site's routes: a page drawn from
+ * content has its Markdown export written now, resolving only what its
+ * content marked as links; HTML and an adapter's text are rewritten.
+ */
 export function resolveInternalLinks(pages: SitePage[], config: ResolvedConfig,
-  cache?: AssemblyCache["linkedDocuments"], previous?: AssemblyCache["linkedDocuments"], references: readonly LinkedReference[] = []): void {
+  cache?: AssemblyCache["linkedDocuments"], previous?: AssemblyCache["linkedDocuments"], references: readonly LinkedReference[] = [], exportsOf: PendingExports = new Map()): void {
   const pathMap = new Map<string, string>();
   addSourceAssetAliases(pathMap, config.contexts.flatMap(c => c.tabs), config.configDir);
   for (const page of pages) {
@@ -613,7 +632,12 @@ export function resolveInternalLinks(pages: SitePage[], config: ResolvedConfig,
   const linkDigest = createHash("sha256").update(JSON.stringify([[...pathMap], config.baseUrl, config.prettyUrls, references])).digest("hex");
   for (const page of pages) {
     const docsSourcePath = getDocsSourcePath(page);
-    if (!docsSourcePath) continue;
+    const drawn = page.currentPage.kind === "markdown" ? exportsOf.get(page.currentPage.markdown) : undefined;
+    if (!docsSourcePath) {
+      // A page with no source of its own names nothing to resolve: its export is its content as written.
+      if (drawn && page.currentPage.kind === "markdown") page.currentPage = { kind: "markdown", markdown: { ...page.currentPage.markdown, ...docsExport(drawn.source, drawn.navigation, drawn.document) } };
+      continue;
+    }
     const branch = page.context.version.revision ?? config.editBranch;
     const sourceBase = repoBase && branch ? { href: `${repoBase}/tree/${branch}`, root: page.context.version.revision ? page.context.version.content : undefined } : undefined;
     const source = page.currentPage.kind === "markdown" ? page.currentPage.markdown : page.currentPage.kind === "changelog" ? page.currentPage.changelog : undefined;
@@ -628,12 +652,15 @@ export function resolveInternalLinks(pages: SitePage[], config: ResolvedConfig,
     if (projected) continue;
 
     if (page.currentPage.kind === "markdown") {
-      page.currentPage.markdown.markdown = rewriteMarkdownLinks(page.currentPage.markdown.markdown, scope);
-      if (page.currentPage.markdown.readerMarkdown !== undefined) {
-        page.currentPage.markdown.readerMarkdown = rewriteMarkdownLinks(page.currentPage.markdown.readerMarkdown, scope);
+      const markdown = page.currentPage.markdown;
+      if (drawn) Object.assign(markdown, docsExport(drawn.source, drawn.navigation, drawn.document, pageLinks(scope, drawn.source.definitions)));
+      else {
+        // A page an adapter drew, such as Doxygen's, holds its export as text.
+        markdown.markdown = rewriteMarkdownLinks(markdown.markdown, scope);
+        if (markdown.readerMarkdown !== undefined) markdown.readerMarkdown = rewriteMarkdownLinks(markdown.readerMarkdown, scope);
       }
-      page.currentPage.markdown.description = rewriteMarkdownLinks(page.currentPage.markdown.description, scope);
-      page.currentPage.markdown.html = rewriteHtmlLinks(page.currentPage.markdown.html, scope);
+      markdown.description = rewriteMarkdownLinks(markdown.description, scope);
+      markdown.html = rewriteHtmlLinks(markdown.html, scope);
       continue;
     }
 
@@ -878,8 +905,14 @@ function rewriteHtmlLinks(html: string, scope: LinkScope): string {
   });
 }
 
-function rewriteMarkdownLinks(markdown: string, scope: LinkScope): string {
-  return rewriteMarkdownDestinations(markdown, (href) => resolveInternalHref(href, scope) ?? href);
+function rewriteMarkdownLinks(markdown: string, scope: LinkScope, definitions?: Links): string {
+  return rewriteMarkdownDestinations(markdown, (href) => resolveInternalHref(href, scope) ?? href, definitions);
+}
+
+/** A page's links as its export resolves them: its marked blocks always, other text only where a link could be. */
+function pageLinks(scope: LinkScope, definitions?: Links): ContentLinks {
+  const markdown = (text: string) => rewriteMarkdownLinks(text, scope, definitions);
+  return { markdown, text: (text) => (text.includes("](") || (definitions && text.includes("[")) ? markdown(text) : text) };
 }
 
 interface SourceLinkBase { href: string; root?: string }
