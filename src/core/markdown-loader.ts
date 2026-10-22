@@ -15,6 +15,7 @@ import {
 import { InputReader } from "./loader.js";
 import { hasAgentContent, openingHasComponent, parseComponents, readableContent, renderContent, componentStyles, contentHeadings, contentAnchors, contentDiagnostics, resolveSectionIndexes, type ContentNode, type NativeComponentDefinition } from "./markdown-components.js";
 import type { NormalizedChangelog } from "./types.js";
+import type { ArtifactBody } from "./source-file.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,7 +27,7 @@ export interface MarkdownPage {
   id?: string;
   hideInMenu?: boolean;
   draft?: boolean;
-  assets?: Map<string, string | Buffer>;
+  assets?: Map<string, ArtifactBody>;
   componentStyles?: string[];
   diagnostics?: ContentDiagnostic[];
   kind: "markdown";
@@ -250,7 +251,7 @@ async function loadMarkdownSourceFromBody(
 ): Promise<MarkdownSource> {
   let sourcePreprocessed = body;
   for (const preprocess of options.preprocess ?? []) sourcePreprocessed = preprocess(sourcePreprocessed, { filePath, sourceRoot: options.sourceRoot });
-  const assets = new Map<string, string | Buffer>();
+  const assets = new Map<string, ArtifactBody>();
   const nodes = await parseComponents(sourcePreprocessed, { source: filePath, root: options.configDir ?? options.sourceRoot ?? process.cwd(), input: options.input ?? new InputReader(), components: options.components, assets, baseUrl: options.baseUrl, context: options.context });
   const componentPreprocessed = readableContent(nodes, "people");
   const title = meta.title ?? extractFirstHeading(componentPreprocessed) ?? options.title ?? slug;

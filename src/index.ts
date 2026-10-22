@@ -30,7 +30,7 @@ export interface BuildResult {
 export async function buildDocs(options: BuildOptions): Promise<BuildResult> {
   const config = await configFromSpec(options.specSource);
 
-  const site = await buildSourceySite({ config, outputDir: options.outputDir, strictChangelog: options.strictChangelog });
+  const site = await buildSourceySite({ config, outputDir: options.outputDir, strictChangelog: options.strictChangelog, copyFromSource: !options.skipWrite });
   if (!options.skipWrite) await writeSourceySite(site, { embeddable: options.embeddable });
   const spec = site.references.values().next().value;
   if (!spec) throw new Error("No OpenAPI reference was compiled");
@@ -72,6 +72,7 @@ export async function buildSiteDocs(options: SiteBuildOptions = {}): Promise<Sit
     outputDir,
     strictChangelog: options.strictChangelog,
     generateOgImages: options.generateOgImages,
+    copyFromSource: !options.skipWrite,
   });
 
   if (!options.skipWrite) {

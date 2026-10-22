@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { openOutput, writeArtifacts } from "../../src/renderer/writer.js";
+import { hashFile, SourceFile } from "../../src/core/source-file.js";
 
 const fault = vi.hoisted(() => ({ promotion: "", rollback: "", staging: false, cleanup: false }));
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -70,6 +71,25 @@ async function generation(root: string, liveOnly = false) {
 }
 
 describe("standalone output publication", () => {
+  it("copies a published file from its source, and refuses one changed after it was hashed", async () => {
+    const root = await fixture();
+    const sources = await mkdtemp(join(tmpdir(), "sourcey-writer-source-"));
+    roots.push(sources);
+    const image = join(sources, "image.bin");
+    await writeFile(image, Buffer.alloc(300_000, 7));
+    const hashed = await hashFile(image);
+    const output = await openOutput(root);
+    await output.put("media/image.bin", new SourceFile(image, hashed.digest, hashed.size));
+    await output.commit();
+    expect(await readFile(join(root, "media/image.bin"))).toEqual(Buffer.alloc(300_000, 7));
+    await writeFile(image, "edited after hashing");
+    const changed = await openOutput(root);
+    await expect(changed.put("media/other.bin", new SourceFile(image, hashed.digest, hashed.size))).rejects.toThrow("Source file changed during the build");
+    await changed.abort();
+    expect(await readdir(join(root, "media"))).toEqual(["image.bin"]);
+    expect((await readdir(root)).some((name) => name.startsWith(".sourcey-write-"))).toBe(false);
+  });
+
   it("stages artifacts as they stream in and changes the live output only on commit", async () => {
     const root = await fixture();
     // While a generation streams in, its staging directory sits beside the live files.

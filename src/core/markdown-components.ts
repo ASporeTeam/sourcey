@@ -21,6 +21,7 @@ import { dedent } from "../utils/indentation.js";
 import { schemaRange } from "../utils/http.js";
 import { inlineCodeEnd } from "../utils/markdown-syntax.js";
 import { themePictureSources } from "../utils/theme-picture.js";
+import type { ArtifactBody } from "./source-file.js";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type StaticAttributes = Readonly<Record<string, JsonValue>>;
@@ -89,7 +90,7 @@ interface ParseOptions {
   components?: Record<string, NativeComponentDefinition>;
   stack?: string[];
   dependent?: string;
-  assets?: Map<string, string | Buffer>;
+  assets?: Map<string, ArtifactBody>;
 }
 const label = (text: string, href?: string): ContentNode => ({ kind: "label", text, href });
 const text = (value: unknown): string => value == null ? "" : String(value);

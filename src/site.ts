@@ -29,6 +29,7 @@ import {
   enforceGodocDiagnostics,
   enforceRustdocDiagnostics,
 } from "./site-assembly.js";
+import { artifactBytes, type ArtifactBody } from "./core/source-file.js";
 
 interface CompilationCache {
   pages: PageRenderCache;
@@ -48,6 +49,12 @@ export interface SourceySiteOptions {
   previous?: SourceySiteArtifacts;
   changedPaths?: string[];
   signal?: AbortSignal;
+  /**
+   * Files published unchanged, such as images and public assets, are copied
+   * from their source when the site is written rather than held in memory.
+   * For a build that writes its output; a host serving from memory leaves it off.
+   */
+  copyFromSource?: boolean;
 }
 
 export interface SourceySiteArtifacts {
@@ -61,7 +68,7 @@ export interface SourceySiteArtifacts {
   searchRows: SearchEntry[];
   llmsTxt: string;
   llmsFullTxt: string;
-  extraFiles: Map<string, string | Buffer>;
+  extraFiles: Map<string, ArtifactBody>;
   mediaTypes: Map<string, string>;
   responseHeaders: Map<string, Record<string, string>>;
   changelogDiagnostics: ChangelogDiagnostic[];
@@ -89,7 +96,7 @@ export async function buildSourceySite(
   const previousCache = options.previous && compilationCaches.get(options.previous);
   const cache: CompilationCache = { pages: new Map(previousCache?.pages), searches: new Map() };
 
-  const assembled = await assembleSite(config, options.previous?.assembly.cache, options.changedPaths, options.signal);
+  const assembled = await assembleSite(config, options.previous?.assembly.cache, options.changedPaths, options.signal, { copyFromSource: options.copyFromSource });
   // Diagrams are drawn as pages load; their renderer's memory goes with it.
   await closeDiagramRenderer();
   const site = await buildSiteConfig(config, assembled.cache.reader, assembled.extraFiles);
@@ -238,7 +245,7 @@ async function planOgImages(
   pages: SitePage[],
   config: ResolvedConfig,
   site: SiteConfig,
-  extraFiles: Map<string, string | Buffer>,
+  extraFiles: Map<string, ArtifactBody>,
 ): Promise<Map<SitePage, () => Promise<Buffer | undefined>> | undefined> {
   if (config.ogImage) {
     const staticOg = config.ogImage;
@@ -268,7 +275,7 @@ async function planOgImages(
     const path = outputPathFromRequestPath(logo, config.baseUrl);
     const body = extraFiles.get(path);
     if (body === undefined) throw new Error(`Missing compiled logo asset: ${path}`);
-    logo = `data:${contentTypeForPath(path)};base64,${Buffer.from(body).toString("base64")}`;
+    logo = `data:${contentTypeForPath(path)};base64,${Buffer.from(await artifactBytes(body)).toString("base64")}`;
   }
 
   const cards = new Map<SitePage, () => Promise<Buffer | undefined>>();

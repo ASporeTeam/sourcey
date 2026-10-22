@@ -13,6 +13,7 @@ import { isAbsoluteHttpUrl, toAbsoluteUrl, toPublicPath } from "../site-url.js";
 import { escapeHtml as escapeXml } from "../utils/html.js";
 import type { SitePage } from "../core/site-model.js";
 import { referenceOperation } from "../core/reference-identity.js";
+import { artifactBytes, type ArtifactBody } from "../core/source-file.js";
 
 /** Snapshot-local artifacts: unchanged HTML is shared across immutable compilations. */
 export type PageRenderCache = Map<string, { key: string; html: Buffer }>;
@@ -125,7 +126,7 @@ export interface SiteArtifactOptions {
   ogImages?: Map<string, Buffer>;
   /** Social cards still to draw, each just before the page that names it is rendered. */
   cards?: ReadonlyMap<SitePage, () => Promise<Buffer | undefined>>;
-  extraFiles?: Map<string, string | Buffer>;
+  extraFiles?: Map<string, ArtifactBody>;
 }
 
 /** Cards drawn ahead of the page being rendered, so a page waits for none. */
@@ -146,7 +147,7 @@ export async function renderSiteArtifacts(
   options?: SiteArtifactOptions,
 ): Promise<Map<string, string | Buffer>> {
   const files = new Map<string, string | Buffer>();
-  for await (const [path, body] of siteArtifacts(pages, navigation, site, options)) files.set(path, body);
+  for await (const [path, body] of siteArtifacts(pages, navigation, site, options)) files.set(path, await artifactBytes(body));
   return files;
 }
 
@@ -154,7 +155,7 @@ export async function renderSiteArtifacts(
  * Write artifacts as they are produced: each is staged to disk and dropped,
  * with a few writes in flight while the next page renders.
  */
-export async function writeSiteArtifacts(outputDir: string, artifacts: AsyncIterable<[string, string | Buffer]>): Promise<void> {
+export async function writeSiteArtifacts(outputDir: string, artifacts: AsyncIterable<[string, ArtifactBody]>): Promise<void> {
   const output = await openOutput(outputDir);
   const writing = new Set<Promise<void>>();
   try {
@@ -181,14 +182,14 @@ export async function writeSiteArtifacts(outputDir: string, artifacts: AsyncIter
 export async function* siteArtifacts(
   pages: SitePage[], navigation: SiteNavigation, site: SiteConfig,
   options?: SiteArtifactOptions,
-): AsyncGenerator<[string, string | Buffer]> {
+): AsyncGenerator<[string, ArtifactBody]> {
   const cache = options?.cache;
   const assets = await buildAssets(site.theme.name, pages.some(page =>
     page.currentPage.kind === "spec" && page.currentPage.tryIt !== false && page.currentPage.spec.operations.some(op => !op.hidden && !op.mcpExtras)));
   const siteDigest = createHash("sha256").update(JSON.stringify(site)).digest("hex");
   const folded = new Set<string>();
   const written = new Set<string>();
-  const claim = <T extends string | Buffer>(path: string, body: T): [string, T] => {
+  const claim = <T extends ArtifactBody>(path: string, body: T): [string, T] => {
     safeOutputPath(path);
     const key = path.normalize("NFC").toLowerCase();
     if (folded.has(key)) throw new Error(`Output collision: ${path}`);

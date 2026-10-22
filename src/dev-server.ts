@@ -5,6 +5,7 @@ import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { buildSourceySite, updateSourceySite, collectSourceyWatchPaths } from "./site.js";
+import { artifactBytes } from "./core/source-file.js";
 import { projectNavigation } from "./core/navigation.js";
 import { createRenderOptions } from "./renderer/html-builder.js";
 import { renderPage } from "./renderer/static-renderer.js";
@@ -86,7 +87,7 @@ export async function startDevServer(options: DevServerOptions): Promise<ViteDev
     plugins: [...(hasSrc ? [preact()] : []), tailwindcss(), languageIconsPlugin(), sourceyPlugin({
       dispose: () => { shutdown.abort(); pending.clear(); },
       watchPaths: collectSourceyWatchPaths(config), baseUrl: () => config.baseUrl, render,
-      extraFile: async path => snapshot.extraFiles.get(path),
+      extraFile: async path => { const body = snapshot.extraFiles.get(path); return body === undefined ? undefined : artifactBytes(body); },
       extraFileType: async path => snapshot.mediaTypes.get(path),
       responseHeaders: async path => snapshot.responseHeaders.get(path),
       redirect: url => {

@@ -3,6 +3,7 @@ import { resolve, extname, dirname, basename, isAbsolute } from "node:path";
 import { load, YAMLException } from "js-yaml";
 import type { LoadedSpec, SpecFormat, SpecVersion } from "./types.js";
 import { createHash } from "node:crypto";
+import { hashFile, SourceFile } from "./source-file.js";
 
 export async function canonicalInputPath(source: string): Promise<string> {
   if (isUrl(source)) return source;
@@ -23,9 +24,21 @@ const remoteInputs = new Map<string, Input>();
 interface Input { body: Buffer; digest: string; etag?: string; modified?: string }
 
 /** Build-scoped byte authority. Forking keeps a failed update out of the serving snapshot. */
+export interface InputReaderOptions {
+  /**
+   * Files published unchanged are hashed as they stream and copied from
+   * source when the output is written, rather than held in memory: for a
+   * build that writes its output, not a host that serves the site from memory.
+   */
+  copyFromSource?: boolean;
+}
+
 export class InputReader {
-  constructor(readonly signal?: AbortSignal) {}
+  constructor(readonly signal?: AbortSignal, readonly options: InputReaderOptions = {}) {}
   readonly inputs = new Map<string, Input>();
+  /** Files published unchanged, kept as a path and digest when the build copies from source. */
+  readonly files = new Map<string, { file: SourceFile; head: Buffer }>();
+  private pendingFiles = new Map<string, Promise<{ file: SourceFile; head: Buffer }>>();
   readonly dependents = new Map<string, Set<string>>();
   private pending = new Map<string, Promise<Input>>();
   private canonical = new Map<string, string>();
@@ -36,20 +49,56 @@ export class InputReader {
   }
 
   fork(changed: Iterable<string>, signal = this.signal): InputReader {
-    const next = new InputReader(signal);
+    const next = new InputReader(signal, this.options);
     for (const [key, input] of this.inputs) next.inputs.set(key, input);
+    for (const [key, file] of this.files) next.files.set(key, file);
     for (const [key, values] of this.dependents) next.dependents.set(key, new Set(values));
-    for (const file of changed) next.inputs.delete(isUrl(file) ? file : resolve(file));
+    for (const file of changed) {
+      next.inputs.delete(isUrl(file) ? file : resolve(file));
+      next.files.delete(resolve(file));
+    }
     return next;
+  }
+
+  private async depend(key: string, dependent?: string): Promise<void> {
+    if (!dependent) return;
+    const edges = this.dependents.get(key) ?? new Set();
+    edges.add(isAbsolute(dependent) ? await canonicalInputPath(dependent) : dependent); this.dependents.set(key, edges);
+  }
+
+  /**
+   * A file the site publishes unchanged, with its first bytes: the file
+   * itself when the build copies from source, otherwise its bytes.
+   */
+  async file(source: string, dependent?: string): Promise<{ body: Buffer | SourceFile; digest: string; head: Buffer }> {
+    if (!this.options.copyFromSource || isUrl(source)) {
+      const { body, digest } = await this.read(source, dependent);
+      return { body, digest, head: body.subarray(0, 80) };
+    }
+    this.signal?.throwIfAborted();
+    const key = await this.key(source);
+    await this.depend(key, dependent);
+    let entry = this.files.get(key);
+    if (!entry) {
+      let pending = this.pendingFiles.get(key);
+      if (!pending) {
+        pending = hashFile(key, this.signal).then(({ digest, size, head }) => {
+          const value = { file: new SourceFile(key, digest, size), head };
+          this.files.set(key, value);
+          return value;
+        });
+        this.pendingFiles.set(key, pending);
+      }
+      try { entry = await pending; }
+      finally { this.pendingFiles.delete(key); }
+    }
+    return { body: entry.file, digest: entry.file.digest, head: entry.head };
   }
 
   async read(source: string, dependent?: string): Promise<Input> {
     this.signal?.throwIfAborted();
     const key = await this.key(source);
-    if (dependent) {
-      const edges = this.dependents.get(key) ?? new Set();
-      edges.add(isAbsolute(dependent) ? await canonicalInputPath(dependent) : dependent); this.dependents.set(key, edges);
-    }
+    await this.depend(key, dependent);
     let input = this.inputs.get(key);
     if (input) return input;
     let promise = this.pending.get(key);
@@ -84,7 +133,10 @@ export class InputReader {
     const canonical = await this.key(owner);
     return changed.some(file => this.dependents.get(file)?.has(canonical));
   }
-  async contains(source: string): Promise<boolean> { return this.inputs.has(await this.key(source)); }
+  async contains(source: string): Promise<boolean> {
+    const key = await this.key(source);
+    return this.inputs.has(key) || this.files.has(key);
+  }
 
   async readText(source: string, dependent?: string): Promise<string> {
     return (await this.read(source, dependent)).body.toString("utf8");

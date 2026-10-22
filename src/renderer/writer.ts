@@ -9,9 +9,13 @@ import {
   rmdir,
   lstat,
 } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { safeOutputPath } from "../core/site-model.js";
+import { hashFile, SourceFile, type ArtifactBody } from "../core/source-file.js";
 
 const inventoryName = ".sourcey-output.json";
 const digest = (body: string | Buffer) => createHash("sha256").update(body).digest("hex");
@@ -22,6 +26,22 @@ async function existing(path: string): Promise<Buffer | undefined> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
+}
+/** The digest of a file already in the output, read as a stream, or nothing where there is none. */
+async function existingDigest(path: string): Promise<string | undefined> {
+  try {
+    return (await hashFile(path)).digest;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+/** Copy a source file into staging, checking it is still the file that was hashed. */
+async function copySource(source: SourceFile, target: string): Promise<void> {
+  const hash = createHash("sha256");
+  const hashing = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); done(null, chunk); } });
+  await pipeline(createReadStream(source.path), hashing, createWriteStream(target));
+  if (hash.digest("hex") !== source.digest) throw new Error(`Source file changed during the build: ${source.path}`);
 }
 
 /** A lexical child path must also stay inside the owned tree on disk. */
@@ -54,7 +74,7 @@ interface Change {
 
 export interface OutputWriter {
   /** Stage one artifact. Its bytes go to disk now and are not kept. */
-  put(path: string, body: string | Buffer): Promise<void>;
+  put(path: string, body: ArtifactBody): Promise<void>;
   /** Promote every staged artifact and prune what the generation no longer has. */
   commit(): Promise<void>;
   /** Discard what was staged; the live output is untouched. */
@@ -112,24 +132,25 @@ export async function openOutput(outputDir: string): Promise<OutputWriter> {
     if (staging && !promoting) await rm(await staging, { recursive: true, force: true });
   };
 
-  async function put(path: string, body: string | Buffer): Promise<void> {
+  async function put(path: string, body: ArtifactBody): Promise<void> {
     safeOutputPath(path);
     if (path === inventoryName || path.startsWith(".sourcey-write-"))
       throw new Error(`Reserved output path: ${path}`);
     const key = path.normalize("NFC").toLowerCase();
     if (folded.has(key)) throw new Error(`Output collision: ${path}`);
     folded.add(key);
-    const hash = (next[path] = digest(body)),
+    const hash = (next[path] = body instanceof SourceFile ? body.digest : digest(body)),
       target = resolve(root, path);
     await plainOutputPath(root, target, directories);
-    const actual = await existing(target);
+    const actual = await existingDigest(target);
     if (actual !== undefined && !Object.hasOwn(previous, path))
       throw new Error(`Refusing to overwrite unowned output: ${target}`);
-    if (actual && digest(actual) === hash) return;
+    if (actual === hash) return;
     // Staging cannot replace a live artifact.
     const change: Change = { target, existed: actual !== undefined, staged: join(await stage(), `${changes.length}.next`) };
     changes.push(change);
-    await writeFile(change.staged!, body);
+    if (body instanceof SourceFile) await copySource(body, change.staged!);
+    else await writeFile(change.staged!, body);
   }
 
   async function commit(): Promise<void> {
@@ -138,10 +159,10 @@ export async function openOutput(outputDir: string): Promise<OutputWriter> {
       if (Object.hasOwn(next, path)) continue;
       const target = resolve(root, path);
       await plainOutputPath(root, target, directories);
-      const actual = await existing(target);
-      if (actual && digest(actual) !== hash)
+      const actual = await existingDigest(target);
+      if (actual !== undefined && actual !== hash)
         throw new Error(`Refusing to prune modified output: ${target}`);
-      if (actual) changes.push({ target, existed: true });
+      if (actual !== undefined) changes.push({ target, existed: true });
     }
     // Artifact completion order is not part of the output generation's identity.
     const nextInventory = JSON.stringify(Object.fromEntries(Object.entries(next).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)));
@@ -162,7 +183,7 @@ export async function openOutput(outputDir: string): Promise<OutputWriter> {
 /** Write a whole generation at once; see `openOutput`. */
 export async function writeArtifacts(
   outputDir: string,
-  files: ReadonlyMap<string, string | Buffer>,
+  files: ReadonlyMap<string, ArtifactBody>,
 ): Promise<void> {
   const output = await openOutput(outputDir);
   try {

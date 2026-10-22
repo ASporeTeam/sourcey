@@ -28,22 +28,23 @@ import { extname, isAbsolute, join, relative } from "node:path";
 import type { InputReader } from "./loader.js";
 import { heavyBuildJob } from "./build-jobs.js";
 import { cachedArtifacts } from "./artifact-cache.js";
+import type { SourceFile } from "./source-file.js";
 
 /** One content-addressed file shared by site chrome and authored media. */
-export async function staticMediaAsset(source: string, input: InputReader, owner: string): Promise<{ path: string; body: Buffer }> {
-  const file = await input.read(source, owner);
-  if (file.body.subarray(0, 80).toString().startsWith("version https://git-lfs.github.com/spec/"))
+export async function staticMediaAsset(source: string, input: InputReader, owner: string): Promise<{ path: string; body: Buffer | SourceFile }> {
+  const { body, digest, head } = await input.file(source, owner);
+  if (head.toString().startsWith("version https://git-lfs.github.com/spec/"))
     throw new Error(`Git LFS asset is not materialized: ${source}`);
-  return { path: `_media/${file.digest.slice(0, 20)}${extname(source)}`, body: file.body };
+  return { path: `_media/${digest.slice(0, 20)}${extname(source)}`, body };
 }
 
 /** An explicit public root is a normal input closure, watched and owned once. */
 export async function publicAssets(
   directory: string,
   input: InputReader,
-): Promise<Map<string, Buffer>> {
+): Promise<Map<string, Buffer | SourceFile>> {
   const root = await realpath(directory);
-  const files = new Map<string, Buffer>();
+  const files = new Map<string, Buffer | SourceFile>();
   async function walk(path: string, ancestors: ReadonlySet<string>): Promise<void> {
     input.signal?.throwIfAborted();
     const canonical = await realpath(path);
@@ -58,7 +59,7 @@ export async function publicAssets(
     } else if (info.isFile()) {
       files.set(
         relative(directory, path).replace(/\\/g, "/"),
-        (await input.read(path, directory)).body,
+        (await input.file(path, directory)).body,
       );
     } else throw new Error(`Public asset is not a regular file: ${path}`);
   }

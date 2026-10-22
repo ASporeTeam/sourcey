@@ -4,7 +4,7 @@ import { OPERATION_LINK, renderMarkdown } from "./utils/markdown.js";
 import { htmlId } from "./utils/html-id.js";
 import { operationAnchor, operationKey, definitionAnchor, operationPagePath, schemaPagePath, referenceOperation } from "./core/reference-identity.js";
 import { dirname, posix, relative, resolve } from "node:path";
-import { InputReader, loadSpec } from "./core/loader.js";
+import { InputReader, loadSpec, type InputReaderOptions } from "./core/loader.js";
 import { applyOverlays, formatOverlayDiagnostic, type OverlayDiagnostic } from "./core/overlay.js";
 import { convertToOpenApi3 } from "./core/converter.js";
 import { parseSpec } from "./core/parser.js";
@@ -37,6 +37,7 @@ import type { SiteConfig } from "./renderer/context.js";
 import { joinHref, normalizeBaseUrl, toPrettyLink, toPublicPath, toPublicUrl, type LinkStyle } from "./site-url.js";
 import { consoleArtifactPath, consoleData } from "./renderer/try-it.js";
 import { staticMediaAsset } from "./core/media.js";
+import type { ArtifactBody } from "./core/source-file.js";
 
 export interface AssemblyCache {
   reader: InputReader;
@@ -58,11 +59,11 @@ export interface SiteAssembly {
   overlayDiagnostics: OverlayDiagnostic[];
   contentDiagnostics: ContentDiagnostic[];
   anchorDiagnostics: AnchorDiagnostic[];
-  extraFiles: Map<string, string | Buffer>;
+  extraFiles: Map<string, ArtifactBody>;
 }
 
-export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCache, changed: string[] = [], signal?: AbortSignal): Promise<SiteAssembly> {
-  const reader = previous?.reader.fork(changed, signal) ?? new InputReader(signal);
+export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCache, changed: string[] = [], signal?: AbortSignal, reading: InputReaderOptions = {}): Promise<SiteAssembly> {
+  const reader = previous?.reader.fork(changed, signal) ?? new InputReader(signal, reading);
   const cache: AssemblyCache = { reader, documents: new Map(), renderedDocuments: new Map(), references: new Map(), linkedDocuments: new Map() };
   const publicSpecs = new Map<string, Record<string, unknown>>();
   const references = new Map<string, NormalizedSpec>();
@@ -544,7 +545,7 @@ export function formatChangelogDiagnostics(diagnostics: ChangelogDiagnostic[]): 
   return diagnostics.map(formatChangelogDiagnostic);
 }
 
-export async function buildSiteConfig(config: ResolvedConfig, input: InputReader, assets: Map<string, string | Buffer>): Promise<SiteConfig> {
+export async function buildSiteConfig(config: ResolvedConfig, input: InputReader, assets: Map<string, ArtifactBody>): Promise<SiteConfig> {
   async function assetUrl(source: string): Promise<string> {
     if (!source || /^(?:data:|https?:\/\/)/.test(source)) return source;
     const asset = await staticMediaAsset(source, input, "site");
@@ -657,8 +658,8 @@ export function resolveInternalLinks(pages: SitePage[], config: ResolvedConfig,
 function attachChangelogFeeds(
   pages: SitePage[],
   config: ResolvedConfig,
-): Map<string, string | Buffer> {
-  const extraFiles = new Map<string, string | Buffer>();
+): Map<string, ArtifactBody> {
+  const extraFiles = new Map<string, ArtifactBody>();
   if (!config.changelog.feed) return extraFiles;
 
   const changelogPages = pages.filter(isMainChangelogSitePage);
@@ -727,14 +728,14 @@ function attachChangelogFeeds(
 }
 
 async function attachSourceAssets(
-  extraFiles: Map<string, string | Buffer>,
+  extraFiles: Map<string, ArtifactBody>,
   tabs: ResolvedTab[],
   input: InputReader,
 ): Promise<void> {
   for (const tab of tabs) {
     if (tab.source.kind !== "markdown") continue;
     for (const asset of tab.source.assets ?? []) {
-      extraFiles.set(tabPath(tab.slug, asset.outputPath), (await input.read(asset.file, asset.file)).body);
+      extraFiles.set(tabPath(tab.slug, asset.outputPath), (await input.file(asset.file, asset.file)).body);
     }
   }
 }
