@@ -19,6 +19,7 @@ import type { SitePage } from "./core/site-model.js";
 import { generateExports } from "./exports/index.js";
 import { pageMetadata } from "./core/page-metadata.js";
 import { collectSiteDiagnostics, type SiteDiagnostic } from "./core/site-diagnostics.js";
+import { BUILD_JOB_SLOTS } from "./core/build-jobs.js";
 import { contentTypeForPath, outputPathFromRequestPath } from "./renderer/static-files.js";
 import {
   assembleSite,
@@ -269,34 +270,32 @@ async function attachOgImages(
     logo = `data:${contentTypeForPath(path)};base64,${Buffer.from(body).toString("base64")}`;
   }
 
-  const concurrency = 2;
-  for (let i = 0; i < pages.length; i += concurrency) {
-    const batch = pages.slice(i, i + concurrency);
-    await Promise.all(
-      batch.map(async (page) => {
-        const ogMeta = describePageForOg(page, site, config.changelog.ogImages);
-        if (!ogMeta) return;
+  // As many cards in flight as there are workers to draw them.
+  const queue = [...pages];
+  await Promise.all(Array.from({ length: BUILD_JOB_SLOTS }, async () => {
+    for (let page = queue.shift(); page; page = queue.shift()) {
+      const ogMeta = describePageForOg(page, site, config.changelog.ogImages);
+      if (!ogMeta) continue;
 
-        try {
-          const ogPath = `_og/${page.outputPath.replace(/\.html$/, ".png")}`;
-          const png = await generateOgImage({
-            title: ogMeta.title,
-            description: ogMeta.description,
-            siteName: config.name,
-            theme: config.theme,
-            logo,
-            logoMark: site.logo?.mark,
-          });
+      try {
+        const ogPath = `_og/${page.outputPath.replace(/\.html$/, ".png")}`;
+        const png = await generateOgImage({
+          title: ogMeta.title,
+          description: ogMeta.description,
+          siteName: config.name,
+          theme: config.theme,
+          logo,
+          logoMark: site.logo?.mark,
+        });
 
-          page.ogImagePath = ogPath;
-          ogImages.set(ogPath, png);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.warn(`Sourcey: skipping OG image for ${page.outputPath}: ${message}`);
-        }
-      }),
-    );
-  }
+        page.ogImagePath = ogPath;
+        ogImages.set(ogPath, png);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`Sourcey: skipping OG image for ${page.outputPath}: ${message}`);
+      }
+    }
+  }));
 }
 
 function describePageForOg(

@@ -1,16 +1,7 @@
-import satori from "satori";
-import { Resvg } from "@resvg/resvg-js";
-import { readFile } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ResolvedTheme } from "../config.js";
 import { heavyBuildJob } from "../core/build-jobs.js";
 import { cachedArtifacts } from "../core/artifact-cache.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const fontFiles = ["Inter-Regular.ttf", "Inter-Bold.ttf"].map((file) =>
-  resolve(__dirname, "fonts", file),
-);
+import { drawCard } from "./draw-card.js";
 
 export interface OgImageOptions {
   title: string;
@@ -87,27 +78,11 @@ export async function embedRemoteLogo(url: string): Promise<string | undefined> 
 }
 
 // ---------------------------------------------------------------------------
-// Font loading (cached across all pages)
-// ---------------------------------------------------------------------------
-
-let fontsCache: { regular: ArrayBuffer; bold: ArrayBuffer } | null = null;
-
-async function loadFonts(): Promise<{ regular: ArrayBuffer; bold: ArrayBuffer }> {
-  if (fontsCache) return fontsCache;
-
-  // Works from both src/ (dev) and dist/ (published)
-  const [regular, bold] = await Promise.all([readFile(fontFiles[0]), readFile(fontFiles[1])]);
-
-  fontsCache = {
-    regular: regular.buffer.slice(regular.byteOffset, regular.byteOffset + regular.byteLength),
-    bold: bold.buffer.slice(bold.byteOffset, bold.byteOffset + bold.byteLength),
-  };
-  return fontsCache;
-}
-
-// ---------------------------------------------------------------------------
 // OG card template
 // ---------------------------------------------------------------------------
+
+const WIDTH = 1200;
+const HEIGHT = 630;
 
 function rgbCss(triplet: string): string {
   return `rgb(${triplet.replace(/ /g, ", ")})`;
@@ -125,10 +100,25 @@ function clip(text: string, max: number): string {
   return `${(end > 0 ? fits.slice(0, end) : fits).replace(/[\s,;:.\u2013\u2014-]+$/, "")}\u2026`;
 }
 
+/**
+ * The card's ground: dark, with the primary colour glowing low on the left, in an
+ * ellipse 70% of the card wide and 50% high that fades out by 70% of its radius.
+ * It is one gradient drawn beneath the card, because satori draws a CSS gradient as
+ * a masked pattern, which takes resvg three times as long as the rest of the card.
+ */
+function ground(color: string): string {
+  const [cx, cy, rx, ry] = [0.2 * WIDTH, 0.7 * HEIGHT, 0.7 * WIDTH, 0.5 * HEIGHT];
+  return (
+    `<defs><radialGradient id="card-ground" gradientUnits="userSpaceOnUse" cx="${cx}" cy="${cy}" r="${rx}" ` +
+    `gradientTransform="translate(${cx} ${cy}) scale(1 ${ry / rx}) translate(${-cx} ${-cy})">` +
+    `<stop offset="0" stop-color="${rgbaCss(color, 0.18)}"/><stop offset="0.7" stop-color="transparent"/></radialGradient></defs>` +
+    `<rect width="${WIDTH}" height="${HEIGHT}" fill="#0f172a"/><rect width="${WIDTH}" height="${HEIGHT}" fill="url(#card-ground)"/>`
+  );
+}
+
 type OgCardInput = Omit<OgImageOptions, "theme"> & { primary: string };
 function ogCard({ title, description, siteName, primary: color, logo, logoMark }: OgCardInput) {
   const primary = rgbCss(color);
-  const primaryGlow = rgbaCss(color, 0.18);
 
   const displayTitle = clip(title, 90);
   const displayDesc = description ? clip(description, 160) : undefined;
@@ -141,10 +131,8 @@ function ogCard({ title, description, siteName, primary: color, logo, logoMark }
         flexDirection: "column",
         width: "100%",
         height: "100%",
-        backgroundColor: "#0f172a",
         padding: "72px",
         fontFamily: "Inter",
-        backgroundImage: `radial-gradient(ellipse 70% 50% at 20% 70%, ${primaryGlow}, transparent 70%)`,
       },
       children: [
         // Brand block: logo (or coloured mark) + site name, top-left
@@ -289,34 +277,9 @@ export async function generateOgImage(options: OgImageOptions): Promise<Buffer> 
     JSON.stringify(card),
     ["satori", "@resvg/resvg-js"],
     async () => {
-      const image = await heavyBuildJob(async () => {
-        const fonts = await loadFonts();
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const svg = await satori(ogCard(card) as any, {
-          width: 1200,
-          height: 630,
-          embedFont: true,
-          fonts: [
-            { name: "Inter", data: fonts.regular, weight: 400, style: "normal" as const },
-            { name: "Inter", data: fonts.bold, weight: 700, style: "normal" as const },
-          ],
-        });
-
-        const resvg = new Resvg(svg, {
-          fitTo: { mode: "width" as const, value: 1200 },
-          // Satori embeds text outlines. Only SVG logos can need a font lookup;
-          // keep that database deterministic instead of loading every host font.
-          font: {
-            loadSystemFonts: false,
-            fontFiles,
-            defaultFontFamily: "Inter",
-            sansSerifFamily: "Inter",
-          },
-        });
-        const png = resvg.render();
-        return png.asPng();
-      });
+      const image = await heavyBuildJob(() =>
+        drawCard({ card: ogCard(card), ground: ground(card.primary), width: WIDTH, height: HEIGHT }),
+      );
       return new Map([["image.png", image]]);
     },
   );

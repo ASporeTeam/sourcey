@@ -14,6 +14,7 @@
 - A Mermaid flowchart draws its subgraphs: each a titled container around its members, nested ones inside the one around them, coloured as Mermaid's own light and dark themes colour them. They were laid out flat and left out. A `<br>` in a node's label is a line break, drawn in the middle of the node rather than at the top of the diagram, and in a message, note, edge or title, which the renderer draws on one line, it reads as a space rather than as `<br>`.
 - `sourcey migrate docusaurus` titles a page that opens with its own heading by that heading, as Docusaurus shows it, keeping its frontmatter title as its navigation label, rather than showing both titles.
 - `sourcey migrate docusaurus` keeps a navbar link to a page of the site (`to`), as it keeps one to another site (`href`), rather than dropping it without a word.
+- Social images are drawn on worker threads, as many at once as the build's image budget allows, rather than one or two at a time on the main thread, and each takes a third of the time: the card's background glow is drawn as one gradient rather than the masked pattern satori made of it, which took resvg three times as long as the rest of the card. Images look as before. A cold build of an 838-page site went from 32 s to 14 s.
 
 ## 3.8.3 - 2026-10-21
 

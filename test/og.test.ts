@@ -4,16 +4,38 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import satori from "satori";
+import sharp from "sharp";
 import { resolveConfigFromRaw } from "../src/config.js";
+import { drawCard } from "../src/og/draw-card.js";
 import { embedRemoteLogo, generateOgImage } from "../src/og/generate-og-image.js";
 
-vi.mock("satori", async (original) => {
-  const module = await original<typeof import("satori")>();
-  return { ...module, default: vi.fn(module.default) };
+vi.mock("../src/og/draw-card.js", async (original) => {
+  const module = await original<typeof import("../src/og/draw-card.js")>();
+  return { ...module, drawCard: vi.fn(module.drawCard) };
 });
 
 describe("social image rendering", () => {
+  it("draws the card on its dark ground, the primary colour glowing low on the left", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sourcey-og-ground-"));
+    try {
+      const config = await resolveConfigFromRaw({ navigation: { tabs: [] } }, root);
+      const png = await generateOgImage({
+        title: "Ground",
+        siteName: `Ground ${root.split("-").at(-1)}`,
+        theme: { ...config.theme, colors: { ...config.theme.colors, primary: "220 20 20" } },
+      });
+      const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      expect([info.width, info.height]).toEqual([1200, 630]);
+      const pixel = (x: number, y: number) => [...data.subarray((y * info.width + x) * 3, (y * info.width + x) * 3 + 3)];
+      for (const [x, y] of [[1199, 0], [1000, 441]]) expect(pixel(x, y)).toEqual([15, 23, 42]);
+      const [red, green, blue] = pixel(240, 441);
+      expect(red).toBeGreaterThan(45);
+      expect([green, blue]).toEqual([expect.closeTo(23, -1), expect.closeTo(42, -1)]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("reuses the rendered card and changes it only when a visual input changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "sourcey-og-fixture-"));
     try {
@@ -24,15 +46,15 @@ describe("social image rendering", () => {
         siteName: `Fixture ${root.split("-").at(-1)}`,
         theme: config.theme,
       };
-      vi.mocked(satori).mockClear();
+      vi.mocked(drawCard).mockClear();
       const first = await generateOgImage(input);
-      expect(satori).toHaveBeenCalledTimes(1);
+      expect(drawCard).toHaveBeenCalledTimes(1);
       const unrelated = {
         ...input,
         theme: { ...input.theme, fonts: { ...input.theme.fonts, sans: "system-ui" } },
       };
       expect(await generateOgImage(unrelated)).toEqual(first);
-      expect(satori).toHaveBeenCalledTimes(1);
+      expect(drawCard).toHaveBeenCalledTimes(1);
       const title = await generateOgImage({ ...input, title: "Updated field reference" });
       const color = await generateOgImage({
         ...input,
@@ -48,7 +70,7 @@ describe("social image rendering", () => {
       });
       for (const image of [title, color, logo]) expect(image.equals(first)).toBe(false);
       expect(await generateOgImage(input)).toEqual(first);
-      expect(satori).toHaveBeenCalledTimes(4);
+      expect(drawCard).toHaveBeenCalledTimes(4);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -67,11 +89,11 @@ describe("social image rendering", () => {
         const children = (node as Node).props?.children;
         return [node as Node, ...(Array.isArray(children) ? children : [children]).flatMap(nodes)];
       };
-      vi.mocked(satori).mockClear();
+      vi.mocked(drawCard).mockClear();
       await generateOgImage({ ...input, logo: svg(500, 100) });
       await generateOgImage({ ...input, logo: svg(64, 64), logoMark: true });
       await generateOgImage({ ...input, logo: svg(2000, 50) });
-      const cards = vi.mocked(satori).mock.calls.map(([card]) => nodes(card));
+      const cards = vi.mocked(drawCard).mock.calls.map(([drawing]) => nodes(drawing.card));
       const logo = (card: Node[]) => card.find((node) => node.type === "img")?.props;
       const named = (card: Node[]) => card.some((node) => node.props?.children === input.siteName);
       expect(logo(cards[0])).toMatchObject({ width: 240, height: 48 });
@@ -96,15 +118,15 @@ describe("social image rendering", () => {
         const children = (node as { props?: { children?: unknown } }).props?.children;
         return (Array.isArray(children) ? children : [children]).flatMap(texts);
       };
-      vi.mocked(satori).mockClear();
+      vi.mocked(drawCard).mockClear();
       await generateOgImage({ title, description, siteName: `Clip ${root.split("-").at(-1)}`, theme: config.theme });
-      const drawn = texts(vi.mocked(satori).mock.calls[0][0]);
+      const drawn = texts(vi.mocked(drawCard).mock.calls[0][0].card);
       expect(drawn).toContain("The Tommy API is organized around the REST methodology, and it uses resource-oriented URLs, and common HTTP response codes to indicate API errors. All requests\u2026");
       expect(drawn).toContain(`${"Reference ".repeat(8)}Reference\u2026`);
       expect(drawn.every((text) => text.length <= 160)).toBe(true);
       // A title with no space to end at is cut where it fits.
       await generateOgImage({ title: "x".repeat(120), siteName: `Clip ${root.split("-").at(-1)}`, theme: config.theme });
-      expect(texts(vi.mocked(satori).mock.calls[1][0])).toContain(`${"x".repeat(89)}\u2026`);
+      expect(texts(vi.mocked(drawCard).mock.calls[1][0].card)).toContain(`${"x".repeat(89)}\u2026`);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
