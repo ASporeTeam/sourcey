@@ -84,6 +84,13 @@ export function navigationResolver(config: ResolvedConfig, routes: RouteTable, r
       delete item.target;
       return true;
     }
+    /** The address of a page of this tab; navigation that names a page without one has nowhere else to lead. */
+    function documentHref(document: string, href = ""): string {
+      const found = [...named(tab).get(document) ?? []];
+      if (found.length === 1) return found[0].publicPath;
+      if (!href) throw new Error(`Navigation in ${tab.id}: ${found.length ? "ambiguous" : "unknown"} document ${JSON.stringify(document)}`);
+      return href;
+    }
     function group(value: SiteNavGroup): void {
       value.items = value.items.filter(item => {
         if (isNavGroup(item)) { group(item); return true; }
@@ -117,10 +124,7 @@ export function navigationResolver(config: ResolvedConfig, routes: RouteTable, r
     for (const item of walkNavItems(nav.groups)) {
       const generatedHref = generated.get(item.id);
       if (generatedHref) item.href = generatedHref;
-      else if (item.documentId) {
-        const candidates = [...named(tab).get(item.documentId) ?? []];
-        if (candidates.length === 1) item.href = candidates[0].publicPath;
-      }
+      else if (item.documentId) item.href = documentHref(item.documentId, item.href);
     }
     // A section that links a whole page of this tab is current on that page; one linking a
     // section of a page (an API tag) is matched by its ID.
@@ -128,11 +132,11 @@ export function navigationResolver(config: ResolvedConfig, routes: RouteTable, r
       const page = value.href && !value.href.includes("#") ? pageAt(value.href) : undefined;
       if (page?.tabSlug === tab.slug) value.page = page.pageSlug;
     }
-    // A reference leads to its overview, and a generated reference without authored navigation
-    // to the overview its source declares. Other tabs lead to their first destination, a
+    // A reference leads to its overview, and a tab whose navigation names the page it lands
+    // on, such as Rust's workspace overview, to that page. Other tabs lead to their first destination, a
     // section's own page before those it holds; a cross-source link, or an index the
     // build generated for a long section, never makes a header tab land elsewhere.
-    const declared = !tab.navigation && ["doxygen", "godoc", "rustdoc"].includes(tab.source.kind) && pageAt(nav.href)?.tabSlug === tab.slug ? nav.href : undefined;
+    const declared = nav.documentId ? documentHref(nav.documentId) : undefined;
     const first = [...readingOrder(nav.groups)].find(href => {
       const page = pageAt(href);
       return page?.tabSlug === tab.slug && !page.identity.document.startsWith("section");

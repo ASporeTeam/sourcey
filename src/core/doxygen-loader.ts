@@ -252,8 +252,9 @@ export async function loadDoxygenTab(
       label,
       items: sorted.map((p): SiteNavItem => ({
         label: p.kind === "group" ? "Overview" : p.title,
-        href: `${tabSlug}/${p.slug}.html`,
+        href: "",
         id: p.slug,
+        documentId: p.slug,
       })),
     });
   }
@@ -265,7 +266,7 @@ export async function loadDoxygenTab(
   // Generate index page
   const indexStyle = resolveIndexStyle(config.index, groupMap, pages);
   const globalsItem: SiteNavItem[] = globals
-    ? [{ label: globals.title, href: `${tabSlug}/${globals.slug}.html`, id: globals.slug }]
+    ? [{ label: globals.title, href: "", id: globals.slug, documentId: globals.slug }]
     : [];
 
   if (indexStyle !== "none") {
@@ -300,20 +301,19 @@ export async function loadDoxygenTab(
 
     groups.unshift({
       label: tabLabel,
-      items: [{ label: "Overview", href: `${tabSlug}/${indexSlug}.html`, id: indexSlug }, ...globalsItem],
+      items: [{ label: "Overview", href: "", id: indexSlug, documentId: indexSlug }, ...globalsItem],
     });
   } else if (globalsItem.length) {
     groups.unshift({ label: tabLabel, items: globalsItem });
   }
 
-  const firstItem = groups[0]?.items[0];
-
+  // Navigation names each page; the site's routes give it its address.
   return {
     pages,
     navTab: {
       label: tabLabel,
       slug: tabSlug,
-      href: firstItem?.href ?? `${tabSlug}/`,
+      href: "",
       kind: "docs",
       groups,
     },

@@ -1,6 +1,6 @@
-import { pageOutputPath, type PrettyUrls, type ResolvedRustdocConfig } from "../config.js";
+import { tabPath, type ResolvedRustdocConfig } from "../config.js";
 import type { MarkdownPage, PageHeading, PageSearchEntry } from "./markdown-loader.js";
-import { navHref, type SiteTab, type SiteNavGroup, type SiteNavItem } from "./navigation.js";
+import type { SiteTab, SiteNavGroup, SiteNavItem } from "./navigation.js";
 import { runIntrospector, RustdocIntrospectorError } from "./rustdoc-introspector.js";
 import { InputReader } from "./loader.js";
 import type {
@@ -58,11 +58,9 @@ export async function loadRustdocTab(
   tabSlug: string,
   tabLabel: string,
   sourceLinks: RustdocSourceLinkOptions = {},
-  prettyUrls: PrettyUrls = false,
   input = new InputReader(),
   callouts: CalloutRenderOptions = DEFAULT_CALLOUTS,
 ): Promise<RustdocLoaderResult> {
-  const tab: RustTab = { slug: tabSlug, prettyUrls };
   let result;
   try {
     result = await runIntrospector({ config, input });
@@ -75,7 +73,7 @@ export async function loadRustdocTab(
       );
       return {
         pages,
-        navTab: emptyNavTab(tab, tabLabel),
+        navTab: emptyNavTab(tabSlug, tabLabel),
         diagnostics: [
           {
             severity: "error",
@@ -88,7 +86,7 @@ export async function loadRustdocTab(
     throw err;
   }
 
-  const key = JSON.stringify([config, tabSlug, tabLabel, sourceLinks, prettyUrls, callouts]);
+  const key = JSON.stringify([config, tabSlug, tabLabel, sourceLinks, callouts]);
   const entries = rendered.get(result.spec) ?? new Map<string, RustdocLoaderResult>();
   const cached = entries.get(key);
   if (cached) return { ...cached, navTab: structuredClone(cached.navTab) };
@@ -118,7 +116,7 @@ export async function loadRustdocTab(
       for (const d of renderDiagnostics) diagnostics.push(toLoaderDiagnostic(d));
     }
 
-    const indexPage = renderCrateIndexPage(crate, tab);
+    const indexPage = renderCrateIndexPage(crate, tabSlug);
     pages.set(indexPage.slug, indexPage);
 
     for (const item of crateItems.values()) {
@@ -127,7 +125,7 @@ export async function loadRustdocTab(
       }
     }
 
-    navGroups.push(buildCrateNavGroup(crate, tab));
+    navGroups.push(buildCrateNavGroup(crate));
   }
 
   if (config.doctestsIndex && allDoctests.length > 0) {
@@ -138,8 +136,9 @@ export async function loadRustdocTab(
       items: [
         {
           label: "Doctests",
-          href: tabRelativeHref(tab, dtPage.slug),
+          href: "",
           id: "doctests",
+          documentId: dtPage.slug,
         } satisfies SiteNavItem,
       ],
     });
@@ -148,13 +147,14 @@ export async function loadRustdocTab(
   if (result.spec.crates.length === 0) {
     pages.set("index", emptyIndexPage(tabSlug, tabLabel, "No documented crates."));
   } else {
-    pages.set("index", renderWorkspaceIndexPage(result.spec.crates, tab, tabLabel));
+    pages.set("index", renderWorkspaceIndexPage(result.spec.crates, tabSlug, tabLabel));
   }
 
   const navTab: SiteTab = {
     label: tabLabel,
     slug: tabSlug,
-    href: tabRelativeHref(tab, "index"),
+    href: "",
+    documentId: "index",
     kind: "docs",
     groups: navGroups,
   };
@@ -207,13 +207,13 @@ function renderModulePageLoader(
 
 function renderWorkspaceIndexPage(
   crates: CrateSpec[],
-  tab: RustTab,
+  tabSlug: string,
   tabLabel: string,
 ): MarkdownPage {
   const headings: PageHeading[] = [];
   const searchEntries: PageSearchEntry[] = [];
   const cards = crates.map((c) => {
-    const href = tabRelativeHref(tab, crateIndexSlug(c.name));
+    const href = pageHref(tabSlug, crateIndexSlug(c.name));
     const items = Object.keys(c.items).length;
     const modules = c.modules.length;
     const summary = `${items} item${items === 1 ? "" : "s"} across ${modules} module${modules === 1 ? "" : "s"}.`;
@@ -246,7 +246,7 @@ function renderWorkspaceIndexPage(
     markdown: crates
       .map(
         (crate) =>
-          `- [${crate.name}](${tabRelativeHref(tab, crateIndexSlug(crate.name))})${crate.version ? ` (${crate.version})` : ""}`,
+          `- [${crate.name}](${pageHref(tabSlug, crateIndexSlug(crate.name))})${crate.version ? ` (${crate.version})` : ""}`,
       )
       .join("\n"),
     headings,
@@ -255,7 +255,7 @@ function renderWorkspaceIndexPage(
   };
 }
 
-function renderCrateIndexPage(crate: CrateSpec, tab: RustTab): MarkdownPage {
+function renderCrateIndexPage(crate: CrateSpec, tabSlug: string): MarkdownPage {
   const slug = crateIndexSlug(crate.name);
   const moduleCount = crate.modules.length;
   const itemCount = Object.keys(crate.items).length;
@@ -265,7 +265,7 @@ function renderCrateIndexPage(crate: CrateSpec, tab: RustTab): MarkdownPage {
     .sort((a, b) => a.path.join("::").localeCompare(b.path.join("::")))
     .map((m) => {
       const mSlug = rustModuleSlug(crate.name, m.path);
-      const href = tabRelativeHref(tab, mSlug);
+      const href = pageHref(tabSlug, mSlug);
       const label = m.path.length === 0 ? `${crate.name} (root)` : m.path.join("::");
       const count = m.item_ids.length;
       const lead = moduleSummary(m.docs_markdown);
@@ -294,7 +294,7 @@ function renderCrateIndexPage(crate: CrateSpec, tab: RustTab): MarkdownPage {
     markdown: crate.modules
       .map(
         (module) =>
-          `- [${module.path.join("::") || crate.name}](${tabRelativeHref(tab, rustModuleSlug(crate.name, module.path))})`,
+          `- [${module.path.join("::") || crate.name}](${pageHref(tabSlug, rustModuleSlug(crate.name, module.path))})`,
       )
       .join("\n"),
   };
@@ -490,12 +490,13 @@ function collectSearchEntries(items: Item[], moduleTitle: string): PageSearchEnt
   return out;
 }
 
-function buildCrateNavGroup(crate: CrateSpec, tab: RustTab): SiteNavGroup {
+function buildCrateNavGroup(crate: CrateSpec): SiteNavGroup {
   const items: SiteNavItem[] = [];
   items.push({
     label: "Overview",
-    href: tabRelativeHref(tab, crateIndexSlug(crate.name)),
+    href: "",
     id: crateIndexSlug(crate.name),
+    documentId: crateIndexSlug(crate.name),
   });
   for (const module of [...crate.modules].sort((a, b) =>
     a.path.join("::").localeCompare(b.path.join("::")),
@@ -503,8 +504,9 @@ function buildCrateNavGroup(crate: CrateSpec, tab: RustTab): SiteNavGroup {
     const slug = rustModuleSlug(crate.name, module.path);
     items.push({
       label: module.path.length === 0 ? crate.name : module.path.join("::"),
-      href: tabRelativeHref(tab, slug),
+      href: "",
       id: slug,
+      documentId: slug,
     });
   }
   return {
@@ -537,11 +539,12 @@ function emptyIndexPage(slug: string, title: string, message: string): MarkdownP
   };
 }
 
-function emptyNavTab(tab: RustTab, tabLabel: string): SiteTab {
+function emptyNavTab(tabSlug: string, tabLabel: string): SiteTab {
   return {
     label: tabLabel,
-    slug: tab.slug,
-    href: tabRelativeHref(tab, "index"),
+    slug: tabSlug,
+    href: "",
+    documentId: "index",
     kind: "docs",
     groups: [],
   };
@@ -558,15 +561,12 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/** The tab a Rust API renders into, and how the site addresses its pages. */
-interface RustTab {
-  readonly slug: string;
-  readonly prettyUrls: PrettyUrls;
-}
-
-/** A page's link in the tab: the same output-path form every other tab's navigation uses. */
-function tabRelativeHref(tab: RustTab, slug: string): string {
-  return navHref(pageOutputPath(tab.slug, slug, tab.prettyUrls), tab.prettyUrls);
+/**
+ * A page's link in the tab, tab-relative like every generated page link: the site's link
+ * pass gives it the address the page is written to.
+ */
+function pageHref(tabSlug: string, slug: string): string {
+  return tabPath(tabSlug, `${slug}.html`);
 }
 
 /**

@@ -34,6 +34,8 @@ export interface SiteTab {
   slug: string;
   /** Relative URL to this tab's first page (from site root) */
   href: string;
+  /** The page the tab leads to when it is not the first its navigation lists, by document ID. */
+  documentId?: string;
   kind: "spec" | "docs";
   groups: SiteNavGroup[];
   sectionIndex?: { href: string; label: string };
@@ -54,6 +56,7 @@ export interface SiteNavGroup {
 export interface SiteNavItem {
   /** Build-scoped semantic target, resolved by the compiled route inventory. */
   target?: NavigationTarget;
+  /** The page of this tab the item leads to; its href is then the address the routes give that page. */
   documentId?: string;
   label: string;
   /** Relative URL to this item (from site root) */

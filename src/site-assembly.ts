@@ -221,7 +221,7 @@ export async function assembleSite(config: ResolvedConfig, previous?: AssemblyCa
         const loaded = await loadGodocTab(tab.source.config, tab.slug, tab.label, { ...edit, editBasePath: tab.source.config.sourceBasePath }, reader, callouts);
         godocDiagnostics.push(...loaded.diagnostics); result = loaded;
       } else {
-        const loaded = await loadRustdocTab(tab.source.config, tab.slug, tab.label, { ...edit, editBasePath: tab.source.config.sourceBasePath }, config.prettyUrls, reader, callouts);
+        const loaded = await loadRustdocTab(tab.source.config, tab.slug, tab.label, { ...edit, editBasePath: tab.source.config.sourceBasePath }, reader, callouts);
         rustdocDiagnostics.push(...loaded.diagnostics); result = loaded;
       }
       for (const [id, page] of result.pages) add(context, tab, { kind: "markdown", markdown: page }, id, page.sourcePath);

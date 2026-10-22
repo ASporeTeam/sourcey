@@ -255,10 +255,11 @@ function buildResult(
     editBasePath: render.sourceLinks.editBasePath ?? "",
   });
 
+  // Navigation names each page; the site's routes give it its address.
   const navGroups: SiteNavGroup[] = [];
   navGroups.push({
     label: tabLabel,
-    items: [{ label: "Overview", href: `${tabSlug}/${indexSlug}.html`, id: indexSlug }],
+    items: [{ label: "Overview", href: "", id: indexSlug, documentId: indexSlug }],
   });
 
   const sortedKeys = [...groups.keys()].sort();
@@ -268,13 +269,12 @@ function buildResult(
       label: key,
       items: items.map((entry): SiteNavItem => ({
         label: entry.label,
-        href: `${tabSlug}/${entry.slug}.html`,
+        href: "",
         id: entry.slug,
+        documentId: entry.slug,
       })),
     });
   }
-
-  const firstItem = navGroups[0]?.items[0];
 
   const diagnostics: GodocLoaderDiagnostic[] = spec.diagnostics.map((d) => ({
     severity: d.severity,
@@ -291,7 +291,7 @@ function buildResult(
     navTab: {
       label: tabLabel,
       slug: tabSlug,
-      href: firstItem?.href ?? `${tabSlug}/`,
+      href: "",
       kind: "docs",
       groups: navGroups,
     },

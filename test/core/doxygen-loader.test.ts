@@ -223,7 +223,7 @@ describe("loadDoxygenTab", () => {
 
     // Without an index, it leads the navigation alone.
     const bare = await load(index, files, { index: "none" });
-    expect(bare.navTab.groups[0]).toEqual({ label: "API Reference", items: [{ label: "Globals", href: "api/globals.html", id: "globals" }] });
+    expect(bare.navTab.groups[0]).toEqual({ label: "API Reference", items: [{ label: "Globals", href: "", id: "globals", documentId: "globals" }] });
   });
 
   it("refuses XML that documents nothing to publish", async () => {

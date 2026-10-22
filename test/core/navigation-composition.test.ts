@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { godoc, markdown, openapi, rustdoc } from "../../src/adapters/index.js";
+import { doxygen, godoc, markdown, openapi, rustdoc } from "../../src/adapters/index.js";
 import { loadConfig, resolveConfigFromRaw } from "../../src/config.js";
 import { buildSourceySite, sourceyArtifacts, updateSourceySite } from "../../src/site.js";
 import { walkNavItems } from "../../src/core/navigation.js";
@@ -178,26 +178,44 @@ export default {theme:{fonts:{google:false}}, navigation:{tabs:[{id:'rest',tab:'
     expect(nav).toMatch(/<div class="sourcey-nav-group-linked"><a href="[^"]*start\/" class="nav-group-label nav-group-link active">Getting started<\/a><details open class="sourcey-nav-group"><summary aria-label="Getting started"><\/summary>/);
   }));
 
-  it("leads a generated reference's tab to the overview its navigation opens with", () => fixture(async root => {
+  for (const prettyUrls of [false, "slash", "strip"] as const) it(`leads a generated reference's navigation to the pages the site writes, with prettyUrls ${prettyUrls}`, () => fixture(async root => {
     const pkg = (importPath: string, name: string) => ({ importPath, name, synopsis: `Package ${name}.`, doc: `Package ${name}.`, dir: ".", files: [], consts: [], vars: [], funcs: [], types: [], examples: [] });
+    const compound = (id: string, kind: string, name: string, inner = "") =>
+      `<?xml version="1.0" encoding="UTF-8"?><doxygen version="1.9.8"><compounddef id="${id}" kind="${kind}" language="C++"><compoundname>${name}</compoundname>${inner}` +
+      `<briefdescription><para>The ${name} ${kind}.</para></briefdescription><detaileddescription></detaileddescription><location file="widget.h" line="1"/></compounddef></doxygen>`;
     await file(root, "guide.md", "# Guide\n");
     await file(root, "go.json", JSON.stringify({ schema_version: GODOC_SCHEMA_VERSION, source: "sourcey-godoc", module_path: "example.test/fixture", generated_at: "2026-10-21T00:00:00Z",
       packages: [pkg("example.test/fixture", "fixture"), pkg("example.test/fixture/sub", "sub")] }));
-    const config = await resolveConfigFromRaw({ baseUrl: "/manual", prettyUrls: "strip", theme: { fonts: { google: false } }, navigation: { tabs: [
+    await file(root, "xml/index.xml", '<?xml version="1.0" encoding="UTF-8"?><doxygenindex version="1.9.8"><compound refid="namespacedemo" kind="namespace"><name>demo</name></compound>' +
+      '<compound refid="classdemo_1_1Widget" kind="class"><name>demo::Widget</name></compound></doxygenindex>');
+    await file(root, "xml/namespacedemo.xml", compound("namespacedemo", "namespace", "demo", '<innerclass refid="classdemo_1_1Widget" prot="public">demo::Widget</innerclass>'));
+    await file(root, "xml/classdemo_1_1Widget.xml", compound("classdemo_1_1Widget", "class", "demo::Widget"));
+    const config = await resolveConfigFromRaw({ baseUrl: "/manual", prettyUrls, theme: { fonts: { google: false } }, navigation: { tabs: [
       { tab: "Docs", slug: "", groups: [{ group: "Start", pages: ["guide"] }] },
-      { tab: "Go", slug: "go", source: godoc({ module: root, mode: "snapshot", snapshot: "go.json" }) },
+      { tab: "Go", slug: "go", source: godoc({ module: root, mode: "snapshot", snapshot: "go.json" }), routes: { "pkg-sub": "packages/sub" } },
       { tab: "Rust", slug: "rust", source: rustdoc({ manifest: new URL("../fixtures/rustdoc/basic/Cargo.toml", import.meta.url).pathname, mode: "snapshot", snapshot: new URL("../fixtures/rustdoc/basic/snapshots/rustdoc.json", import.meta.url).pathname }) },
+      { tab: "C++", slug: "cpp", source: doxygen({ xml: "xml", index: "flat" }) },
     ] } }, root);
     const site = await buildSourceySite({ config, generateOgImages: false });
-    // The generated navigation names output paths; the tab still finds the overview it lists first.
-    const [overview] = walkNavItems(site.navigation.tabs[1].groups);
-    expect(overview.label).toBe("Overview");
-    expect(site.navigation.tabs[1].href).toBe(overview.href);
+    const artifacts = await sourceyArtifacts(site);
+    const address = (path: string) => `/manual/${prettyUrls === "slash" ? `${path}/` : prettyUrls === "strip" ? path : `${path}.html`}`;
+    const written = (href: string) => {
+      const path = href.slice("/manual/".length);
+      return path.endsWith("/") ? `${path}index.html` : path.endsWith(".html") ? path : `${path}.html`;
+    };
+    const [go, rust, cpp] = site.navigation.tabs.slice(1);
+    // Each reference names its pages; every link is the address the site gave that page, a route's too.
+    for (const tab of [go, rust, cpp]) for (const item of walkNavItems(tab.groups)) expect(artifacts.has(written(item.href)), item.href).toBe(true);
+    expect([...walkNavItems(go.groups)].map(item => item.href)).toEqual([address("go"), address("go/package-root"), address("go/packages/sub")]);
+    // The tab leads to the overview its navigation opens with.
+    expect([...walkNavItems(cpp.groups)][0].label).toBe("Overview");
+    expect([go.href, cpp.href]).toEqual([address("go"), address("cpp")]);
     // A Rust tab's navigation opens with its doctests, but the tab leads to the workspace overview.
-    expect(site.navigation.tabs[2].groups[0].label).toBe("Examples");
-    const page = (await sourceyArtifacts(site)).get("guide.html")!.toString();
-    expect(page).toContain('href="/manual/go" class="group relative');
-    expect(page).toContain('href="/manual/rust" class="group relative');
+    expect(rust.groups[0].label).toBe("Examples");
+    expect(rust.href).toBe(address("rust"));
+    // The overview's cards reach the pages too.
+    const overview = artifacts.get(written(rust.href))!.toString();
+    expect(overview).toContain(`class="card-item" href="${address("rust/pkg-basic")}"`);
   }));
 
   it("fails on an operation link that no reference, or more than one, publishes until it names one", () => fixture(async root => {

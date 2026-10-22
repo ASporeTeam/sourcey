@@ -8,6 +8,7 @@ import { loadRustdocTab } from "../../src/core/rustdoc-loader.js";
 import { InputReader } from "../../src/core/loader.js";
 import { DEFAULT_CALLOUTS } from "../../src/utils/markdown.js";
 import { messagesFor } from "../../src/core/messages.js";
+import { walkNavItems } from "../../src/core/navigation.js";
 
 const FIXTURE_MANIFEST = resolve(import.meta.dirname, "../fixtures/rustdoc/basic/Cargo.toml");
 const FIXTURE_SNAPSHOT = resolve(
@@ -45,8 +46,8 @@ describe("loadRustdocTab snapshot mode", () => {
       const path = resolve(root, "rustdoc.json");
       await writeFile(path, JSON.stringify(snapshot));
       const input = new InputReader(), config = snapshotConfig({ snapshot: path });
-      const original = await loadRustdocTab(config, "rust-api", "Rust API", {}, false, input, DEFAULT_CALLOUTS);
-      const translated = await loadRustdocTab(config, "rust-api", "Rust API", {}, false, input, { icons: "lucide", messages: messagesFor("fr") });
+      const original = await loadRustdocTab(config, "rust-api", "Rust API", {}, input, DEFAULT_CALLOUTS);
+      const translated = await loadRustdocTab(config, "rust-api", "Rust API", {}, input, { icons: "lucide", messages: messagesFor("fr") });
       const first = [...original.pages.values()].find(page => page.html.includes("Keep this Rust reference detail."))!;
       const second = translated.pages.get(first.slug)!;
       expect(first.html).toContain("Warning");
@@ -67,16 +68,12 @@ describe("loadRustdocTab snapshot mode", () => {
     expect(errors).toEqual([]);
   });
 
-  it("links the tab's pages by the paths the site writes them to", async () => {
-    // The tab's landing page is written as `rust-api.html` unless pretty URLs make it a directory.
-    const hrefs = async (prettyUrls: false | "slash" | "strip") => {
-      const result = await loadRustdocTab(snapshotConfig(), "rust-api", "Rust API", {}, prettyUrls);
-      const crateOverview = result.navTab.groups.at(-1)?.items[0]?.href;
-      return [result.navTab.href, crateOverview];
-    };
-    expect(await hrefs(false)).toEqual(["rust-api.html", "rust-api/pkg-basic.html"]);
-    expect(await hrefs("strip")).toEqual(["rust-api", "rust-api/pkg-basic"]);
-    expect(await hrefs("slash")).toEqual(["rust-api/", "rust-api/pkg-basic/"]);
+  it("names the pages its navigation leads to, and leaves their addresses to the site", async () => {
+    const result = await loadRustdocTab(snapshotConfig(), "rust-api", "Rust API");
+    expect(result.navTab.documentId).toBe("index");
+    const items = [...walkNavItems(result.navTab.groups)];
+    expect(items.map(item => item.documentId)).toEqual(items.map(item => result.pages.has(item.documentId!) && item.documentId));
+    expect(items.map(item => item.href)).toEqual(items.map(() => ""));
   });
 
   it("keeps every page's headings in order beneath its title, with a card's count as plain text", async () => {
