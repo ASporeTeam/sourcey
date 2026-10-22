@@ -29,7 +29,7 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc && node scripts/copy-theme-assets.mjs && cp src/client/*.js dist/client/ && cp src/core/diagram-worker.js dist/core/ && cp src/og/card-worker.js dist/og/ && cp -r src/og/fonts dist/og/ && rm -rf dist/core/sourcey-godoc dist/core/godoc-introspect && mkdir -p dist/core/sourcey-godoc && cp -R go/sourcey-godoc/go.mod go/sourcey-godoc/doc.go go/sourcey-godoc/cmd dist/core/sourcey-godoc/ && rm -rf dist/core/sourcey-rustdoc && mkdir -p dist/core/sourcey-rustdoc && cp -R rust/sourcey-rustdoc/Cargo.toml rust/sourcey-rustdoc/Cargo.lock rust/sourcey-rustdoc/README.md rust/sourcey-rustdoc/src rust/sourcey-rustdoc/tests dist/core/sourcey-rustdoc/",
+    "build": "rm -rf dist && tsc && node scripts/copy-theme-assets.mjs && cp src/client/*.js dist/client/ && cp src/core/diagram-worker.js dist/core/ && cp src/og/card-worker.js dist/og/ && cp -r src/og/fonts dist/og/ && node scripts/build-engine-assets.mjs && rm -rf dist/core/sourcey-godoc dist/core/godoc-introspect && mkdir -p dist/core/sourcey-godoc && cp -R go/sourcey-godoc/go.mod go/sourcey-godoc/doc.go go/sourcey-godoc/cmd dist/core/sourcey-godoc/ && rm -rf dist/core/sourcey-rustdoc && mkdir -p dist/core/sourcey-rustdoc && cp -R rust/sourcey-rustdoc/Cargo.toml rust/sourcey-rustdoc/Cargo.lock rust/sourcey-rustdoc/README.md rust/sourcey-rustdoc/src rust/sourcey-rustdoc/tests dist/core/sourcey-rustdoc/",
     "watch": "npm run build && tsc --watch --preserveWatchOutput",
     "pretest": "npm run build",
     "test": "vitest run",

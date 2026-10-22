@@ -1,17 +1,18 @@
 import { createHash } from "node:crypto";
-import { copyFile, readFile, readdir, mkdtemp, rm, realpath, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { resolve, dirname, join, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { build as viteBuild, type Plugin } from "vite";
-import tailwindcss from "@tailwindcss/vite";
-import preact from "@preact/preset-vite";
+import type { Plugin } from "vite";
 import { resolveThemeAssets } from "../themes/assets.js";
+import { themeDefinitions } from "../themes/registry.js";
 import type { ThemeName } from "../config.js";
 import { cachedArtifacts } from "../core/artifact-cache.js";
 import { langIconCSS } from "../utils/lang-icons.js";
 import type { RenderAssetPaths } from "./context.js";
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+/** Rolldown otherwise heads each module's code with its path on the machine that bundled it, which the site would publish. */
+const bundleOptions = { experimental: { attachDebugInfo: "none" } } as const;
 /** Where development serves the code-language icons, the stylesheet a build publishes beside its others. */
 export const languageIconsDevUrl = "/@sourcey/sourcey-lang-icons.css";
 export function languageIconsPlugin(): Plugin {
@@ -30,6 +31,60 @@ export interface EngineAssets {
   paths: RenderAssetPaths;
 }
 const builds = new Map<string, Promise<EngineAssets>>();
+
+/**
+ * Sourcey's own scripts and styles depend on its version, the theme and
+ * whether the API console is on, never on the site, so the package carries
+ * them built for each theme, and a site's build only reads them. Only a
+ * theme's stylesheet and script differ by theme: the files every theme
+ * builds the same are kept once, in `shared`.
+ */
+const prebuilt = resolve(dirname(fileURLToPath(import.meta.url)), "../engine-assets");
+const SHARED = "shared";
+/** Themes built from the same definition share one build: the first theme to use it names it. */
+const themeBuild = (theme: ThemeName) => (Object.keys(themeDefinitions) as ThemeName[]).find(name => themeDefinitions[name] === themeDefinitions[theme])!;
+const CONSOLE_SCRIPT = "sourcey-try-it.js";
+
+async function readTree(root: string): Promise<Map<string, Buffer>> {
+  const files = new Map<string, Buffer>();
+  async function walk(directory: string, prefix = "") {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = prefix + entry.name;
+      if (entry.isDirectory()) await walk(join(directory, entry.name), path + "/");
+      else files.set(path, await readFile(join(directory, entry.name)));
+    }
+  }
+  await walk(root);
+  return files;
+}
+
+/** Build every theme's assets into the package; `npm run build` runs it once. */
+export async function prebuildEngineAssets(): Promise<void> {
+  await rm(prebuilt, { recursive: true, force: true });
+  const themes = [...new Set((Object.keys(themeDefinitions) as ThemeName[]).map(themeBuild))];
+  for (const theme of themes) await bundleAssets(join(prebuilt, theme), theme, true);
+  const [first, ...others] = await Promise.all(themes.map(theme => readTree(join(prebuilt, theme))));
+  for (const [name, body] of first) {
+    if (!others.every(files => files.get(name)?.equals(body))) continue;
+    await mkdir(dirname(join(prebuilt, SHARED, name)), { recursive: true });
+    await rename(join(prebuilt, themes[0], name), join(prebuilt, SHARED, name));
+    for (const theme of themes.slice(1)) await rm(join(prebuilt, theme, name));
+  }
+}
+
+/** The packaged assets, or none where Sourcey runs from its source, which has none. */
+async function packagedAssets(theme: ThemeName, consoleEnabled: boolean): Promise<Map<string, Buffer> | undefined> {
+  let files: Map<string, Buffer>;
+  try {
+    files = new Map([...(await readTree(join(prebuilt, SHARED))), ...(await readTree(join(prebuilt, themeBuild(theme))))]);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  if (!consoleEnabled) files.delete(CONSOLE_SCRIPT);
+  return files;
+}
+
 export async function buildAssets(
   theme: ThemeName,
   consoleEnabled: boolean,
@@ -38,7 +93,8 @@ export async function buildAssets(
   const key = JSON.stringify([projectRoot, theme, consoleEnabled, mode]);
   let build = builds.get(key);
   if (!build) {
-    build = cachedArtifacts(
+    const packaged = mode === "production" ? await packagedAssets(theme, consoleEnabled) : undefined;
+    build = (packaged ? Promise.resolve(packaged) : cachedArtifacts(
       "engine-assets",
       JSON.stringify([theme, consoleEnabled, mode]),
       ["vite", "@preact/preset-vite", "@tailwindcss/vite", "preact", "minisearch"],
@@ -46,21 +102,12 @@ export async function buildAssets(
         const dir = await mkdtemp(join(tmpdir(), "sourcey-assets-"));
         try {
           await bundleAssets(dir, theme, consoleEnabled);
-          const files = new Map<string, Buffer>();
-          async function walk(root: string, prefix = "") {
-            for (const entry of await readdir(root, { withFileTypes: true })) {
-              const path = prefix + entry.name;
-              if (entry.isDirectory()) await walk(join(root, entry.name), path + "/");
-              else files.set(path, await readFile(join(root, entry.name)));
-            }
-          }
-          await walk(dir);
-          return files;
+          return await readTree(dir);
         } finally {
           await rm(dir, { recursive: true, force: true });
         }
       },
-    ).then(files => {
+    )).then(files => {
       // Hash the complete module closure. Keeping the emitted relative layout
       // intact also preserves worker URLs and lazy module imports.
       const hash = createHash("sha256");
@@ -91,6 +138,10 @@ async function bundleAssets(
 ): Promise<void> {
   const { clientEntry, sourceyCssPaths, themeInit, tryItEntry, searchEntry } =
     resolveThemeAssets(theme);
+  // Vite and its plugins load only to bundle, which a cached build never does.
+  const [{ build: viteBuild }, { default: tailwindcss }, { default: preact }] = await Promise.all([
+    import("vite"), import("@tailwindcss/vite"), import("@preact/preset-vite"),
+  ]);
 
   await viteBuild({
     root: projectRoot,
@@ -121,7 +172,8 @@ async function bundleAssets(
         name: "Sourcey",
         fileName: () => "sourcey.js",
       },
-      rollupOptions: {
+      rolldownOptions: {
+        ...bundleOptions,
         output: {
           entryFileNames: "sourcey.js",
           assetFileNames: "sourcey.[ext]",
@@ -142,6 +194,7 @@ async function bundleAssets(
       emptyOutDir: false,
       minify: true,
       lib: { entry: searchEntry, formats: ["es"], fileName: () => "sourcey-search.js" },
+      rolldownOptions: bundleOptions,
     },
   });
   if (consoleEnabled) {
@@ -156,6 +209,7 @@ async function bundleAssets(
         emptyOutDir: false,
         minify: true,
         lib: { entry: tryItEntry, formats: ["es"], fileName: () => "sourcey-try-it.js" },
+        rolldownOptions: bundleOptions,
       },
     });
   }
@@ -189,6 +243,7 @@ export async function buildComponentAssets(
   if (cached && JSON.stringify(digests) === JSON.stringify(cached.digests)) return cached.bundle;
   const directory = await mkdtemp(join(tmpdir(), "sourcey-component-"));
   const dependencies = new Set<string>([entry, ...css]);
+  const { build: viteBuild } = await import("vite");
   try {
     await viteBuild({
       root,
@@ -241,19 +296,13 @@ export async function buildComponentAssets(
         minify: true,
         // Named here, so a component's styles build in a project without a package name.
         lib: { entry, formats: ["es"], fileName: () => "component.js", cssFileName: "component" },
-        rollupOptions: {
+        rolldownOptions: {
+          ...bundleOptions,
           output: { assetFileNames: "[name]-[hash][extname]", chunkFileNames: "[name]-[hash].js" },
         },
       },
     });
-    const local = new Map<string, Buffer>();
-    async function walk(dir: string, prefix = "") {
-      for (const item of await readdir(dir, { withFileTypes: true })) {
-        if (item.isDirectory()) await walk(join(dir, item.name), prefix + item.name + "/");
-        else local.set(prefix + item.name, await readFile(join(dir, item.name)));
-      }
-    }
-    await walk(directory);
+    const local = await readTree(directory);
     const hash = createHash("sha256");
     for (const [name, body] of [...local].sort(([a], [b]) => a.localeCompare(b)))
       hash.update(name).update(body);

@@ -23,6 +23,22 @@ describe("reader theme", () => {
     }
   });
 
+  it("builds from the package's own engine assets, which name no path of the machine that built them", async () => {
+    const { buildAssets } = await import("../dist/renderer/assets.js");
+    const root = new URL("..", import.meta.url).pathname;
+    for (const theme of Object.keys(themeDefinitions) as (keyof typeof themeDefinitions)[]) {
+      for (const consoleEnabled of [true, false]) {
+        const { files, paths } = await buildAssets(theme, consoleEnabled, "production");
+        expect(files.has(paths.client) && files.has(paths.search) && files.has(paths.styles[0])).toBe(true);
+        expect(paths.tryIt !== undefined && files.has(paths.tryIt)).toBe(consoleEnabled);
+        for (const body of files.values()) {
+          expect(body.includes("//#region")).toBe(false);
+          expect(body.includes(root)).toBe(false);
+        }
+      }
+    }
+  });
+
   it("selects assets for every theme through one registry", () => {
     for (const theme of ["default", "minimal", "api-first"] as const) {
       expect(resolveThemeAssets(theme).clientEntry).toMatch(/client\/index\.(ts|js)$/);
