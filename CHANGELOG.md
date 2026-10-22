@@ -22,6 +22,7 @@
 - An API reference normalizes each schema once for every place it is used the same way, and shares the result, rather than copying a component into every operation that returns it. A 1,781-operation API held a third of the schema memory it did. References render as before.
 - A site's `llms.txt` and `llms-full.txt` are generated once, rather than once for the file and again for the build's result, and machine exports are held as the UTF-8 bytes they are written as, rather than as text the script heap held at two bytes a character once one curly quote appeared.
 - `sourcey build` copies files it publishes unchanged, such as images, stylesheets' assets and a public directory's files, from their source as it writes the site, hashing each as a stream, rather than holding every one in memory from the start of the build. A site whose public directory held 143 MB of reports no longer held them all. A file that changes while the site builds fails the build rather than being published unlike its hash. The dev server and Astro, which serve the site from memory, read files as before.
+- The build cache identifies the packages that draw diagrams, images and assets by each package's manifest and its files' sizes and modification times, rather than by reading every byte of every file they depend on: Mermaid's dependencies alone cost each build a quarter of a second and 150 MB of memory to hash. A patched or relinked package still counts as changed.
 
 ## 3.8.3 - 2026-10-21
 

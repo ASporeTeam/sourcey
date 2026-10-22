@@ -11,7 +11,7 @@ import {
   rename,
   rm,
 } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -42,7 +42,14 @@ async function packageFile(name: string, importer: string): Promise<string | und
   return undefined;
 }
 
-/** Installed bytes, rather than a version label, establish transform identity. */
+/**
+ * The installed packages, rather than a version label, establish transform
+ * identity: each package by its manifest's bytes and every file's size and
+ * modification time, so a patched or linked package's edit counts, as does a
+ * new version (its manifest changes even where a registry fixes file times).
+ * Files are not read, so a large closure, such as Mermaid's, costs stats
+ * rather than all of its bytes in memory.
+ */
 async function transformIdentity(dependencies: string[]): Promise<string> {
   const key = JSON.stringify([...dependencies].sort());
   let pending = identities.get(key);
@@ -99,10 +106,11 @@ async function transformIdentity(dependencies: string[]): Promise<string> {
           ...(await Promise.all(
             files
               .slice(start, start + 32)
-              .map(async ([name, path]): Promise<[string, string]> => [
-                name,
-                sha(await readFile(path)),
-              ]),
+              .map(async ([name, path]): Promise<[string, string]> => {
+                if (basename(path) === "package.json") return [name, sha(await readFile(path))];
+                const info = await stat(path);
+                return [name, `${info.size}:${info.mtimeMs}`];
+              }),
           )),
         );
       return sha(JSON.stringify([process.version, process.platform, process.arch, edges, hashes]));

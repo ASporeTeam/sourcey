@@ -51,9 +51,13 @@ console.log(files.get('result.txt').toString());`,
       await writeFile(dependency, "changed installed bytes");
       expect((await execute()).stdout.trim()).toBe("changed installed bytes");
       expect(await readFile(join(root, "builds.txt"), "utf8")).toBe("build\nbuild\nbuild\n");
+      // An edit that keeps the file's size, as a patch can, still counts.
+      await writeFile(dependency, "changed installed byteZ");
+      expect((await execute()).stdout.trim()).toBe("changed installed byteZ");
+      expect(await readFile(join(root, "builds.txt"), "utf8")).toBe("build\nbuild\nbuild\nbuild\n");
       await rm(cacheRoot, { recursive: true });
       await writeFile(cacheRoot, "cache is unavailable");
-      expect((await execute()).stdout.trim()).toBe("changed installed bytes");
+      expect((await execute()).stdout.trim()).toBe("changed installed byteZ");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
